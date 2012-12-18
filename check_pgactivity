@@ -80,7 +80,13 @@ my %services = (
     'last_vacuum' => {
         'sub' => \&check_last_vacuum,
         'desc' =>
-            'Check the oldest vacuum (autovacuum or not) on the database.',
+            'Check the oldest vacuum (from autovacuum or not) on the database.',
+        'min' => $PG_VERSION_82
+    },
+    'last_analyze' => {
+        'sub' => \&check_last_analyze,
+        'desc' =>
+            'Check the oldest analyze (from autovacuum or not) on the database.',
         'min' => $PG_VERSION_82
     }
 );
@@ -103,35 +109,65 @@ my %args = (
 
 my $rc = 0;
 
-=head1 OPTIONS
+=over
 
-=item -s, --service     The nagios service to run.
+=item B<-s>, B<--service> SERVICE
 
-=item -h, --host        Database server host or socket directory (default: "localhost").
+The nagios service to run. See section SERVICES for a description of available
+services or option C<--list> for a short service and description list.
 
-=item -U, --username    Database user name (default: "postgres").
+=item B<-h>, B<--host> HOST
 
-=item -p, --port        Database server port (default: "5432").
+Database server host or socket directory (default: "localhost").
 
-=item -d, --dbname      Database name to connect to (default: "postgres").
+=item B<-U>, B<--username> ROLE
 
-=item -S, --dbservice   The service name to use from pg_service.conf to connect.
+Database user name (default: "postgres").
 
-=item -w, --warning     The warning threshold.
+=item B<-p>, B<--port> PORT
 
-=item -c, --critical    The critical threshold.
+Database server port (default: "5432").
 
-=item -P, --psql        Path to the C<psql> executable (default: "/usr/bin/psql").
+=item B<-d>, B<--dbname> DATABASE
 
-=item -S, --dbservice   The service name to use from pg_service.conf to connect.
+Database name to connect to (default: "postgres").
 
-=item --list            List available services.
+=item B<-S>, B<--dbservice> SERVICE_NAME
 
-=item -V, --version     Print version and exit.
+The service name to use from pg_service.conf to connect.
 
-=item --debug           Print some debug messages.
+=item B<-w>, B<--warning> THRESHOLD
 
-=item -?, --help        Show this help page.
+The warning threshold.
+
+=item B<-c>, B<--critical> THRESHOLD
+
+The critical threshold.
+
+=item B<-P>, B<--psql> FILE
+
+Path to the C<psql> executable (default: "/usr/bin/psql").
+
+=item B<--list>
+
+List available services.
+
+=item B<-V>, B<--version>
+
+Print version and exit.
+
+=item B<--debug>
+
+Print some debug messages.
+
+=item B<-?>, B<--help>
+
+Show this help page.
+
+=back
+
+THRESHOLD can either be a raw number, a size, an interval or a percentage.
+Each available service supports one or more form (eg. a size and a percentage).
 
 =cut
 
@@ -294,32 +330,39 @@ sub to_interval($) {
 
     $val = int($val);
 
-    if ( $val > 60 ) {
-        my $mod = $val % 60;
-        $val      = int( $val / 60 );
-        $interval = "${mod}s";
+    if ( $val > 604800 ) {
+        $interval = int($val/604800) ."w ";
+        $val %= 604800;
+    }
+
+    if ( $val > 86400 ) {
+        $interval .= int($val/86400) ."d ";
+        $val %= 86400;
+    }
+
+    if ( $val > 3600 ) {
+        $interval .= int($val/3600) ."h";
+        $val %= 3600;
     }
 
     if ( $val > 60 ) {
-        my $mod = $val % 60;
-        $val      = int( $val / 60 );
-        $interval = "${mod}m$interval";
+        $interval .= int($val/60) ."m";
+        $val %= 60;
     }
 
-    if ( $val > 24 ) {
-        my $mod = $val % 24;
-        $val      = int( $val / 24 );
-        $interval = "${mod}h$interval";
-    }
+    $interval .= "${val}s" if $val > 0;
 
-    if ( $val > 7 ) {
-        my $mod = $val % 7;
-        $val      = int( $val / 7 );
-        $interval = "${mod}d $interval";
-    }
-
-    return "${val}w $interval";
+    return $interval;
 }
+
+=pod
+
+If THRESHOLD is an interval, the following units are accepted (not case
+sensitive): s (second), m (minute), h (hour), d (day). You can use more than
+one unit per give value. If not set, the last unit is in seconds. Eg.: "1h 55m
+6" = "1h55m6s".
+
+=cut
 
 sub get_time($) {
     my $str_time = lc( shift() );
@@ -328,7 +371,7 @@ sub get_time($) {
 
     die(      "Malformed interval: «$str_time»!\n"
             . "Authorized unit are: dD, hH, mM, sS\n" )
-        unless $str_time =~ /^([0-9]{1,2}[smhd])*[0-9]{1,2}[smhd]?$/;
+        unless $str_time =~ /^\s*([0-9]{1,2}\s*[smhd]\s*)*[0-9]{1,2}\s*[smhd]?\s*$/;
 
     # no bad units should exists after this line!
 
@@ -359,6 +402,14 @@ LOOP_TS: while ( my $val = shift @date ) {
 
     return $ts;
 }
+
+=pod
+
+If THRESHOLD is a size, the following units are accepted (not case sensitive):
+b (Byte), k (KB), m (MB), g (GB), t (TB), p (PB), e (EB) or Z (ZB). The factor
+between units is 1024 Bytes. Eg. 1g = 1G = 1024*1024*1024.
+
+=cut
 
 sub get_size($;$) {
     my $str_size = shift;
@@ -599,6 +650,8 @@ sub output ($$@@) {
 
 Here is the list, descriptions and parameters of available services.
 
+=over
+
 =item B<check_backends>
 
 Check the total number of connexions on the cluster.
@@ -658,7 +711,7 @@ Check the variation of database sizes.
 Perfdata contains the size of each database.
 
 Critical and Warning thresholds accept either a raw number, a percentage or a
-size (eg. 2.5G). Available units are kK, mM, gG, tT, pP, eE, zZ.
+size (eg. 2.5G).
 
 =cut
 
@@ -842,18 +895,8 @@ sub check_ready_archives(@%) {
     return ok( $me, \@msg, \@perfdata );
 }
 
-=item B<check_last_vacuum> (8.2+)
-
-Check the oldest vacuum on the database (from autovacuum or not) is not older
-than the given limits.
-
-Perfdata returns oldest vacuum per database in seconds.
-
-Critical and Warning thresholds only accept a duration. Available units
-are sS, mM, hH, dD. Minute (m) is the default.
-=cut
-
-sub check_last_vacuum(@$) {
+# Agnostic check vacuum or analyze sub
+sub check_last_maintenance($@%) {
     my $rs;
     my @perfdata;
     my @msg_crit;
@@ -861,17 +904,18 @@ sub check_last_vacuum(@$) {
     my $c_limit = get_time( $args{critical} );
     my $w_limit = get_time( $args{warning} );
     my @msg;
-    my $me     = 'POSTGRES_LAST_VACUUM';
+    my $type   = shift;
     my @hosts  = @{ $_[0] };
     my %args   = %{ $_[1] };
     my @all_db = @{ get_all_dbname( $hosts[0] ) };
-    my $query  = q{
+    my $me     = 'POSTGRES_LAST_'. uc($type);
+    my $query  = qq{
          SELECT min(
             coalesce(
                 extract(epoch FROM current_timestamp -
-                    CASE last_autovacuum > last_vacuum
-                        WHEN 't' THEN last_autovacuum
-                        ELSE last_vacuum
+                    CASE last_auto${type} > last_${type}
+                        WHEN 't' THEN last_auto${type}
+                        ELSE last_${type}
                     END
                 )::float, '-infinity'::float
             ))
@@ -903,7 +947,48 @@ LOOP_DB: foreach my $db (@all_db) {
         \@perfdata );
 }
 
+=item B<check_last_analyze> (8.2+)
+
+Check on each databases that the oldest analyze (from autovacuum or not) is not
+older than the given threshold.
+
+Perfdata returns oldest analyze per database in seconds.
+
+Critical and Warning thresholds only accept an interval (eg. 1h30m25s).
+=cut
+sub check_last_analyze(@%) {
+    return check_last_maintenance('analyze', @_);
+}
+
+
+=item B<check_last_vacuum> (8.2+)
+
+Check on each databases that the oldest vacuum (from autovacuum or not) is not
+older than the given threshold.
+
+Perfdata returns oldest vacuum per database in seconds.
+
+Critical and Warning thresholds only accept an interval (eg. 1h30m25s).
+
+=cut
+
+sub check_last_vacuum(@$) {
+    return check_last_maintenance('vacuum', @_);
+}
+
 __END__
+
+=back
+
+=head1 EXAMPLES
+
+=over
+
+=item C<check_pgactivity -h localhost -p 5492 -s last_vacuum -w 30m -c 1h30m>
+
+=item C<check_pgactivity -s database_size -w 10% -c 1G>
+
+=back
 
 =head1 LICENSING
 
@@ -912,9 +997,9 @@ license terms, see the LICENSE provided with the sources.
 
 =head1 AUTHORS
 
-  Author: Jehan-Guillaume de Rorthais
-  Copyright: (C) 2012 Jehan-Guillaume de Rorthais - All rights reserved.
+Author: Jehan-Guillaume de Rorthais
+Copyright: (C) 2012 Jehan-Guillaume de Rorthais - All rights reserved.
 
-  Dalibo's team. http://www.dalibo.org
+Dalibo's team. http://www.dalibo.org
   
 =cut
