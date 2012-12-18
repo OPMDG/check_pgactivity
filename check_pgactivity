@@ -1,0 +1,920 @@
+#!/usr/bin/perl
+# This program is open source, licensed under the simplified BSD license.
+# For license terms, see the LICENSE file.
+
+=head1 check_pgactivity
+
+check_pgactivity - PostgreSQL plugins for Nagios
+
+Version 1.0
+
+=head1 SYNOPSIS
+
+  check_pgactivity [-s|--service] [-h|--host] [-U|--username] [-p|--port] [-d|--dbname] [-S|--dbservice] [-w|--warning] [-c|--critical] [-P|--psql] [--debug]
+  check_pgactivity [--list]
+  check_pgactivity [--help]
+
+=head1 DESCRIPTION
+
+check_pgactivity is dedicated to monitoring PostgreSQL cluster from Nagios. It
+offers many different services and returns various usefull perfdata for
+metrology.
+
+=cut
+
+use vars qw($VERSION $PROGRAM);
+
+use strict;
+
+use POSIX;
+use File::Basename 'dirname';
+use Getopt::Long qw(:config bundling no_ignore_case_always);
+use List::Util qw(max);
+use POSIX qw(locale_h sys_wait_h);
+use IPC::Open3;
+use Data::Dumper;
+use Storable qw(store retrieve);
+use Pod::Usage;
+
+setlocale( LC_ALL, 'C' );
+
+$| = 1;
+
+$VERSION = '1.0';
+$PROGRAM = 'check_pgactivity';
+
+my $STORAGE_PATH = dirname(__FILE__) . '/check_pgactivity.data';
+
+my $PG_VERSION_74 = 704;
+my $PG_VERSION_80 = 800;
+my $PG_VERSION_81 = 801;
+my $PG_VERSION_82 = 802;
+my $PG_VERSION_83 = 803;
+my $PG_VERSION_84 = 804;
+my $PG_VERSION_90 = 900;
+my $PG_VERSION_91 = 901;
+my $PG_VERSION_92 = 902;
+my $PG_VERSION_93 = 903;
+
+# available services and descriptions
+my %services = (
+    'backends' => {
+        'sub'  => \&check_backends,
+        'desc' => 'Number of connections, compared to max_connections.'
+    },
+    'database_size' => {
+        'sub'  => \&check_database_size,
+        'desc' => 'Variation of database sizes.',
+        'min'  => $PG_VERSION_81
+    },
+    'wal_files' => {
+        'sub'  => \&check_wal_files,
+        'desc' => 'Total number of WAL files.',
+        'min'  => $PG_VERSION_81
+    },
+    'ready_archives' => {
+        'sub'  => \&check_ready_archives,
+        'desc' => 'Check the number of wal files ready to archive.',
+        'min'  => $PG_VERSION_81
+    },
+    'last_vacuum' => {
+        'sub' => \&check_last_vacuum,
+        'desc' =>
+            'Check the oldest vacuum (autovacuum or not) on the database.',
+        'min' => $PG_VERSION_82
+    }
+);
+
+my %args = (
+    'service'   => undef,
+    'host'      => 'localhost',
+    'username'  => 'postgres',
+    'port'      => '5432',
+    'dbname'    => 'postgres',
+    'dbservice' => undef,
+    'warning'   => undef,
+    'critical'  => undef,
+    'exclude'   => '',
+    'psql'      => '/usr/bin/psql',
+    'list'      => 0,
+    'help'      => 0,
+    'debug'     => 0
+);
+
+my $rc = 0;
+
+=head1 OPTIONS
+
+=item -s, --service     The nagios service to run.
+
+=item -h, --host        Database server host or socket directory (default: "localhost").
+
+=item -U, --username    Database user name (default: "postgres").
+
+=item -p, --port        Database server port (default: "5432").
+
+=item -d, --dbname      Database name to connect to (default: "postgres").
+
+=item -S, --dbservice   The service name to use from pg_service.conf to connect.
+
+=item -w, --warning     The warning threshold.
+
+=item -c, --critical    The critical threshold.
+
+=item -P, --psql        Path to the C<psql> executable (default: "/usr/bin/psql").
+
+=item -S, --dbservice   The service name to use from pg_service.conf to connect.
+
+=item --list            List available services.
+
+=item -V, --version     Print version and exit.
+
+=item --debug           Print some debug messages.
+
+=item -?, --help        Show this help page.
+
+=cut
+
+Getopt::Long::Configure('bundling');
+GetOptions(
+    \%args, qw{
+        service|s=s
+        host|h=s
+        username|U=s
+        port|p=s
+        dbname|d=s
+        dbservice|S=s
+        warning|w=s
+        critical|c=s
+        psql|P=s
+        list!
+        version|V!
+        help|?!
+        debug!
+        }
+) or usage();
+
+list_services() if $args{list};
+usage( { verbose => 2 } ) if $args{help};
+version() if $args{version};
+
+# Set multi host informations
+my @hosts   = ();
+my @dbhosts = split( /,/, $args{host} );
+my @dbnames = split( /,/, $args{dbname} );
+my @dbusers = split( /,/, $args{username} );
+my @dbports = split( /,/, $args{port} );
+my $nbhosts = max $#dbhosts, $#dbnames, $#dbusers, $#dbports;
+
+for ( my $i = 0; $i <= $nbhosts; $i++ ) {
+    push(
+        @hosts,
+        {   host => $dbhosts[$i] || $dbhosts[0],
+            port => $dbports[$i] || $dbports[0],
+            db   => $dbnames[$i] || $dbnames[0],
+            user => $dbusers[$i] || $dbusers[0],
+            pgversion => undef
+        }
+    );
+}
+
+map {
+    $_->{psqlopts} = [
+        $args{psql}, '-qxXAtf', '-',        '-h',
+        $_->{host},  '-p',      $_->{port}, '-U',
+        $_->{user}
+        ]
+} @hosts;
+
+# Validate service(s) to execute
+unless ( defined $args{service} ) {
+    usage(
+        {   msg =>
+                "FATAL: you must specify one service. See -s or --service command line option.",
+            rc => 1
+        }
+    );
+    exit 1;
+}
+
+# check if service exists
+unless ( exists $services{ $args{service} } ) {
+    usage(
+        {   msg =>
+                "FATAL: service $args{service} does not exist. Use --list to show the available services.",
+            rc => 1
+        }
+    );
+    exit 1;
+}
+
+# Die on kill -2, -3 or -15
+$SIG{'INT'} = $SIG{'QUIT'} = $SIG{'TERM'} = 'terminate';
+
+# Set name of the program without path*
+my $orig_name = $0;
+$0 = $PROGRAM;
+
+foreach my $host (@hosts) {
+
+    unless ( is_service_compatible( $host, $args{service} ) ) {
+        warn sprintf "Service %s is not compatible with host %s:%d (v%s).\n",
+            $args{service}, $host->{host}, $host->{port}, $host->{version};
+        exit 1;
+    }
+
+    dprint( sprintf "Execute service %s on %s:%d (v%s)\n",
+        $args{service}, $host->{host}, $host->{port}, $host->{version} );
+}
+
+$rc = $services{ $args{service} }{sub}->( \@hosts, \%args );
+
+exit $rc;
+
+sub version() {
+    print "check_pgactivity version $VERSION\n";
+
+    exit 0;
+}
+
+sub usage() {
+    my %ops = %{ $_[0] };
+
+    $ops{rc} |= 0;
+    $ops{verbose} = ( exists $ops{verbose} ? 2 : 0 );
+
+    print "$ops{msg}\n" if ( $ops{msg} );
+
+    pod2usage( -exitval => $ops{rc}, -verbose => $ops{verbose} );
+}
+
+sub load(%$) {
+    my %host    = %{ shift() };
+    my $name    = shift;
+    my $hostkey = "$host{host}$host{port}";
+    my $all;
+
+    return undef unless -f $STORAGE_PATH;
+
+    $all = retrieve($STORAGE_PATH);
+
+    return $all->{$hostkey}->{$name};
+}
+
+sub save(%$$) {
+    my %host    = %{ shift() };
+    my $name    = shift;
+    my $ref     = shift;
+    my $all     = {};
+    my $hostkey = "$host{host}$host{port}";
+
+    $all = retrieve($STORAGE_PATH) if -f $STORAGE_PATH;
+
+    $all->{$hostkey}->{$name} = $ref;
+
+    store( $all, $STORAGE_PATH )
+        or die "Can't store data in «$STORAGE_PATH»!\n";
+}
+
+# List services that can be performed
+sub list_services() {
+
+    print "List of available services:\n\n";
+    foreach my $service ( sort keys %services ) {
+        printf "\t%-15s\t%s", $service, $services{$service}{desc} . "\n";
+    }
+    exit 0;
+}
+
+sub to_interval($) {
+    my $val      = shift;
+    my $interval = '';
+
+    return $val if $val =~ /^-?inf/i;
+
+    $val = int($val);
+
+    if ( $val > 60 ) {
+        my $mod = $val % 60;
+        $val      = int( $val / 60 );
+        $interval = "${mod}s";
+    }
+
+    if ( $val > 60 ) {
+        my $mod = $val % 60;
+        $val      = int( $val / 60 );
+        $interval = "${mod}m$interval";
+    }
+
+    if ( $val > 24 ) {
+        my $mod = $val % 24;
+        $val      = int( $val / 24 );
+        $interval = "${mod}h$interval";
+    }
+
+    if ( $val > 7 ) {
+        my $mod = $val % 7;
+        $val      = int( $val / 7 );
+        $interval = "${mod}d $interval";
+    }
+
+    return "${val}w $interval";
+}
+
+sub get_time($) {
+    my $str_time = lc( shift() );
+    my $ts       = 0;
+    my @date;
+
+    die(      "Malformed interval: «$str_time»!\n"
+            . "Authorized unit are: dD, hH, mM, sS\n" )
+        unless $str_time =~ /^([0-9]{1,2}[smhd])*[0-9]{1,2}[smhd]?$/;
+
+    # no bad units should exists after this line!
+
+    @date = split( /([smhd])/, $str_time );
+
+LOOP_TS: while ( my $val = shift @date ) {
+
+        $val = int($val) || die("Wrong value for an interval: «$val»!");
+        my $unit = shift @date;
+
+        if ( $unit eq 'm' ) {
+            $ts += $val * 60;
+            next LOOP_TS;
+        }
+
+        if ( $unit eq 'h' ) {
+            $ts += $val * 3600;
+            next LOOP_TS;
+        }
+
+        if ( $unit eq 'd' ) {
+            $ts += $val * 86400;
+            next LOOP_TS;
+        }
+
+        $ts += $val;
+    }
+
+    return $ts;
+}
+
+sub get_size($;$) {
+    my $str_size = shift;
+    my $size     = 0;
+    my $unit     = '';
+
+    $str_size =~ /^([0-9.]+)(.*)$/;
+
+    $size = int($1);
+    $unit = lc($2);
+
+    return $size unless $unit ne '';
+
+    if ( $unit eq '%' ) {
+        my $ratio = shift
+            || die("Can not compute a ratio without the factor!");
+
+        return int( $size * $ratio / 100 );
+    }
+
+    return $size           if $unit eq 'b';
+    return $size * 1024    if $unit eq 'k';
+    return $size * 1024**2 if $unit eq 'm';
+    return $size * 1024**3 if $unit eq 'g';
+    return $size * 1024**4 if $unit eq 't';
+    return $size * 1024**5 if $unit eq 'p';
+    return $size * 1024**6 if $unit eq 'e';
+    return $size * 1024**7 if $unit eq 'z';
+
+    die("Unknown size unit: $unit");
+}
+
+sub query($$;$) {
+    my $host  = shift;
+    my $query = shift;
+    my $pid;
+    my $db = shift || $host->{db};
+    my $rc;
+    my $rnum = 0;
+    my @res;
+    my @err;
+
+    dprint("$query\n");
+
+    $pid = open3( *PSQLIN, *PSQLOUT, *PSQLERR,
+        ( @{ $host->{psqlopts} }, $db ) );
+
+    print PSQLIN $query;
+
+    close PSQLIN;
+
+    waitpid( $pid, 0 );
+
+    $rc = $? >> 8;
+
+    @err = <PSQLERR>;
+
+    dprint("rc: $rc\n");
+    dprint( sprintf( "stderr: %d\n", scalar(@err) ) );
+
+    unless ( $rc == 0 and scalar(@err) == 0 ) {
+        warn "Query fail !\n" . join " ", @err;
+        exit( $rc |= 1 );
+    }
+
+    close PSQLERR;
+
+    foreach my $field (<PSQLOUT>) {
+
+        if ( $field =~ /^\s*$/ ) {
+            $rnum++;
+            next;
+        }
+
+        chomp($field);
+
+        $field =~ /^[^|]+\|(.*)$/;
+        push @{ $res[$rnum] }, $1;
+    }
+
+    dprint( Dumper( \@res ) );
+
+    close PSQLOUT;
+
+    return \@res;
+}
+
+sub query_ver($%) {
+    my $host    = shift;
+    my %queries = %{ shift() };
+
+    foreach my $ver ( sort { $b cmp $a } keys %queries ) {
+        return query( $host, $queries{$ver} )
+            if ( $ver <= $host->{version_num} );
+    }
+
+    return undef;
+}
+
+sub get_all_dbname($) {
+    my @dbs;
+
+    push @dbs => $_->[0] foreach (
+        @{  query(
+                shift, q{
+            SELECT datname
+            FROM pg_database
+            WHERE NOT datistemplate
+                AND datname <> 'postgres';
+        }
+            )
+        }
+    );
+
+    return \@dbs;
+}
+
+sub is_service_compatible($$) {
+    my $host    = shift;
+    my $service = shift;
+
+    $services{$service}{min} = $PG_VERSION_74
+        if not defined $services{$service}{min};
+    $services{$service}{max} = 9**9**9
+        if not defined $services{$service}{max};
+
+    return 1
+        if get_pgversion_num($host) >= $services{$service}{min}
+            and get_pgversion_num($host) <= $services{$service}{max};
+
+    return 0;
+}
+
+sub set_pgversion($) {
+    my $host = shift;
+
+    unless ( $host->{version} ) {
+        $host->{version}
+            = @{ query( $host, q{SELECT current_setting('server_version')} )
+                ->[0] }[0];
+
+        if ( $? != 0 ) {
+            &dprint("FATAL: psql error, $!\n");
+            exit 1;
+        }
+        chomp( $host->{version} );
+    }
+
+    if ( $host->{version} =~ /^(\d+)\.(\d+)/ ) {
+        $host->{version_num} = int($1) * 100 + $2;
+        $host->{version}     = "$1.$2";
+
+        return;
+    }
+
+    return 1;
+}
+
+sub get_pgversion($) {
+    my $host = shift;
+    set_pgversion($host) unless $host->{version};
+
+    return $host->{version} if $host->{version};
+
+    return undef;
+}
+
+sub get_pgversion_num($) {
+    my $host = shift;
+
+    set_pgversion($host) unless $host->{version_num};
+
+    return $host->{version_num} if $host->{version_num};
+
+    return undef;
+}
+
+sub dprint {
+    return unless $args{'debug'};
+    foreach (@_) {
+        print "DEBUG: $_";
+    }
+}
+
+sub get_current_timestamp {
+
+    my ( $sec, $min, $hour, $mday, $mon, $year, $wday, $yday, $isdst )
+        = localtime(time);
+
+    $year += 1900;
+    $mon++;
+
+    return
+          $year . '-'
+        . sprintf( "%02d", $mon ) . '-'
+        . sprintf( "%02d", $mday ) . ' '
+        . sprintf( "%02d", $hour ) . ':'
+        . sprintf( "%02d", $min ) . ':'
+        . sprintf( "%02d", $sec );
+}
+
+sub unknown($@@) {
+    return output( 3, $_[0], $_[1], $_[2], $_[3] );
+}
+
+sub critical($@@) {
+    return output( 2, $_[0], $_[1], $_[2], $_[3] );
+}
+
+sub warning($@@) {
+    return output( 1, $_[0], $_[1], $_[2], $_[3] );
+}
+
+sub ok($@@) {
+    return output( 0, $_[0], $_[1], $_[2], $_[3] );
+}
+
+sub output ($$@@) {
+    my $rc       = shift;
+    my $check    = shift;
+    my @msg      = @{ shift() };
+    my @perfdata = @{ shift() };
+    my $state    = 'OK';
+
+    $state = 'WARNING'  if $rc == 1;
+    $state = 'CRITICAL' if $rc == 2;
+    $state = 'UNKNOWN'  if $rc == 3;
+
+    printf( "%s %s: %s | %s",
+        $check, $state,
+        join( ', ', @msg ),
+        join ' ' => @perfdata );
+
+    return $rc;
+}
+
+=head1 SERVICES
+
+Here is the list, descriptions and parameters of available services.
+
+=item B<check_backends>
+
+Check the total number of connexions on the cluster.
+
+Perfdata contains the number of connexions per database.
+
+Critical and Warning thresholds accept either a raw number or a percentage (eg.
+80%). When a threshold is in percent, it is compared to the cluster parameter
+C<max_connections>.
+
+=cut
+
+sub check_backends(@%) {
+
+    my @rc;
+    my @perfdata;
+    my @msg;
+    my $me           = 'POSTGRES_BACKENDS';
+    my @hosts        = @{ $_[0] };
+    my %args         = %{ $_[1] };
+    my $num_backends = 0;
+    my $sql          = q{SELECT datname, numbackends,
+        current_setting('max_connections')
+        FROM pg_stat_database};
+
+    @rc = @{ query( $hosts[0], $sql ) };
+
+    $args{critical} = int( $rc[0]->[2] * $args{critical} / 100 )
+        if ( $args{critical} =~ /%$/ );
+
+    $args{warning} = int( $rc[0]->[2] * $args{warning} / 100 )
+        if ( $args{warning} =~ /%$/ );
+
+    foreach my $db (@rc) {
+        $num_backends += $db->[1];
+        push @perfdata,
+            sprintf( "%s=%d;%d;%d;%d;%d",
+            $db->[0], $db->[1], $args{warning}, $args{critical}, 0,
+            $db->[2] );
+    }
+
+    push @msg => sprintf( "%d connexions on %d", $num_backends, $rc[0]->[2] );
+
+    return critical( $me, \@msg, \@perfdata )
+        if $num_backends >= $args{critical};
+
+    return warning( $me, \@msg, \@perfdata )
+        if $num_backends >= $args{warning};
+
+    return ok( $me, \@msg, \@perfdata );
+}
+
+=item B<check_database_size> (8.1+)
+
+Check the variation of database sizes.
+
+Perfdata contains the size of each database.
+
+Critical and Warning thresholds accept either a raw number, a percentage or a
+size (eg. 2.5G). Available units are kK, mM, gG, tT, pP, eE, zZ.
+
+=cut
+
+sub check_database_size(@%) {
+    my @msg_crit;
+    my @msg_warn;
+    my @rs;
+    my @perfdata;
+    my %new_db_sizes;
+    my %db_sizes = %{ load( $hosts[0], 'db_size' ) || {} };
+    my $me       = 'POSTGRES_DB_SIZE';
+    my @hosts    = @{ $_[0] };
+    my %args     = %{ $_[1] };
+    my $sql      = q{SELECT datname, pg_database_size(datname)
+        FROM pg_database};
+
+    @rs = @{ query( $hosts[0], $sql ) };
+
+DB_LOOP: foreach my $db (@rs) {
+        my $delta;
+        my $w_limit = get_size( $args{warning},  $db->[1] );
+        my $c_limit = get_size( $args{critical}, $db->[1] );
+        $new_db_sizes{ $db->[0] } = $db->[1];
+        $delta = $db->[1] - $db_sizes{ $db->[0] };
+
+        push @perfdata,
+            sprintf( "%s=%d;%d;%d", $db->[0], $db->[1], $w_limit, $c_limit );
+
+        if ( abs($delta) >= $c_limit ) {
+            push @msg_crit =>
+                sprintf( "%s (%d, now: %d)", $db->[0], $delta, $db->[1] );
+            next DB_LOOP;
+        }
+
+        if ( abs($delta) >= $w_limit ) {
+            push @msg_warn =>
+                sprintf( "%s (%d, now: %d)", $db->[0], $delta, $db->[1] );
+            next DB_LOOP;
+        }
+    }
+
+    save( $hosts[0], 'db_size', \%new_db_sizes );
+
+    return critical( $me, [ @msg_crit, @msg_warn ], \@perfdata )
+        if scalar @msg_crit > 0;
+
+    return warning( $me, \@msg_warn, \@perfdata ) if scalar @msg_warn > 0;
+
+    return ok( $me, [ scalar(@rs) . " database(s) checked" ], \@perfdata );
+}
+
+=item B<check_wal_files> (8.1+)
+
+Check the number of wal files.
+
+Perfdata returns the total number of wal files, current number of written wal
+and the current number of recycled wal.
+
+Critical and Warning thresholds accept either a raw number of file or a
+percentage. In case of percentage, the limit is computed based on:
+
+  100% = 1 + checkpoint_segments * (2 + checkpoint_completion_target)
+
+or for PostgreSQL 8.1 and 8.2:
+
+  100% = 1 + checkpoint_segments * 2
+=cut
+
+sub check_wal_files(@%) {
+    my $wal_num;
+    my $w_limit;
+    my $c_limit;
+    my @rs;
+    my @perfdata;
+    my @msg;
+    my $me      = 'POSTGRES_WAL_FILES';
+    my @hosts   = @{ $_[0] };
+    my %args    = %{ $_[1] };
+    my %queries = (
+        $PG_VERSION_84 => q{
+            SELECT count(*) AS count, sum(is_recycled::int) AS is_recycled,
+              sum((NOT is_recycled)::int) AS written,
+              1 + (
+                current_setting('checkpoint_segments')::float4 *
+                ( 2 + current_setting('checkpoint_completion_target')::float4 )
+              ) AS max_wal                                                 
+            FROM (
+              SELECT file > first_value(file) OVER w AS is_recycled
+              FROM pg_ls_dir('pg_xlog') as file
+              WHERE file ~ '^[0-9A-F]{24}$'
+              WINDOW w AS (
+                ORDER BY (pg_stat_file('pg_xlog/'||file)).modification
+                DESC
+              )
+            ) AS t                                                                
+            GROUP BY 4},
+        $PG_VERSION_83 => q{
+            SELECT count(*) AS num_file,
+                sum(recycled::int) AS is_recycled,
+                sum((NOT recycled)::int) AS written,
+                1 + (
+                    current_setting('checkpoint_segments')::float4 *
+                    ( 2 + current_setting('checkpoint_completion_target')::float4 )
+                )
+            FROM (
+              SELECT file, file > (
+                SELECT s.f
+                FROM pg_ls_dir('pg_xlog') AS s(f)
+                ORDER BY (pg_stat_file('pg_xlog/'||s.f)).modification DESC
+                LIMIT 1
+              ) AS recycled
+              FROM pg_ls_dir('pg_xlog') AS file
+              WHERE file ~ '^[0-9A-F]{24}$'
+            ) AS t},
+        $PG_VERSION_81 => q{
+            SELECT count(*) AS num_file,
+                sum(recycled::int) AS is_recycled,
+                sum((NOT recycled)::int) AS written,
+                1 + (current_setting('checkpoint_segments')::integer * 2)
+            FROM (
+              SELECT file, file > (
+                SELECT s.f
+                FROM pg_ls_dir('pg_xlog') AS s(f)
+                ORDER BY (pg_stat_file('pg_xlog/'||s.f)).modification DESC
+                LIMIT 1
+              ) AS recycled
+              FROM pg_ls_dir('pg_xlog') AS file
+              WHERE file ~ '^[0-9A-F]{24}$'
+            ) AS t}
+    );
+
+    @rs = @{ query_ver( $hosts[0], \%queries )->[0] };
+
+    $w_limit = get_size( $args{warning},  $rs[3] );
+    $c_limit = get_size( $args{critical}, $rs[3] );
+
+    push @perfdata => sprintf( "total_wal=%d;%d;%d;1;%d",
+        $rs[0], $w_limit, $c_limit, $rs[3] );
+    push @perfdata => sprintf( "recycled_wal=%d;%d;%d;0;%d",
+        $rs[1], $w_limit, $c_limit, $rs[3] );
+    push @perfdata => sprintf( "written_wal=%d;%d;%d;1;%d",
+        $rs[2], $w_limit, $c_limit, $rs[3] );
+
+    push @msg => "$rs[0] WAL files";
+
+    return critical( $me, \@msg, \@perfdata ) if $rs[0] >= $c_limit;
+    return warning( $me, \@msg, \@perfdata ) if $rs[0] >= $w_limit;
+    return ok( $me, \@msg, \@perfdata );
+}
+
+=item B<check_ready_archives> (8.1+)
+
+Check the number of wal files ready to archive.
+
+Perfdata returns the number of wal files waiting to be archived.
+
+Critical and Warning thresholds only accept a raw number of file
+=cut
+
+sub check_ready_archives(@%) {
+    my $rs;
+    my @perfdata;
+    my @msg;
+    my $me    = 'POSTGRES_READY_ARCHIVES';
+    my @hosts = @{ $_[0] };
+    my %args  = %{ $_[1] };
+    my $query = q{
+         SELECT count(*) AS count
+         FROM pg_ls_dir('pg_xlog/archive_status') as file
+         WHERE file ~ '^[0-9A-F]{24}.ready$' };
+
+    $rs = query( $hosts[0], $query )->[0];
+
+    push @perfdata => sprintf( "ready_archives=%d;%d;%d",
+        $rs->[0], $args{warning}, $args{critical} );
+
+    push @msg => "$rs->[0] WAL files ready to archive";
+
+    return critical( $me, \@msg, \@perfdata ) if $rs->[0] >= $args{critical};
+    return warning( $me, \@msg, \@perfdata ) if $rs->[0] >= $args{warning};
+    return ok( $me, \@msg, \@perfdata );
+}
+
+=item B<check_last_vacuum> (8.2+)
+
+Check the oldest vacuum on the database (from autovacuum or not) is not older
+than the given limits.
+
+Perfdata returns oldest vacuum per database in seconds.
+
+Critical and Warning thresholds only accept a duration. Available units
+are sS, mM, hH, dD. Minute (m) is the default.
+=cut
+
+sub check_last_vacuum(@$) {
+    my $rs;
+    my @perfdata;
+    my @msg_crit;
+    my @msg_warn;
+    my $c_limit = get_time( $args{critical} );
+    my $w_limit = get_time( $args{warning} );
+    my @msg;
+    my $me     = 'POSTGRES_LAST_VACUUM';
+    my @hosts  = @{ $_[0] };
+    my %args   = %{ $_[1] };
+    my @all_db = @{ get_all_dbname( $hosts[0] ) };
+    my $query  = q{
+         SELECT min(
+            coalesce(
+                extract(epoch FROM current_timestamp -
+                    CASE last_autovacuum > last_vacuum
+                        WHEN 't' THEN last_autovacuum
+                        ELSE last_vacuum
+                    END
+                )::float, '-infinity'::float
+            ))
+            FROM pg_stat_user_tables
+    };
+
+LOOP_DB: foreach my $db (@all_db) {
+        my $rs = @{ query( $hosts[0], $query, $db )->[0] }[0];
+        push @perfdata =>
+            sprintf( '%s=%d;%d;%d', $db, $rs, $w_limit, $c_limit );
+
+        if ( $rs =~ /^-inf/i or $rs >= $c_limit ) {
+            push @msg_crit => "$db: " . to_interval($rs);
+            next LOOP_DB;
+        }
+
+        if ( $rs >= $w_limit ) {
+            push @msg_warn => "$db: " . to_interval($rs);
+            next LOOP_DB;
+        }
+    }
+
+    return critical( $me, [ @msg_crit, @msg_warn ], \@perfdata )
+        if scalar @msg_crit > 0;
+
+    return warning( $me, \@msg_warn, \@perfdata ) if scalar @msg_warn > 0;
+
+    return ok( $me, [ scalar(@all_db) . " database(s) checked" ],
+        \@perfdata );
+}
+
+__END__
+
+=head1 LICENSING
+
+This program is open source, licensed under the simplified BSD license. For
+license terms, see the LICENSE provided with the sources.
+
+=head1 AUTHORS
+
+  Author: Jehan-Guillaume de Rorthais
+  Copyright: (C) 2012 Jehan-Guillaume de Rorthais - All rights reserved.
+
+  Dalibo's team. http://www.dalibo.org
+  
+=cut
