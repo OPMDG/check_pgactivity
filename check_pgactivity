@@ -739,7 +739,7 @@ sub check_backends(@%) {
             $db->[2] );
     }
 
-    push @msg => sprintf( "%d connexions on %d", $num_backends, $rc[0]->[2] );
+    push @msg => sprintf( "%d connections on %d", $num_backends, $rc[0]->[2] );
 
     return critical( $me, \@msg, \@perfdata )
         if $num_backends >= $args{critical};
