@@ -88,6 +88,10 @@ my %services = (
         'desc' =>
             'Check the oldest analyze (from autovacuum or not) on the database.',
         'min' => $PG_VERSION_82
+    },
+    'locks' => {
+        'sub'  => \&check_locks,
+        'desc' => 'Check the number of locks on the hosts.'
     }
 );
 
@@ -1016,6 +1020,72 @@ Critical and Warning thresholds only accept an interval (eg. 1h30m25s).
 
 sub check_last_vacuum(@$) {
     return check_last_maintenance( 'vacuum', @_ );
+}
+
+=item B<check_locks> (all)
+
+Check the number of locks on the hosts.
+
+Perfdata returns the number of lock for kind of lock.
+
+Critical and Warning thresholds accept either a raw number of lock or a
+percentage. In case of percentage, it is computed against the following limits
+for 7.4 to 8.1:
+
+  max_locks_per_transaction * max_connections
+
+for 8.2+:
+
+  max_locks_per_transaction * (max_connections + max_prepared_transactions)
+
+=cut
+
+sub check_locks(@%) {
+    my @rs;
+    my @perfdata;
+    my @msg;
+    my $total_locks = 0;
+    my $me          = 'POSTGRES_LOCKS';
+    my @hosts       = @{ $_[0] };
+    my %args        = %{ $_[1] };
+    my %queries     = (
+        $PG_VERSION_74 => q{
+            SELECT count(*), mode,
+                current_setting('max_locks_per_transaction')::integer
+                * current_setting('max_connections')::integer)
+            FROM pg_locks
+            GROUP BY 2,3
+        },
+        $PG_VERSION_82 => q{
+            SELECT count(*), mode,
+                current_setting('max_locks_per_transaction')::integer * (
+                    current_setting('max_prepared_transactions')::integer
+                    + current_setting('max_connections')::integer)
+            FROM pg_locks
+            GROUP BY 2,3
+        }
+    );
+
+    @rs = @{ query_ver( $hosts[0], \%queries ) };
+
+    $args{critical} = $args{critical} * $rs[0][0] if $args{critical} =~ /%$/;
+    $args{warning}  = $args{warning} * $rs[0][0]  if $args{warning}  =~ /%$/;
+
+    map {
+        $total_locks += $_->[0];
+        push @perfdata => sprintf( "%s=%d;%d;%d",
+            $_->[1], $_->[0], $args{warning}, $args{critical} );
+    } @rs;
+
+    push @msg => "$total_locks locks";
+
+    return critical( $me, \@msg, \@perfdata )
+        if $total_locks >= $args{critical};
+
+    return warning( $me, \@msg, \@perfdata )
+        if $total_locks >= $args{warning};
+
+    return ok( $me, \@msg, \@perfdata );
 }
 
 __END__
