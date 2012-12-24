@@ -10,7 +10,7 @@ Version 1.0
 
 =head1 SYNOPSIS
 
-  check_pgactivity [-s|--service] [-h|--host] [-U|--username] [-p|--port] [-d|--dbname] [-S|--dbservice] [-w|--warning] [-c|--critical] [-P|--psql] [--debug]
+  check_pgactivity {-w|--warning} {-c|--critical} [-s|--service] [-h|--host] [-U|--username] [-p|--port] [-d|--dbname] [-S|--dbservice] [-P|--psql] [--debug]
   check_pgactivity [--list]
   check_pgactivity [--help]
 
@@ -192,6 +192,12 @@ list_services() if $args{list};
 version()       if $args{version};
 
 usage( verbose => 2 ) if $args{help};
+
+# Critical and Warning must be given
+usage(
+    msg => "FATAL: you must specify critical and warning thresholds.\n",
+    rc  => 1
+) unless defined $args{warning} and $args{critical};
 
 # One service must be given
 usage(
@@ -688,7 +694,7 @@ Here is the list, descriptions and parameters of available services.
 
 =over
 
-=item B<check_backends>
+=item B<check_backends> (all)
 
 Check the total number of connexions on the cluster.
 
