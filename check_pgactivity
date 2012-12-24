@@ -107,8 +107,6 @@ my %args = (
     'debug'     => 0
 );
 
-my $rc = 0;
-
 =over
 
 =item B<-s>, B<--service> SERVICE
@@ -191,10 +189,26 @@ GetOptions(
 ) or usage();
 
 list_services() if $args{list};
-usage( { verbose => 2 } ) if $args{help};
-version() if $args{version};
+version()       if $args{version};
 
-# Set multi host informations
+usage( verbose => 2 ) if $args{help};
+
+# One service must be given
+usage(
+    msg => "FATAL: you must specify one service.\n"
+        . "See -s or --service command line option.\n",
+    rc => 1
+) unless defined $args{service};
+
+# Check that the given service exists.
+usage(
+    msg => "FATAL: service $args{service} does not exist.\n"
+        . "Use --list to show the available services.\n",
+    rc => 1
+) unless exists $services{ $args{service} };
+
+# check_pgactivity might be call with several host informations
+# Build the final @hosts array with connection informations for all given host.
 my @hosts   = ();
 my @dbhosts = split( /,/, $args{host} );
 my @dbnames = split( /,/, $args{dbname} );
@@ -202,6 +216,10 @@ my @dbusers = split( /,/, $args{username} );
 my @dbports = split( /,/, $args{port} );
 my $nbhosts = max $#dbhosts, $#dbnames, $#dbusers, $#dbports;
 
+# Take the first value for each connection properties as default.
+# eg. "-h localhost -p 5432,5433" gives two hosts:
+#    * localhost:5432
+#    * localhost:5433
 for ( my $i = 0; $i <= $nbhosts; $i++ ) {
     push(
         @hosts,
@@ -214,6 +232,7 @@ for ( my $i = 0; $i <= $nbhosts; $i++ ) {
     );
 }
 
+# build the psql command line for each host.
 map {
     $_->{psqlopts} = [
         $args{psql}, '-qxXAtf', '-',        '-h',
@@ -221,28 +240,6 @@ map {
         $_->{user}
         ]
 } @hosts;
-
-# Validate service(s) to execute
-unless ( defined $args{service} ) {
-    usage(
-        {   msg =>
-                "FATAL: you must specify one service. See -s or --service command line option.",
-            rc => 1
-        }
-    );
-    exit 1;
-}
-
-# check if service exists
-unless ( exists $services{ $args{service} } ) {
-    usage(
-        {   msg =>
-                "FATAL: service $args{service} does not exist. Use --list to show the available services.",
-            rc => 1
-        }
-    );
-    exit 1;
-}
 
 # Die on kill -2, -3 or -15
 $SIG{'INT'} = $SIG{'QUIT'} = $SIG{'TERM'} = 'terminate';
@@ -263,18 +260,18 @@ foreach my $host (@hosts) {
         $args{service}, $host->{host}, $host->{port}, $host->{version} );
 }
 
-$rc = $services{ $args{service} }{sub}->( \@hosts, \%args );
+exit $services{ $args{service} }{sub}->( \@hosts, \%args );
 
-exit $rc;
-
+# print the version and exit
 sub version() {
     print "check_pgactivity version $VERSION\n";
 
     exit 0;
 }
 
+# print help and exit
 sub usage() {
-    my %ops = %{ $_[0] };
+    my %ops = @_;
 
     $ops{rc} |= 0;
     $ops{verbose} = ( exists $ops{verbose} ? 2 : 0 );
@@ -284,19 +281,26 @@ sub usage() {
     pod2usage( -exitval => $ops{rc}, -verbose => $ops{verbose} );
 }
 
-sub load(%$) {
-    my %host    = %{ shift() };
-    my $name    = shift;
-    my $hostkey = "$host{host}$host{port}";
-    my $all;
+# List services that can be performed
+sub list_services() {
 
-    return undef unless -f $STORAGE_PATH;
-
-    $all = retrieve($STORAGE_PATH);
-
-    return $all->{$hostkey}->{$name};
+    print "List of available services:\n\n";
+    foreach my $service ( sort keys %services ) {
+        printf "\t%-15s\t%s", $service, $services{$service}{desc} . "\n";
+    }
+    exit 0;
 }
 
+# Record the given ref content for the given host in a file on disk.
+# The file is defined by global var "$STORAGE_PATH"
+#
+# Format of this file is:
+#   {
+#     "${host}${port}" => {
+#       "$name" => ref
+#     }
+#   }
+# data can be retrieved later using the "load" sub.
 sub save(%$$) {
     my %host    = %{ shift() };
     my $name    = shift;
@@ -312,16 +316,30 @@ sub save(%$$) {
         or die "Can't store data in «$STORAGE_PATH»!\n";
 }
 
-# List services that can be performed
-sub list_services() {
+# Load the given ref content for the given host from the file on disk.
+# The file is defined by global var "$STORAGE_PATH"
+#
+# Format of this file is:
+#   {
+#     "${host}${port}" => {
+#       "$name" => ref
+#     }
+#   }
+sub load(%$) {
+    my %host    = %{ shift() };
+    my $name    = shift;
+    my $hostkey = "$host{host}$host{port}";
+    my $all;
 
-    print "List of available services:\n\n";
-    foreach my $service ( sort keys %services ) {
-        printf "\t%-15s\t%s", $service, $services{$service}{desc} . "\n";
-    }
-    exit 0;
+    return undef unless -f $STORAGE_PATH;
+
+    $all = retrieve($STORAGE_PATH);
+
+    return $all->{$hostkey}->{$name};
 }
 
+# Returns formated time string with units.
+# Takes a duration in seconds as parameter.
 sub to_interval($) {
     my $val      = shift;
     my $interval = '';
@@ -331,22 +349,22 @@ sub to_interval($) {
     $val = int($val);
 
     if ( $val > 604800 ) {
-        $interval = int($val/604800) ."w ";
+        $interval = int( $val / 604800 ) . "w ";
         $val %= 604800;
     }
 
     if ( $val > 86400 ) {
-        $interval .= int($val/86400) ."d ";
+        $interval .= int( $val / 86400 ) . "d ";
         $val %= 86400;
     }
 
     if ( $val > 3600 ) {
-        $interval .= int($val/3600) ."h";
+        $interval .= int( $val / 3600 ) . "h";
         $val %= 3600;
     }
 
     if ( $val > 60 ) {
-        $interval .= int($val/60) ."m";
+        $interval .= int( $val / 60 ) . "m";
         $val %= 60;
     }
 
@@ -364,6 +382,7 @@ one unit per give value. If not set, the last unit is in seconds. Eg.: "1h 55m
 
 =cut
 
+# Takes an interval (with units) as parameter and returns a duration in second.
 sub get_time($) {
     my $str_time = lc( shift() );
     my $ts       = 0;
@@ -371,7 +390,8 @@ sub get_time($) {
 
     die(      "Malformed interval: «$str_time»!\n"
             . "Authorized unit are: dD, hH, mM, sS\n" )
-        unless $str_time =~ /^\s*([0-9]{1,2}\s*[smhd]\s*)*[0-9]{1,2}\s*[smhd]?\s*$/;
+        unless $str_time
+            =~ /^\s*([0-9]{1,2}\s*[smhd]\s*)*[0-9]{1,2}\s*[smhd]?\s*$/;
 
     # no bad units should exists after this line!
 
@@ -411,6 +431,8 @@ between units is 1024 Bytes. Eg. 1g = 1G = 1024*1024*1024.
 
 =cut
 
+# Takes a size with unit as parameter and returns it in bytes.
+# If unit is '%', use the second parameter to compute the size in byte.
 sub get_size($;$) {
     my $str_size = shift;
     my $size     = 0;
@@ -442,6 +464,16 @@ sub get_size($;$) {
     die("Unknown size unit: $unit");
 }
 
+# Execute a query on a host.
+# Params:
+#   * host
+#   * query
+#   * (optionnal) database
+# The result is an array of array:
+#   [
+#     [column1, ...] # line1
+#     ...
+#   ]
 sub query($$;$) {
     my $host  = shift;
     my $query = shift;
@@ -497,18 +529,35 @@ sub query($$;$) {
     return \@res;
 }
 
-sub query_ver($%) {
+# Select the query appropriate query amongs an hash of query according to the
+# backend version and execute it. Same argument order than in "query" sub.
+# Hash of query must be of this form:
+#   {
+#     pg_version_num => $query1,
+#     ...
+#   }
+#
+# Where pg_version_num is the minimum PostgreSQL version which can run the
+# query. The given versions are in numric version. See "set_pgversion" about
+# how to compute a PostgreSQL num version, or globals $PG_VERSION_*.
+sub query_ver($%;$) {
     my $host    = shift;
     my %queries = %{ shift() };
 
+    # shift returns undef if he db is not given. The value is then set in
+    # "query" sub
+    my $db = shift;
+
     foreach my $ver ( sort { $b cmp $a } keys %queries ) {
-        return query( $host, $queries{$ver} )
+        return query( $host, $queries{$ver}, $db )
             if ( $ver <= $host->{version_num} );
     }
 
     return undef;
 }
 
+# Returns an array (not sorted) with all databases existing in given host but
+# templates and "postgres" one.
 sub get_all_dbname($) {
     my @dbs;
 
@@ -527,6 +576,7 @@ sub get_all_dbname($) {
     return \@dbs;
 }
 
+# check if given host can run the given service
 sub is_service_compatible($$) {
     my $host    = shift;
     my $service = shift;
@@ -543,6 +593,7 @@ sub is_service_compatible($$) {
     return 0;
 }
 
+# Query and set the version for the given host
 sub set_pgversion($) {
     my $host = shift;
 
@@ -568,6 +619,7 @@ sub set_pgversion($) {
     return 1;
 }
 
+# returns the human readable version of the given host
 sub get_pgversion($) {
     my $host = shift;
     set_pgversion($host) unless $host->{version};
@@ -577,6 +629,7 @@ sub get_pgversion($) {
     return undef;
 }
 
+# returns the machine readable version (as integer) of the given host
 sub get_pgversion_num($) {
     my $host = shift;
 
@@ -592,23 +645,6 @@ sub dprint {
     foreach (@_) {
         print "DEBUG: $_";
     }
-}
-
-sub get_current_timestamp {
-
-    my ( $sec, $min, $hour, $mday, $mon, $year, $wday, $yday, $isdst )
-        = localtime(time);
-
-    $year += 1900;
-    $mon++;
-
-    return
-          $year . '-'
-        . sprintf( "%02d", $mon ) . '-'
-        . sprintf( "%02d", $mday ) . ' '
-        . sprintf( "%02d", $hour ) . ':'
-        . sprintf( "%02d", $min ) . ':'
-        . sprintf( "%02d", $sec );
 }
 
 sub unknown($@@) {
@@ -908,7 +944,7 @@ sub check_last_maintenance($@%) {
     my @hosts  = @{ $_[0] };
     my %args   = %{ $_[1] };
     my @all_db = @{ get_all_dbname( $hosts[0] ) };
-    my $me     = 'POSTGRES_LAST_'. uc($type);
+    my $me     = 'POSTGRES_LAST_' . uc($type);
     my $query  = qq{
          SELECT min(
             coalesce(
@@ -956,10 +992,10 @@ Perfdata returns oldest analyze per database in seconds.
 
 Critical and Warning thresholds only accept an interval (eg. 1h30m25s).
 =cut
-sub check_last_analyze(@%) {
-    return check_last_maintenance('analyze', @_);
-}
 
+sub check_last_analyze(@%) {
+    return check_last_maintenance( 'analyze', @_ );
+}
 
 =item B<check_last_vacuum> (8.2+)
 
@@ -973,7 +1009,7 @@ Critical and Warning thresholds only accept an interval (eg. 1h30m25s).
 =cut
 
 sub check_last_vacuum(@$) {
-    return check_last_maintenance('vacuum', @_);
+    return check_last_maintenance( 'vacuum', @_ );
 }
 
 __END__
