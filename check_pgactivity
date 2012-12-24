@@ -10,7 +10,7 @@ Version 1.0
 
 =head1 SYNOPSIS
 
-  check_pgactivity {-w|--warning} {-c|--critical} [-s|--service] [-h|--host] [-U|--username] [-p|--port] [-d|--dbname] [-S|--dbservice] [-P|--psql] [--debug]
+  check_pgactivity {-w|--warning THRESHOLD} {-c|--critical THRESHOLD} [-s|--service SERVICE ] [-h|--host HOST] [-U|--username ROLE] [-p|--port PORT] [-d|--dbname DATABASE] [-S|--dbservice SERVICE_NAME] [-P|--psql PATH] [--debug] [--status-file FILE]
   check_pgactivity [--list]
   check_pgactivity [--help]
 
@@ -42,8 +42,6 @@ $| = 1;
 
 $VERSION = '1.0';
 $PROGRAM = 'check_pgactivity';
-
-my $STORAGE_PATH = dirname(__FILE__) . '/check_pgactivity.data';
 
 my $PG_VERSION_74 = 704;
 my $PG_VERSION_80 = 800;
@@ -106,6 +104,7 @@ my %args = (
     'critical'  => undef,
     'exclude'   => '',
     'psql'      => '/usr/bin/psql',
+    'status-file' => dirname(__FILE__) . '/check_pgactivity.data',
     'list'      => 0,
     'help'      => 0,
     'debug'     => 0
@@ -150,6 +149,11 @@ The critical threshold.
 
 Path to the C<psql> executable (default: "/usr/bin/psql").
 
+=item B<--status-file> PATH
+
+PATH to the file where service status information will be kept between two
+call. Default to check_pgactivity.data in the same directory of the script.
+
 =item B<--list>
 
 List available services.
@@ -185,6 +189,7 @@ GetOptions(
         warning|w=s
         critical|c=s
         psql|P=s
+        status-file=s
         list!
         version|V!
         help|?!
@@ -302,48 +307,46 @@ sub list_services() {
 }
 
 # Record the given ref content for the given host in a file on disk.
-# The file is defined by global var "$STORAGE_PATH"
+# The file is defined by argument status-file on command line. By default:
 #
-# Format of this file is:
+#  dirname(__FILE__) . '/check_pgactivity.data'
+#
+# Format of data in this file is:
 #   {
 #     "${host}${port}" => {
 #       "$name" => ref
 #     }
 #   }
 # data can be retrieved later using the "load" sub.
-sub save(%$$) {
+sub save(%$$$) {
     my %host    = %{ shift() };
     my $name    = shift;
     my $ref     = shift;
+    my $storage = shift;
     my $all     = {};
     my $hostkey = "$host{host}$host{port}";
 
-    $all = retrieve($STORAGE_PATH) if -f $STORAGE_PATH;
+    $all = retrieve($storage) if -f $storage;
 
     $all->{$hostkey}->{$name} = $ref;
 
-    store( $all, $STORAGE_PATH )
-        or die "Can't store data in «$STORAGE_PATH»!\n";
+    store( $all, $storage )
+        or die "Can't store data in '$storage'!\n";
 }
 
 # Load the given ref content for the given host from the file on disk.
-# The file is defined by global var "$STORAGE_PATH"
 #
-# Format of this file is:
-#   {
-#     "${host}${port}" => {
-#       "$name" => ref
-#     }
-#   }
-sub load(%$) {
+# See "save" sub comments for more info.
+sub load(%$$) {
     my %host    = %{ shift() };
     my $name    = shift;
+    my $storage = shift;
     my $hostkey = "$host{host}$host{port}";
     my $all;
 
-    return undef unless -f $STORAGE_PATH;
+    return undef unless -f $storage;
 
-    $all = retrieve($STORAGE_PATH);
+    $all = retrieve($storage);
 
     return $all->{$hostkey}->{$name};
 }
@@ -767,7 +770,7 @@ sub check_database_size(@%) {
     my @rs;
     my @perfdata;
     my %new_db_sizes;
-    my %db_sizes = %{ load( $hosts[0], 'db_size' ) || {} };
+    my %db_sizes = %{ load( $hosts[0], 'db_size', $args{'status-file'} ) || {} };
     my $me       = 'POSTGRES_DB_SIZE';
     my @hosts    = @{ $_[0] };
     my %args     = %{ $_[1] };
@@ -799,7 +802,7 @@ DB_LOOP: foreach my $db (@rs) {
         }
     }
 
-    save( $hosts[0], 'db_size', \%new_db_sizes );
+    save( $hosts[0], 'db_size', \%new_db_sizes, $args{'status-file'} );
 
     return critical( $me, [ @msg_crit, @msg_warn ], \@perfdata )
         if scalar @msg_crit > 0;
