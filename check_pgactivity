@@ -195,31 +195,33 @@ GetOptions(
         help|?!
         debug!
         }
-) or usage();
+) or pod2usage(
+    -exitval => 2
+);
 
 list_services() if $args{list};
 version()       if $args{version};
 
-usage( verbose => 2 ) if $args{help};
+pod2usage(-verbose => 2) if $args{help};
 
 # Critical and Warning must be given
-usage(
-    msg => "FATAL: you must specify critical and warning thresholds.\n",
-    rc  => 1
+pod2usage(
+    -message => "FATAL: you must specify critical and warning thresholds.",
+    -exitval => 1
 ) unless defined $args{warning} and $args{critical};
 
 # One service must be given
-usage(
-    msg => "FATAL: you must specify one service.\n"
-        . "See -s or --service command line option.\n",
-    rc => 1
+pod2usage(
+    -message => "FATAL: you must specify one service.\n"
+        . "    See -s or --service command line option.",
+    -exitval  => 1
 ) unless defined $args{service};
 
 # Check that the given service exists.
-usage(
-    msg => "FATAL: service $args{service} does not exist.\n"
-        . "Use --list to show the available services.\n",
-    rc => 1
+pod2usage(
+    -message => "FATAL: service $args{service} does not exist.\n"
+        . "    Use --list to show the available services.",
+    -exitval => 1
 ) unless exists $services{ $args{service} };
 
 # check_pgactivity might be call with several host informations
@@ -282,18 +284,6 @@ sub version() {
     print "check_pgactivity version $VERSION\n";
 
     exit 0;
-}
-
-# print help and exit
-sub usage() {
-    my %ops = @_;
-
-    $ops{rc} |= 0;
-    $ops{verbose} = ( exists $ops{verbose} ? 2 : 0 );
-
-    print "$ops{msg}\n" if ( $ops{msg} );
-
-    pod2usage( -exitval => $ops{rc}, -verbose => $ops{verbose} );
 }
 
 # List services that can be performed
