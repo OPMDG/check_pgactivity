@@ -95,10 +95,10 @@ my %services = (
 
 my %args = (
     'service'   => undef,
-    'host'      => 'localhost',
-    'username'  => 'postgres',
-    'port'      => '5432',
-    'dbname'    => 'postgres',
+    'host'      => $ENV{PGHOST}     || 'localhost',
+    'username'  => $ENV{PGDATABASE} || 'postgres',
+    'port'      => $ENV{PGPORT}     || '5432',
+    'dbname'    => $ENV{PGDATABASE} || 'postgres',
     'dbservice' => undef,
     'warning'   => undef,
     'critical'  => undef,
