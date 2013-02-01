@@ -830,6 +830,27 @@ sub check_wal_files(@%) {
     my @hosts   = @{ $_[0] };
     my %args    = %{ $_[1] };
     my %queries = (
+        $PG_VERSION_90 => q{
+			SELECT count(*) AS count, sum(is_recycled::int) AS is_recycled,
+              sum((NOT is_recycled)::int) AS written,
+              CASE WHEN max_wal1 > max_wal2 THEN max_wal1 ELSE max_wal2 END
+                AS max_wal
+            FROM (
+              SELECT file > first_value(file) OVER w AS is_recycled,
+               1 + (
+                current_setting('checkpoint_segments')::float4 *
+                ( 2 + current_setting('checkpoint_completion_target')::float4 )
+               ) AS max_wal1,
+               1 + current_setting('wal_keep_segments')::float4 + 
+                  current_setting('checkpoint_segments')::float4 AS max_wal2     
+              FROM pg_ls_dir('pg_xlog') as file
+              WHERE file ~ '^[0-9A-F]{24}$'
+              WINDOW w AS (
+                ORDER BY (pg_stat_file('pg_xlog/'||file)).modification
+                DESC
+              )
+            ) AS t                                                                
+            GROUP BY 4;},
         $PG_VERSION_84 => q{
             SELECT count(*) AS count, sum(is_recycled::int) AS is_recycled,
               sum((NOT is_recycled)::int) AS written,
