@@ -100,10 +100,10 @@ my %services = (
 
 my %args = (
     'service'     => undef,
-    'host'        => $ENV{PGHOST} || 'localhost',
-    'username'    => $ENV{PGDATABASE} || 'postgres',
-    'port'        => $ENV{PGPORT} || '5432',
-    'dbname'      => $ENV{PGDATABASE} || 'postgres',
+    'host'        => $ENV{'PGHOST'} || 'localhost',
+    'username'    => $ENV{'PGDATABASE'} || 'postgres',
+    'port'        => $ENV{'PGPORT'} || '5432',
+    'dbname'      => $ENV{'PGDATABASE'} || 'postgres',
     'dbservice'   => undef,
     'warning'     => undef,
     'critical'    => undef,
@@ -202,38 +202,38 @@ GetOptions(
         }
 ) or pod2usage( -exitval => 2 );
 
-list_services() if $args{list};
-version()       if $args{version};
+list_services() if $args{'list'};
+version()       if $args{'version'};
 
-pod2usage( -verbose => 2 ) if $args{help};
+pod2usage( -verbose => 2 ) if $args{'help'};
 
 # Critical and Warning must be given
 pod2usage(
-    -message => "FATAL: you must specify critical and warning thresholds.",
+    -message => 'FATAL: you must specify critical and warning thresholds.',
     -exitval => 1
-) unless defined $args{warning} and $args{critical};
+) unless defined $args{'warning'} and $args{'critical'};
 
 # One service must be given
 pod2usage(
     -message => "FATAL: you must specify one service.\n"
         . "    See -s or --service command line option.",
     -exitval => 1
-) unless defined $args{service};
+) unless defined $args{'service'};
 
 # Check that the given service exists.
 pod2usage(
-    -message => "FATAL: service $args{service} does not exist.\n"
+    -message => "FATAL: service $args{'service'} does not exist.\n"
         . "    Use --list to show the available services.",
     -exitval => 1
-) unless exists $services{ $args{service} };
+) unless exists $services{ $args{'service'} };
 
 # check_pgactivity might be call with several host informations
 # Build the final @hosts array with connection informations for all given host.
 my @hosts   = ();
-my @dbhosts = split( /,/, $args{host} );
-my @dbnames = split( /,/, $args{dbname} );
-my @dbusers = split( /,/, $args{username} );
-my @dbports = split( /,/, $args{port} );
+my @dbhosts = split( /,/, $args{'host'} );
+my @dbnames = split( /,/, $args{'dbname'} );
+my @dbusers = split( /,/, $args{'username'} );
+my @dbports = split( /,/, $args{'port'} );
 my $nbhosts = max $#dbhosts, $#dbnames, $#dbusers, $#dbports;
 
 # Take the first value for each connection properties as default.
@@ -243,21 +243,21 @@ my $nbhosts = max $#dbhosts, $#dbnames, $#dbusers, $#dbports;
 for ( my $i = 0; $i <= $nbhosts; $i++ ) {
     push(
         @hosts,
-        {   host => $dbhosts[$i] || $dbhosts[0],
-            port => $dbports[$i] || $dbports[0],
-            db   => $dbnames[$i] || $dbnames[0],
-            user => $dbusers[$i] || $dbusers[0],
-            pgversion => undef
+        {   'host' => $dbhosts[$i] || $dbhosts[0],
+            'port' => $dbports[$i] || $dbports[0],
+            'db'   => $dbnames[$i] || $dbnames[0],
+            'user' => $dbusers[$i] || $dbusers[0],
+            'pgversion' => undef
         }
     );
 }
 
 # build the psql command line for each host.
 map {
-    $_->{psqlopts} = [
-        $args{psql}, '-qxXAtf', '-',        '-h',
-        $_->{host},  '-p',      $_->{port}, '-U',
-        $_->{user}
+    $_->{'psqlopts'} = [
+        $args{'psql'}, '-qxXAtf', '-',        '-h',
+        $_->{'host'},  '-p',      $_->{'port'}, '-U',
+        $_->{'user'}
         ]
 } @hosts;
 
@@ -270,17 +270,17 @@ $0 = $PROGRAM;
 
 foreach my $host (@hosts) {
 
-    unless ( is_service_compatible( $host, $args{service} ) ) {
+    unless ( is_service_compatible( $host, $args{'service'} ) ) {
         warn sprintf "Service %s is not compatible with host %s:%d (v%s).\n",
-            $args{service}, $host->{host}, $host->{port}, $host->{version};
+            $args{'service'}, $host->{'host'}, $host->{'port'}, $host->{'version'};
         exit 1;
     }
 
     dprint( sprintf "Execute service %s on %s:%d (v%s)\n",
-        $args{service}, $host->{host}, $host->{port}, $host->{version} );
+        $args{'service'}, $host->{'host'}, $host->{'port'}, $host->{'version'} );
 }
 
-exit $services{ $args{service} }{sub}->( \@hosts, \%args );
+exit $services{ $args{'service'} }{'sub'}->( \@hosts, \%args );
 
 # print the version and exit
 sub version() {
@@ -294,7 +294,7 @@ sub list_services() {
 
     print "List of available services:\n\n";
     foreach my $service ( sort keys %services ) {
-        printf "\t%-15s\t%s", $service, $services{$service}{desc} . "\n";
+        printf "\t%-15s\t%s\n", $service, $services{$service}{'desc'};
     }
     exit 0;
 }
@@ -317,7 +317,7 @@ sub save(%$$$) {
     my $ref     = shift;
     my $storage = shift;
     my $all     = {};
-    my $hostkey = "$host{host}$host{port}";
+    my $hostkey = "$host{'host'}$host{'port'}";
 
     $all = retrieve($storage) if -f $storage;
 
@@ -334,7 +334,7 @@ sub load(%$$) {
     my %host    = %{ shift() };
     my $name    = shift;
     my $storage = shift;
-    my $hostkey = "$host{host}$host{port}";
+    my $hostkey = "$host{'host'}$host{'port'}";
     my $all;
 
     return undef unless -f $storage;
@@ -486,7 +486,7 @@ sub query($$;$) {
     my $host  = shift;
     my $query = shift;
     my $pid;
-    my $db = shift || $host->{db};
+    my $db = shift || $host->{'db'};
     my $rc;
     my $rnum = 0;
     my @res;
@@ -495,7 +495,7 @@ sub query($$;$) {
     dprint("$query\n");
 
     $pid = open3( *PSQLIN, *PSQLOUT, *PSQLERR,
-        ( @{ $host->{psqlopts} }, $db ) );
+        ( @{ $host->{'psqlopts'} }, $db ) );
 
     print PSQLIN $query;
 
@@ -558,7 +558,7 @@ sub query_ver($%;$) {
 
     foreach my $ver ( sort { $b cmp $a } keys %queries ) {
         return query( $host, $queries{$ver}, $db )
-            if ( $ver <= $host->{version_num} );
+            if ( $ver <= $host->{'version_num'} );
     }
 
     return undef;
@@ -589,14 +589,14 @@ sub is_service_compatible($$) {
     my $host    = shift;
     my $service = shift;
 
-    $services{$service}{min} = $PG_VERSION_74
-        if not defined $services{$service}{min};
-    $services{$service}{max} = 9**9**9
-        if not defined $services{$service}{max};
+    $services{$service}{'min'} = $PG_VERSION_74
+        if not defined $services{$service}{'min'};
+    $services{$service}{'max'} = 9**9**9
+        if not defined $services{$service}{'max'};
 
     return 1
-        if get_pgversion_num($host) >= $services{$service}{min}
-            and get_pgversion_num($host) <= $services{$service}{max};
+        if get_pgversion_num($host) >= $services{$service}{'min'}
+            and get_pgversion_num($host) <= $services{$service}{'max'};
 
     return 0;
 }
@@ -605,8 +605,8 @@ sub is_service_compatible($$) {
 sub set_pgversion($) {
     my $host = shift;
 
-    unless ( $host->{version} ) {
-        $host->{version}
+    unless ( $host->{'version'} ) {
+        $host->{'version'}
             = @{ query( $host, q{SELECT current_setting('server_version')} )
                 ->[0] }[0];
 
@@ -614,12 +614,12 @@ sub set_pgversion($) {
             &dprint("FATAL: psql error, $!\n");
             exit 1;
         }
-        chomp( $host->{version} );
+        chomp( $host->{'version'} );
     }
 
-    if ( $host->{version} =~ /^(\d+)\.(\d+)/ ) {
-        $host->{version_num} = int($1) * 100 + $2;
-        $host->{version}     = "$1.$2";
+    if ( $host->{'version'} =~ /^(\d+)\.(\d+)/ ) {
+        $host->{'version_num'} = int($1) * 100 + $2;
+        $host->{'version'}     = "$1.$2";
 
         return;
     }
@@ -630,9 +630,9 @@ sub set_pgversion($) {
 # returns the human readable version of the given host
 sub get_pgversion($) {
     my $host = shift;
-    set_pgversion($host) unless $host->{version};
+    set_pgversion($host) unless $host->{'version'};
 
-    return $host->{version} if $host->{version};
+    return $host->{'version'} if $host->{'version'};
 
     return undef;
 }
@@ -641,9 +641,9 @@ sub get_pgversion($) {
 sub get_pgversion_num($) {
     my $host = shift;
 
-    set_pgversion($host) unless $host->{version_num};
+    set_pgversion($host) unless $host->{'version_num'};
 
-    return $host->{version_num} if $host->{version_num};
+    return $host->{'version_num'} if $host->{'version_num'};
 
     return undef;
 }
@@ -723,17 +723,17 @@ sub check_backends(@%) {
 
     @rc = @{ query( $hosts[0], $sql ) };
 
-    $args{critical} = int( $rc[0]->[2] * $args{critical} / 100 )
-        if ( $args{critical} =~ /%$/ );
+    $args{'critical'} = int( $rc[0]->[2] * $args{'critical'} / 100 )
+        if ( $args{'critical'} =~ /%$/ );
 
-    $args{warning} = int( $rc[0]->[2] * $args{warning} / 100 )
-        if ( $args{warning} =~ /%$/ );
+    $args{'warning'} = int( $rc[0]->[2] * $args{'warning'} / 100 )
+        if ( $args{'warning'} =~ /%$/ );
 
     foreach my $db (@rc) {
         $num_backends += $db->[1];
         push @perfdata,
             sprintf( "%s=%d;%d;%d;%d;%d",
-            $db->[0], $db->[1], $args{warning}, $args{critical}, 0,
+            $db->[0], $db->[1], $args{'warning'}, $args{'critical'}, 0,
             $db->[2] );
     }
 
@@ -741,10 +741,10 @@ sub check_backends(@%) {
         sprintf( "%d connections on %d", $num_backends, $rc[0]->[2] );
 
     return critical( $me, \@msg, \@perfdata )
-        if $num_backends >= $args{critical};
+        if $num_backends >= $args{'critical'};
 
     return warning( $me, \@msg, \@perfdata )
-        if $num_backends >= $args{warning};
+        if $num_backends >= $args{'warning'};
 
     return ok( $me, \@msg, \@perfdata );
 }
@@ -778,8 +778,8 @@ sub check_database_size(@%) {
 
 DB_LOOP: foreach my $db (@rs) {
         my $delta;
-        my $w_limit = get_size( $args{warning},  $db->[1] );
-        my $c_limit = get_size( $args{critical}, $db->[1] );
+        my $w_limit = get_size( $args{'warning'},  $db->[1] );
+        my $c_limit = get_size( $args{'critical'}, $db->[1] );
         $new_db_sizes{ $db->[0] } = $db->[1];
         $delta = $db->[1] - $db_sizes{ $db->[0] };
 
@@ -912,8 +912,8 @@ sub check_wal_files(@%) {
 
     @rs = @{ query_ver( $hosts[0], \%queries )->[0] };
 
-    $w_limit = get_size( $args{warning},  $rs[3] );
-    $c_limit = get_size( $args{critical}, $rs[3] );
+    $w_limit = get_size( $args{'warning'},  $rs[3] );
+    $c_limit = get_size( $args{'critical'}, $rs[3] );
 
     push @perfdata => sprintf( "total_wal=%d;%d;%d;1;%d",
         $rs[0], $w_limit, $c_limit, $rs[3] );
@@ -953,12 +953,12 @@ sub check_ready_archives(@%) {
     $rs = query( $hosts[0], $query )->[0];
 
     push @perfdata => sprintf( "ready_archives=%d;%d;%d",
-        $rs->[0], $args{warning}, $args{critical} );
+        $rs->[0], $args{'warning'}, $args{'critical'} );
 
     push @msg => "$rs->[0] WAL files ready to archive";
 
-    return critical( $me, \@msg, \@perfdata ) if $rs->[0] >= $args{critical};
-    return warning( $me, \@msg, \@perfdata ) if $rs->[0] >= $args{warning};
+    return critical( $me, \@msg, \@perfdata ) if $rs->[0] >= $args{'critical'};
+    return warning( $me, \@msg, \@perfdata ) if $rs->[0] >= $args{'warning'};
     return ok( $me, \@msg, \@perfdata );
 }
 
@@ -968,8 +968,8 @@ sub check_last_maintenance($@%) {
     my @perfdata;
     my @msg_crit;
     my @msg_warn;
-    my $c_limit = get_time( $args{critical} );
-    my $w_limit = get_time( $args{warning} );
+    my $c_limit = get_time( $args{'critical'} );
+    my $w_limit = get_time( $args{'warning'} );
     my @msg;
     my $type   = shift;
     my @hosts  = @{ $_[0] };
@@ -1089,22 +1089,22 @@ sub check_locks(@%) {
 
     @rs = @{ query_ver( $hosts[0], \%queries ) };
 
-    $args{critical} = $args{critical} * $rs[0][0] if $args{critical} =~ /%$/;
-    $args{warning}  = $args{warning} * $rs[0][0]  if $args{warning}  =~ /%$/;
+    $args{'critical'} = $args{'critical'} * $rs[0][0] if $args{'critical'} =~ /%$/;
+    $args{'warning'}  = $args{'warning'} * $rs[0][0]  if $args{'warning'}  =~ /%$/;
 
     map {
         $total_locks += $_->[0];
         push @perfdata => sprintf( "%s=%d;%d;%d",
-            $_->[1], $_->[0], $args{warning}, $args{critical} );
+            $_->[1], $_->[0], $args{'warning'}, $args{'critical'} );
     } @rs;
 
     push @msg => "$total_locks locks";
 
     return critical( $me, \@msg, \@perfdata )
-        if $total_locks >= $args{critical};
+        if $total_locks >= $args{'critical'};
 
     return warning( $me, \@msg, \@perfdata )
-        if $total_locks >= $args{warning};
+        if $total_locks >= $args{'warning'};
 
     return ok( $me, \@msg, \@perfdata );
 }
@@ -1152,30 +1152,30 @@ sub check_bgwriter(@%) {
 
     @rc = @{ query_ver( $hosts[0], \%queries ) };
 
-    $delta_buffers_total = $rc[0]->[2] - $bgwriter{"buffers_checkpoint"}
-        + $rc[0]->[3] - $bgwriter{"buffers_clean"}
-        + $rc[0]->[5] - $bgwriter{"buffers_backend"};
+    $delta_buffers_total = $rc[0]->[2] - $bgwriter{'buffers_checkpoint'}
+        + $rc[0]->[3] - $bgwriter{'buffers_clean'}
+        + $rc[0]->[5] - $bgwriter{'buffers_backend'};
 
-    $delta_buffers_backend = $rc[0]->[5] - $bgwriter{"buffers_backend"};
+    $delta_buffers_backend = $rc[0]->[5] - $bgwriter{'buffers_backend'};
 
-    $w_limit = get_size( $args{warning},  $delta_buffers_total );
-    $c_limit = get_size( $args{critical}, $delta_buffers_total );
+    $w_limit = get_size( $args{'warning'},  $delta_buffers_total );
+    $c_limit = get_size( $args{'critical'}, $delta_buffers_total );
 
     push @perfdata,
         sprintf(
-        "buffers_backend=%d;%d;%d checkpoint_timed=%d checkpoint_req=%d buffers_checkpoint=%d buffers_clean=%d maxwritten_clean=%d buffers_backend_fsync=%d buffers_alloc=%d",
+        'buffers_backend=%d;%d;%d checkpoint_timed=%d checkpoint_req=%d buffers_checkpoint=%d buffers_clean=%d maxwritten_clean=%d buffers_backend_fsync=%d buffers_alloc=%d',
         $rc[0]->[5], $w_limit,    $c_limit,    $rc[0]->[0], $rc[0]->[1],
         $rc[0]->[2], $rc[0]->[3], $rc[0]->[4], $rc[0]->[7], $rc[0]->[6]
         );
 
-    $new_bgwriter{"checkpoint_timed"}      = $rc[0]->[0];
-    $new_bgwriter{"checkpoint_req"}        = $rc[0]->[1];
-    $new_bgwriter{"buffers_checkpoint"}    = $rc[0]->[2];
-    $new_bgwriter{"buffers_clean"}         = $rc[0]->[3];
-    $new_bgwriter{"maxwritten_clean"}      = $rc[0]->[4];
-    $new_bgwriter{"buffers_backend"}       = $rc[0]->[5];
-    $new_bgwriter{"buffers_backend_fsync"} = $rc[0]->[7];
-    $new_bgwriter{"buffers_alloc"}         = $rc[0]->[6];
+    $new_bgwriter{'checkpoint_timed'}      = $rc[0]->[0];
+    $new_bgwriter{'checkpoint_req'}        = $rc[0]->[1];
+    $new_bgwriter{'buffers_checkpoint'}    = $rc[0]->[2];
+    $new_bgwriter{'buffers_clean'}         = $rc[0]->[3];
+    $new_bgwriter{'maxwritten_clean'}      = $rc[0]->[4];
+    $new_bgwriter{'buffers_backend'}       = $rc[0]->[5];
+    $new_bgwriter{'buffers_backend_fsync'} = $rc[0]->[7];
+    $new_bgwriter{'buffers_alloc'}         = $rc[0]->[6];
 
     save( $hosts[0], 'bgwriter', \%new_bgwriter, $args{'status-file'} );
 
@@ -1190,6 +1190,8 @@ sub check_bgwriter(@%) {
         if $delta_buffers_backend >= $w_limit;
     return ok( $me, \@msg, \@perfdata );
 }
+
+
 
 __END__
 
