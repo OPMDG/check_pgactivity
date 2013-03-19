@@ -90,24 +90,29 @@ my %services = (
     'locks' => {
         'sub'  => \&check_locks,
         'desc' => 'Check the number of locks on the hosts.'
+    },
+    'bgwriter' => {
+        'sub'  => \&check_bgwriter,
+        'desc' => 'Check the bgwriter activity.',
+        'min'  => $PG_VERSION_83
     }
 );
 
 my %args = (
-    'service'   => undef,
-    'host'      => $ENV{PGHOST}     || 'localhost',
-    'username'  => $ENV{PGDATABASE} || 'postgres',
-    'port'      => $ENV{PGPORT}     || '5432',
-    'dbname'    => $ENV{PGDATABASE} || 'postgres',
-    'dbservice' => undef,
-    'warning'   => undef,
-    'critical'  => undef,
-    'exclude'   => '',
-    'psql'      => '/usr/bin/psql',
+    'service'     => undef,
+    'host'        => $ENV{PGHOST} || 'localhost',
+    'username'    => $ENV{PGDATABASE} || 'postgres',
+    'port'        => $ENV{PGPORT} || '5432',
+    'dbname'      => $ENV{PGDATABASE} || 'postgres',
+    'dbservice'   => undef,
+    'warning'     => undef,
+    'critical'    => undef,
+    'exclude'     => '',
+    'psql'        => '/usr/bin/psql',
     'status-file' => dirname(__FILE__) . '/check_pgactivity.data',
-    'list'      => 0,
-    'help'      => 0,
-    'debug'     => 0
+    'list'        => 0,
+    'help'        => 0,
+    'debug'       => 0
 );
 
 =over
@@ -195,14 +200,12 @@ GetOptions(
         help|?!
         debug!
         }
-) or pod2usage(
-    -exitval => 2
-);
+) or pod2usage( -exitval => 2 );
 
 list_services() if $args{list};
 version()       if $args{version};
 
-pod2usage(-verbose => 2) if $args{help};
+pod2usage( -verbose => 2 ) if $args{help};
 
 # Critical and Warning must be given
 pod2usage(
@@ -214,7 +217,7 @@ pod2usage(
 pod2usage(
     -message => "FATAL: you must specify one service.\n"
         . "    See -s or --service command line option.",
-    -exitval  => 1
+    -exitval => 1
 ) unless defined $args{service};
 
 # Check that the given service exists.
@@ -449,8 +452,10 @@ sub get_size($;$) {
     return $size unless $unit ne '';
 
     if ( $unit eq '%' ) {
-        my $ratio = shift
-            || die("Can not compute a ratio without the factor!");
+        my $ratio = shift;
+
+        die("Can not compute a ratio without the factor!")
+            unless defined $unit;
 
         return int( $size * $ratio / 100 );
     }
@@ -732,7 +737,8 @@ sub check_backends(@%) {
             $db->[2] );
     }
 
-    push @msg => sprintf( "%d connections on %d", $num_backends, $rc[0]->[2] );
+    push @msg =>
+        sprintf( "%d connections on %d", $num_backends, $rc[0]->[2] );
 
     return critical( $me, \@msg, \@perfdata )
         if $num_backends >= $args{critical};
@@ -760,11 +766,12 @@ sub check_database_size(@%) {
     my @rs;
     my @perfdata;
     my %new_db_sizes;
-    my %db_sizes = %{ load( $hosts[0], 'db_size', $args{'status-file'} ) || {} };
-    my $me       = 'POSTGRES_DB_SIZE';
-    my @hosts    = @{ $_[0] };
-    my %args     = %{ $_[1] };
-    my $sql      = q{SELECT datname, pg_database_size(datname)
+    my %db_sizes
+        = %{ load( $hosts[0], 'db_size', $args{'status-file'} ) || {} };
+    my $me    = 'POSTGRES_DB_SIZE';
+    my @hosts = @{ $_[0] };
+    my %args  = %{ $_[1] };
+    my $sql   = q{SELECT datname, pg_database_size(datname)
         FROM pg_database};
 
     @rs = @{ query( $hosts[0], $sql ) };
@@ -831,7 +838,7 @@ sub check_wal_files(@%) {
     my %args    = %{ $_[1] };
     my %queries = (
         $PG_VERSION_90 => q{
-			SELECT count(*) AS count, sum(is_recycled::int) AS is_recycled,
+            SELECT count(*) AS count, sum(is_recycled::int) AS is_recycled,
               sum((NOT is_recycled)::int) AS written,
               CASE WHEN max_wal1 > max_wal2 THEN max_wal1 ELSE max_wal2 END
                 AS max_wal
@@ -849,7 +856,7 @@ sub check_wal_files(@%) {
                 ORDER BY (pg_stat_file('pg_xlog/'||file)).modification
                 DESC
               )
-            ) AS t                                                                
+            ) AS t
             GROUP BY 4;},
         $PG_VERSION_84 => q{
             SELECT count(*) AS count, sum(is_recycled::int) AS is_recycled,
@@ -857,7 +864,7 @@ sub check_wal_files(@%) {
               1 + (
                 current_setting('checkpoint_segments')::float4 *
                 ( 2 + current_setting('checkpoint_completion_target')::float4 )
-              ) AS max_wal                                                 
+              ) AS max_wal
             FROM (
               SELECT file > first_value(file) OVER w AS is_recycled
               FROM pg_ls_dir('pg_xlog') as file
@@ -866,7 +873,7 @@ sub check_wal_files(@%) {
                 ORDER BY (pg_stat_file('pg_xlog/'||file)).modification
                 DESC
               )
-            ) AS t                                                                
+            ) AS t
             GROUP BY 4},
         $PG_VERSION_83 => q{
             SELECT count(*) AS num_file,
@@ -1099,6 +1106,88 @@ sub check_locks(@%) {
     return warning( $me, \@msg, \@perfdata )
         if $total_locks >= $args{warning};
 
+    return ok( $me, \@msg, \@perfdata );
+}
+
+=item B<check_bgwriter> (8.3+)
+
+Check the percentage of pages written by backends since last check.
+
+Perfdata contains pg_stat_bgwriter counters.
+
+Critical and Warning thresholds only a percentage.
+
+=cut
+
+sub check_bgwriter(@%) {
+    my @msg;
+    my @msg_crit;
+    my @msg_warn;
+    my @rc;
+    my @perfdata;
+    my $delta_buffers_total;
+    my $delta_buffers_backend;
+    my $w_limit;
+    my $c_limit;
+    my %new_bgwriter;
+    my %bgwriter
+        = %{ load( $hosts[0], 'bgwriter', $args{'status-file'} ) || {} };
+    my $me      = 'POSTGRES_BGWRITER';
+    my @hosts   = @{ $_[0] };
+    my %args    = %{ $_[1] };
+    my %queries = (
+        $PG_VERSION_83 => q{SELECT checkpoints_timed, checkpoints_req,
+              buffers_checkpoint, buffers_clean, maxwritten_clean,
+              buffers_backend, buffers_alloc, 0,
+              current_setting('checkpoint_segments')
+            FROM pg_stat_bgwriter;
+        },
+        $PG_VERSION_91 => q{SELECT checkpoints_timed, checkpoints_req,
+              buffers_checkpoint, buffers_clean, maxwritten_clean,
+              buffers_backend, buffers_alloc, buffers_backend_fsync,
+              current_setting('checkpoint_segments')
+            FROM pg_stat_bgwriter;
+        }
+    );
+
+    @rc = @{ query_ver( $hosts[0], \%queries ) };
+
+    $delta_buffers_total = $rc[0]->[2] - $bgwriter{"buffers_checkpoint"}
+        + $rc[0]->[3] - $bgwriter{"buffers_clean"}
+        + $rc[0]->[5] - $bgwriter{"buffers_backend"};
+
+    $delta_buffers_backend = $rc[0]->[5] - $bgwriter{"buffers_backend"};
+
+    $w_limit = get_size( $args{warning},  $delta_buffers_total );
+    $c_limit = get_size( $args{critical}, $delta_buffers_total );
+
+    push @perfdata,
+        sprintf(
+        "buffers_backend=%d;%d;%d checkpoint_timed=%d checkpoint_req=%d buffers_checkpoint=%d buffers_clean=%d maxwritten_clean=%d buffers_backend_fsync=%d buffers_alloc=%d",
+        $rc[0]->[5], $w_limit,    $c_limit,    $rc[0]->[0], $rc[0]->[1],
+        $rc[0]->[2], $rc[0]->[3], $rc[0]->[4], $rc[0]->[7], $rc[0]->[6]
+        );
+
+    $new_bgwriter{"checkpoint_timed"}      = $rc[0]->[0];
+    $new_bgwriter{"checkpoint_req"}        = $rc[0]->[1];
+    $new_bgwriter{"buffers_checkpoint"}    = $rc[0]->[2];
+    $new_bgwriter{"buffers_clean"}         = $rc[0]->[3];
+    $new_bgwriter{"maxwritten_clean"}      = $rc[0]->[4];
+    $new_bgwriter{"buffers_backend"}       = $rc[0]->[5];
+    $new_bgwriter{"buffers_backend_fsync"} = $rc[0]->[7];
+    $new_bgwriter{"buffers_alloc"}         = $rc[0]->[6];
+
+    save( $hosts[0], 'bgwriter', \%new_bgwriter, $args{'status-file'} );
+
+    push @msg => sprintf( "%d%% of buffers written by buffers_backend",
+        $delta_buffers_total == 0
+        ? 0
+        : 100 * $delta_buffers_backend / $delta_buffers_total );
+
+    return critical( $me, \@msg, \@perfdata )
+        if $delta_buffers_backend >= $c_limit;
+    return warning( $me, \@msg, \@perfdata )
+        if $delta_buffers_backend >= $w_limit;
     return ok( $me, \@msg, \@perfdata );
 }
 
