@@ -10,7 +10,7 @@ Version 1.0
 
 =head1 SYNOPSIS
 
-  check_pgactivity {-w|--warning THRESHOLD} {-c|--critical THRESHOLD} [-s|--service SERVICE ] [-h|--host HOST] [-U|--username ROLE] [-p|--port PORT] [-d|--dbname DATABASE] [-S|--dbservice SERVICE_NAME] [-P|--psql PATH] [--debug] [--status-file FILE]
+  check_pgactivity {-w|--warning THRESHOLD} {-c|--critical THRESHOLD} [-s|--service SERVICE ] [-h|--host HOST] [-U|--username ROLE] [-p|--port PORT] [-d|--dbname DATABASE] [-S|--dbservice SERVICE_NAME] [-P|--psql PATH] [--debug] [--status-file FILE] [--path PATH]
   check_pgactivity [--list]
   check_pgactivity [--help]
 
@@ -95,6 +95,10 @@ my %services = (
         'sub'  => \&check_bgwriter,
         'desc' => 'Check the bgwriter activity.',
         'min'  => $PG_VERSION_83
+    },
+    'archive_folder' => {
+        'sub'  => \&check_archive_folder,
+        'desc' => 'Check archives in given folder.',
     }
 );
 
@@ -109,6 +113,7 @@ my %args = (
     'critical'    => undef,
     'exclude'     => '',
     'psql'        => '/usr/bin/psql',
+    'path'        => undef,
     'status-file' => dirname(__FILE__) . '/check_pgactivity.data',
     'list'        => 0,
     'help'        => 0,
@@ -194,6 +199,7 @@ GetOptions(
         warning|w=s
         critical|c=s
         psql|P=s
+        path=s
         status-file=s
         list!
         version|V!
@@ -1115,7 +1121,7 @@ Check the percentage of pages written by backends since last check.
 
 Perfdata contains pg_stat_bgwriter counters.
 
-Critical and Warning thresholds only a percentage.
+Critical and Warning thresholds only accept a percentage.
 
 =cut
 
@@ -1192,6 +1198,106 @@ sub check_bgwriter(@%) {
 }
 
 
+=item B<check_archive_folder>
+
+Check if all archived WAL exist between the oldest and the latest WAL in the
+archive folder and make sure they are 16MB.
+
+This service requires the argument C<--path> on the command line to specify the
+archive folder path to check.
+
+Perfdata contains the number of WAL archived and the age of the latest one.
+
+Critical and Warning define the max age of the latest archived WAL as an
+interval (eg. 5m or 300s ).
+
+=cut
+
+sub check_archive_folder(@%) {
+    my @msg;
+    my @msg_crit;
+    my @msg_warn;
+    my @perfdata;
+    my @filelist;
+    my @filelist_sorted;
+    my $w_limit;
+    my $c_limit;
+    my $timeline;
+    my $wal;
+    my $seg;
+    my $latest_wal_age;
+    my $dh;
+    my $me      = 'POSTGRES_ARCHIVES';
+    my @hosts   = @{ $_[0] };
+    my %args    = %{ $_[1] };
+
+    # "path" argument must be given
+    pod2usage(
+        -message => 'FATAL: you must specify the archive folder using "--path <dir>".',
+        -exitval => 1
+    ) unless defined $args{'path'};
+
+    # invalid "path" argument
+    pod2usage(
+        -message => "FATAL: \"$args{'path'}\" is not a valid folder.",
+        -exitval => 1
+    ) unless -d $args{'path'};
+
+    opendir( $dh, $args{'path'} )
+        or die "Cannot opendir $args{'path'} : $!\n";
+
+    my @filelist = map { [ $_ => (stat("$args{'path'}/$_"))[9,7] ] }
+        grep( /[0-9A-F]{24}/, readdir($dh) );
+
+    closedir($dh);
+
+    $w_limit = get_time($args{'warning'});
+    $c_limit = get_time($args{'critical'});
+
+    # sort by mtime
+    @filelist_sorted = sort { ($a->[1] <=> $b->[1]) || ($a->[0] cmp $b->[0]) } @filelist;
+
+    $latest_wal_age = time() - $filelist_sorted[-1][1];
+
+    push @perfdata,
+        sprintf(
+        'latest_archive_age=%ds;%d;%d num_archives=%d',
+        $latest_wal_age, $w_limit, $c_limit,
+        scalar @filelist_sorted
+        );
+
+    $timeline = hex(substr($filelist_sorted[-1][0], 0, 8));
+    $wal = hex(substr($filelist_sorted[0][0], 8, 8));
+    $seg = hex(substr($filelist_sorted[0][0], 16, 8));
+
+    # check ALL archives are here.
+    for (my $i = 0; $i <= $#filelist_sorted ; $i++) {
+        my $curr = sprintf('%08X%08X%08X', $timeline, $wal + int(($seg + $i)/255), ($seg + $i)%255 );
+
+        if ($curr ne $filelist_sorted[$i][0]) {
+            push @msg => sprintf( 'Wrong sequence or file missing @ "%s"', $curr);
+            last;
+        }
+
+        if ($filelist_sorted[$i][2] != 16777216) {
+            push @msg => sprintf( '"%s" is not 16MB', $curr);
+            last;
+        }
+    }
+
+    return critical( $me, \@msg, \@perfdata ) if @msg;
+
+    push @msg => sprintf( '%d WAL archived in "%s", latest archived since %s',
+        scalar @filelist_sorted, $args{'path'}, to_interval($latest_wal_age));
+
+    return critical( $me, \@msg, \@perfdata )
+        if $latest_wal_age >= $c_limit;
+
+    return warning( $me, \@msg, \@perfdata )
+        if $latest_wal_age >= $w_limit;
+
+    return ok( $me, \@msg, \@perfdata );
+}
 
 __END__
 
