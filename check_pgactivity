@@ -109,10 +109,10 @@ my %services = (
 
 my %args = (
     'service'     => undef,
-    'host'        => $ENV{'PGHOST'} || 'localhost',
-    'username'    => $ENV{'PGUSER'} || 'postgres',
-    'port'        => $ENV{'PGPORT'} || '5432',
-    'dbname'      => $ENV{'PGDATABASE'} || 'postgres',
+    'host'        => undef,
+    'username'    => undef,
+    'port'        => undef,
+    'dbname'      => undef,
     'dbservice'   => undef,
     'warning'     => undef,
     'critical'    => undef,
@@ -240,14 +240,23 @@ pod2usage(
 ) unless ($args{'service'} eq 'minor_version')
     or (defined $args{'warning'} and $args{'critical'});
 
+# We set defaults only if there is no dbservice file.
+unless (defined $args{'dbservice'}) {
+    $args{'host'}     = $ENV{'PGHOST'}     || 'localhost',
+    $args{'username'} = $ENV{'PGUSER'}     || 'postgres',
+    $args{'port'}     = $ENV{'PGPORT'}     || '5432',
+    $args{'dbname'}   = $ENV{'PGDATABASE'} || 'template1',
+}
+
 # check_pgactivity might be call with several host informations
 # Build the final @hosts array with connection informations for all given host.
-my @hosts   = ();
-my @dbhosts = split( /,/, $args{'host'} );
-my @dbnames = split( /,/, $args{'dbname'} );
-my @dbusers = split( /,/, $args{'username'} );
-my @dbports = split( /,/, $args{'port'} );
-my $nbhosts = max $#dbhosts, $#dbnames, $#dbusers, $#dbports;
+my @hosts      = ();
+my @dbhosts    = split( /,/, $args{'host'} );
+my @dbnames    = split( /,/, $args{'dbname'} );
+my @dbusers    = split( /,/, $args{'username'} );
+my @dbports    = split( /,/, $args{'port'} );
+my @dbservices = split( /,/, $args{'dbservice'} );
+my $nbhosts    = max $#dbhosts, $#dbnames, $#dbusers, $#dbports;
 
 # Take the first value for each connection properties as default.
 # eg. "-h localhost -p 5432,5433" gives two hosts:
@@ -256,22 +265,29 @@ my $nbhosts = max $#dbhosts, $#dbnames, $#dbusers, $#dbports;
 for ( my $i = 0; $i <= $nbhosts; $i++ ) {
     push(
         @hosts,
-        {   'host' => $dbhosts[$i] || $dbhosts[0],
-            'port' => $dbports[$i] || $dbports[0],
-            'db'   => $dbnames[$i] || $dbnames[0],
-            'user' => $dbusers[$i] || $dbusers[0],
+        {   'host'      => $dbhosts[$i]    || $dbhosts[0],
+            'port'      => $dbports[$i]    || $dbports[0],
+            'db'        => $dbnames[$i]    || $dbnames[0],
+            'user'      => $dbusers[$i]    || $dbusers[0],
+            'dbservice' => $dbservices[$i] || $dbservices[0],
             'pgversion' => undef
         }
+    );
+
+    $hosts[-1]{'name'} = sprintf('%shost=%s port=%d db=%s',
+        defined $hosts[-1]{'service'}? "service=$hosts[-1]{'service'} ":'',
+        $hosts[-1]{'host'}, $hosts[-1]{'port'}, $hosts[-1]{'db'}
     );
 }
 
 # build the psql command line for each host.
 map {
     $_->{'psqlopts'} = [
-        $args{'psql'}, '-qxXAtf', '-',        '-h',
-        $_->{'host'},  '-p',      $_->{'port'}, '-U',
-        $_->{'user'}
-        ]
+        $args{'psql'}, '-qxXAtf', '-'
+        ];
+    push $_->{'psqlopts'}, ('-h', $_->{'host'}) if defined $_->{'host'};
+    push $_->{'psqlopts'}, ('-p', $_->{'port'}) if defined $_->{'port'};
+    push $_->{'psqlopts'}, ('-U', $_->{'user'}) if defined $_->{'user'};
 } @hosts;
 
 # Die on kill -2, -3 or -15
@@ -506,6 +522,8 @@ sub query($$;$) {
     my @err;
 
     dprint("$query\n");
+
+    $ENV{PGSERVICE} = $host->{'dbservice'} if defined $host->{'dbservice'};
 
     $pid = open3( *PSQLIN, *PSQLOUT, *PSQLERR,
         ( @{ $host->{'psqlopts'} }, $db ) );
