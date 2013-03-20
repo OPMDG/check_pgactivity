@@ -708,7 +708,7 @@ Here is the list, descriptions and parameters of available services.
 
 =over
 
-=item B<check_backends> (all)
+=item B<backends> (all)
 
 Check the total number of connexions on the cluster.
 
@@ -761,7 +761,7 @@ sub check_backends(@%) {
     return ok( $me, \@msg, \@perfdata );
 }
 
-=item B<check_database_size> (8.1+)
+=item B<database_size> (8.1+)
 
 Check the variation of database sizes.
 
@@ -821,7 +821,7 @@ DB_LOOP: foreach my $db (@rs) {
     return ok( $me, [ scalar(@rs) . " database(s) checked" ], \@perfdata );
 }
 
-=item B<check_wal_files> (8.1+)
+=item B<wal_files> (8.1+)
 
 Check the number of wal files.
 
@@ -941,7 +941,7 @@ sub check_wal_files(@%) {
     return ok( $me, \@msg, \@perfdata );
 }
 
-=item B<check_ready_archives> (8.1+)
+=item B<ready_archives> (8.1+)
 
 Check the number of wal files ready to archive.
 
@@ -1026,7 +1026,7 @@ LOOP_DB: foreach my $db (@all_db) {
         \@perfdata );
 }
 
-=item B<check_last_analyze> (8.2+)
+=item B<last_analyze> (8.2+)
 
 Check on each databases that the oldest analyze (from autovacuum or not) is not
 older than the given threshold.
@@ -1040,7 +1040,7 @@ sub check_last_analyze(@%) {
     return check_last_maintenance( 'analyze', @_ );
 }
 
-=item B<check_last_vacuum> (8.2+)
+=item B<last_vacuum> (8.2+)
 
 Check on each databases that the oldest vacuum (from autovacuum or not) is not
 older than the given threshold.
@@ -1055,7 +1055,7 @@ sub check_last_vacuum(@$) {
     return check_last_maintenance( 'vacuum', @_ );
 }
 
-=item B<check_locks> (all)
+=item B<locks> (all)
 
 Check the number of locks on the hosts.
 
@@ -1121,7 +1121,7 @@ sub check_locks(@%) {
     return ok( $me, \@msg, \@perfdata );
 }
 
-=item B<check_bgwriter> (8.3+)
+=item B<bgwriter> (8.3+)
 
 Check the percentage of pages written by backends since last check.
 
@@ -1204,7 +1204,7 @@ sub check_bgwriter(@%) {
 }
 
 
-=item B<check_archive_folder>
+=item B<archive_folder>
 
 Check if all archived WAL exist between the oldest and the latest WAL in the
 archive folder and make sure they are 16MB.
@@ -1306,7 +1306,7 @@ sub check_archive_folder(@%) {
 }
 
 
-=item B<check_minor_version>
+=item B<minor_version> (all)
 
 Check if the cluster is running the latest minor available.
 
