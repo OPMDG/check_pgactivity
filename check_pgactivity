@@ -1085,7 +1085,7 @@ sub check_locks(@%) {
         $PG_VERSION_74 => q{
             SELECT count(*), mode,
                 current_setting('max_locks_per_transaction')::integer
-                * current_setting('max_connections')::integer)
+                * current_setting('max_connections')::integer
             FROM pg_locks
             GROUP BY 2,3
         },
