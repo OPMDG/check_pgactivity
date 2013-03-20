@@ -248,10 +248,10 @@ pod2usage(
 
 # We set defaults only if there is no dbservice file.
 unless (defined $args{'dbservice'}) {
-    $args{'host'}     = $ENV{'PGHOST'}     || 'localhost',
-    $args{'username'} = $ENV{'PGUSER'}     || 'postgres',
-    $args{'port'}     = $ENV{'PGPORT'}     || '5432',
-    $args{'dbname'}   = $ENV{'PGDATABASE'} || 'template1',
+    $args{'host'} //= ($ENV{'PGHOST'} || 'localhost');
+    $args{'username'} //= ($ENV{'PGUSER'} || 'postgres');
+    $args{'port'} //= ($ENV{'PGPORT'} || '5432');
+    $args{'dbname'} //= ($ENV{'PGDATABASE'} || 'template1');
 }
 
 # check_pgactivity might be call with several host informations
