@@ -104,7 +104,13 @@ my %services = (
     'minor_version' => {
         'sub'  => \&check_minor_version,
         'desc' => 'Check if the PostgreSQL minor version is the latest one.',
-    }
+    },
+    'hot_standby_delta' => {
+        'sub'  => \&check_hot_standby_delta,
+        'desc' => 'Check delta in bytes between a master and its Hot standbys.',
+        'min'  => $PG_VERSION_90,
+        'max'  => $PG_VERSION_90
+    },
 );
 
 my %args = (
@@ -1415,6 +1421,88 @@ sub check_minor_version(@%) {
     push @msg => "PostgreSQL version $hosts[0]{'version'}";
 
     return ok( $me, \@msg, \@perfdata );
+}
+
+
+=item B<hot_standby_delta> (9.0)
+
+Check the data delta between a cluster and its Hot standbys.
+
+You must give two or more hosts' connection parameters.
+
+Perfdata returns the data delta in bytes between the master and all given Hot
+standbys.
+
+Critical and Warning thresholds only accept a size (eg. 2.5G).
+
+This service rise a critical if it doesn't find exactly ONE cluster production
+(ie. critical when 0 or 2 and more masters).
+
+=cut
+
+sub check_hot_standby_delta(@%) {
+    my @perfdata;
+    my @msg;
+    my $master_location = '';
+    my $num_clusters = 0;
+    my $me    = 'POSTGRES_HOT_STANDBY_DELTA';
+    my @hosts = @{ $_[0] };
+    my %args  = %{ $_[1] };
+    my $query = "
+        SELECT (NOT pg_is_in_recovery())::int,
+            CASE pg_is_in_recovery()
+                WHEN 't' THEN pg_last_xlog_receive_location()
+                ELSE pg_current_xlog_location()
+            END,
+            CASE pg_is_in_recovery()
+                WHEN 't' THEN pg_last_xlog_replay_location()
+                ELSE NULL::text
+            END
+    ";
+
+    pod2usage(
+        -message => 'FATAL: you must give two or more hosts with service "hot_standby_delta".',
+        -exitval => 1
+    ) if @hosts < 2;
+
+    # fetch LSNs
+    foreach my $host (@hosts) {
+        $host->{'rs'} = \@{ query( $host, $query )->[0] };
+        $num_clusters += $host->{'rs'}[0];
+        $master_location = $host->{'rs'}[1] if $host->{'rs'}[0];
+    }
+
+    return critical($me, ['More than one cluster in production.'], [])
+        if $num_clusters != 1;
+
+    # we recycle this one to count the number of slave
+    $num_clusters = 0;
+
+    $master_location =~ m{^([0-9A-F]+)/([0-9A-F]+)$};
+    $master_location = (hex('ff000000') * hex($1)) + hex($2);
+
+    # compute deltas
+    foreach my $host (@hosts) {
+        next if $host->{'rs'}[0];
+        my ($a, $b) = split(/\//, $host->{'rs'}[1]);
+        $host->{'receive_delta'} = $master_location - (hex('ff000000') * hex($a)) - hex($b);
+
+        ($a, $b) = split(/\//, $host->{'rs'}[2]);
+        $host->{'replay_delta'} = $master_location - (hex('ff000000') * hex($a)) - hex($b);
+
+        $host->{'name'} =~ s/ db=.*$//;
+
+        push @perfdata => sprintf( "'receive delta %s'=%d 'replay delta %s'=%d ",
+            $host->{'name'},
+            $host->{'receive_delta'} > 0 ? $host->{'receive_delta'}:0,
+            $host->{'name'},
+            $host->{'replay_delta'} > 0 ? $host->{'replay_delta'}:0
+        );
+
+        $num_clusters++;
+    }
+
+    return ok($me, [ 'ok' ], \@perfdata);
 }
 
 __END__
