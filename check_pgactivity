@@ -619,6 +619,7 @@ sub get_all_dbname($) {
 sub is_service_compatible($$) {
     my $host    = shift;
     my $service = shift;
+    my $ver = 100*int(get_pgversion_num($host)/100);
 
     $services{$service}{'min'} = $PG_VERSION_74
         if not defined $services{$service}{'min'};
@@ -626,8 +627,8 @@ sub is_service_compatible($$) {
         if not defined $services{$service}{'max'};
 
     return 1
-        if get_pgversion_num($host) >= $services{$service}{'min'}
-            and get_pgversion_num($host) <= $services{$service}{'max'};
+        if $ver >= $services{$service}{'min'}
+            and $ver <= $services{$service}{'max'};
 
     return 0;
 }
