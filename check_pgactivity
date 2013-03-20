@@ -35,6 +35,7 @@ use IPC::Open3;
 use Data::Dumper;
 use Storable qw(store retrieve);
 use Pod::Usage;
+use File::Basename;
 
 setlocale( LC_ALL, 'C' );
 
@@ -43,16 +44,16 @@ $| = 1;
 $VERSION = '1.0';
 $PROGRAM = 'check_pgactivity';
 
-my $PG_VERSION_74 = 704;
-my $PG_VERSION_80 = 800;
-my $PG_VERSION_81 = 801;
-my $PG_VERSION_82 = 802;
-my $PG_VERSION_83 = 803;
-my $PG_VERSION_84 = 804;
-my $PG_VERSION_90 = 900;
-my $PG_VERSION_91 = 901;
-my $PG_VERSION_92 = 902;
-my $PG_VERSION_93 = 903;
+my $PG_VERSION_74 = 70400;
+my $PG_VERSION_80 = 80000;
+my $PG_VERSION_81 = 80100;
+my $PG_VERSION_82 = 80200;
+my $PG_VERSION_83 = 80300;
+my $PG_VERSION_84 = 80400;
+my $PG_VERSION_90 = 90000;
+my $PG_VERSION_91 = 90100;
+my $PG_VERSION_92 = 90200;
+my $PG_VERSION_93 = 90300;
 
 # available services and descriptions
 my %services = (
@@ -99,6 +100,10 @@ my %services = (
     'archive_folder' => {
         'sub'  => \&check_archive_folder,
         'desc' => 'Check archives in given folder.',
+    },
+    'minor_version' => {
+        'sub'  => \&check_minor_version,
+        'desc' => 'Check if the PostgreSQL minor version is the latest one.',
     }
 );
 
@@ -213,11 +218,13 @@ version()       if $args{'version'};
 
 pod2usage( -verbose => 2 ) if $args{'help'};
 
-# Critical and Warning must be given
+
+# Check that the given service exists.
 pod2usage(
-    -message => 'FATAL: you must specify critical and warning thresholds.',
+    -message => "FATAL: service $args{'service'} does not exist.\n"
+        . "    Use --list to show the available services.",
     -exitval => 1
-) unless defined $args{'warning'} and $args{'critical'};
+) unless exists $services{ $args{'service'} };
 
 # One service must be given
 pod2usage(
@@ -226,12 +233,12 @@ pod2usage(
     -exitval => 1
 ) unless defined $args{'service'};
 
-# Check that the given service exists.
+# Critical and Warning must be given
 pod2usage(
-    -message => "FATAL: service $args{'service'} does not exist.\n"
-        . "    Use --list to show the available services.",
+    -message => 'FATAL: you must specify critical and warning thresholds.',
     -exitval => 1
-) unless exists $services{ $args{'service'} };
+) unless ($args{'service'} eq 'minor_version')
+    or (defined $args{'warning'} and $args{'critical'});
 
 # check_pgactivity might be call with several host informations
 # Build the final @hosts array with connection informations for all given host.
@@ -623,9 +630,8 @@ sub set_pgversion($) {
         chomp( $host->{'version'} );
     }
 
-    if ( $host->{'version'} =~ /^(\d+)\.(\d+)/ ) {
-        $host->{'version_num'} = int($1) * 100 + $2;
-        $host->{'version'}     = "$1.$2";
+    if ( $host->{'version'} =~ /^(\d+)\.(\d+)(.(\d+))?/ ) {
+        $host->{'version_num'} = int($1) * 10000 + int($2) * 100 + int($4);
 
         return;
     }
@@ -1295,6 +1301,99 @@ sub check_archive_folder(@%) {
 
     return warning( $me, \@msg, \@perfdata )
         if $latest_wal_age >= $w_limit;
+
+    return ok( $me, \@msg, \@perfdata );
+}
+
+
+=item B<check_minor_version>
+
+Check if the cluster is running the latest minor available.
+
+This service needs an internet access. Optionnaly, you can set the path to your
+prefered program to access internet using the parameter "--path"
+(eg. --path '/usr/bin/wget'). Supported programs are: GET, wget, curl, fetch,
+lynx, links, links2.
+
+Perfdata returns the numerical version of PostgreSQL.
+
+Rise a critical alert if the minor version is not the latest. This service
+ignores cirtical and warning arguments.
+
+=cut
+
+sub check_minor_version(@%) {
+    my @perfdata;
+    my @msg;
+    my %latest_versions;
+    my $rss;
+    my $me    = 'POSTGRES_MINOR_VERSION';
+    my @hosts = @{ $_[0] };
+    my %args  = %{ $_[1] };
+    my $major_version;
+    my $timeout = 30;
+    my $url = 'http://www.postgresql.org/versions.rss';
+
+    # These methods comes from check_postgres,
+    # by Greg Sabino Mullane <greg@endpoint.com>,
+    # licenced under BSD
+    our %get_methods = (
+        'GET'    => "GET -t $timeout -H 'Pragma: no-cache' $url",
+        'wget'   => "wget --quiet --timeout=$timeout --no-cache -O - $url",
+        'curl'   => "curl --silent --max-time=$timeout -H 'Pragma: no-cache' $url",
+        'fetch'  => "fetch -q -T $timeout -o - $url",
+        'lynx'   => "lynx --connect-timeout=$timeout --dump $url",
+        'links'  => 'links -dump $url',
+        'links2' => 'links2 -dump $url'
+    );
+
+    # Force the fetching method
+    if ($args{'path'}) {
+        my $meth = basename $args{'path'};
+
+        pod2usage(
+            -message => "FATAL: \"$args{'path'}\" is not a valid program.",
+            -exitval => 1
+        ) unless -x $args{'path'};
+
+        pod2usage(
+            -message => "FATAL: \"$args{'path'}\" is not a supported program.",
+            -exitval => 1
+        ) unless $meth =~ 'GET|wget|curl|fetch|lynx|links|links2';
+    }
+
+    # fetch the latest versions
+    foreach my $exe (values %get_methods) {
+        $rss = qx{$exe 2>/dev/null};
+
+        last if $rss =~ 'PostgreSQL latest versions';
+    }
+
+    return unknown($me, [ 'Could not fetch PostgreSQL latest versions' ], [])
+        unless $rss;
+
+    $latest_versions{"$1.$2"} = [$1 * 10000 + $2 * 100 + $3, "$1.$2.$3"]
+        while $rss =~ /<title>(\d+)\.(\d+)\.(\d+)/g;
+
+    $hosts[0]{'version'} =~ '^(\d+\.\d+).*$';
+    $major_version = $1;
+
+    unless ( defined $latest_versions{$major_version} ) {
+        push @msg => sprintf('Unknown PostgreSQL version %s', $major_version );
+        return unknown( $me, \@msg, [] );
+    }
+
+    push @perfdata => sprintf( "version=%d", $hosts[0]{'version_num'});
+
+    if ( $hosts[0]{'version_num'} < $latest_versions{$major_version}[0] ) {
+        push @msg => sprintf('Latest PostgreSQL is %s, running version is %s',
+            $latest_versions{$major_version}[1],
+            $hosts[0]{'version'}
+        );
+        return critical( $me, \@msg, \@perfdata )
+    }
+
+    push @msg => "PostgreSQL version $hosts[0]{'version'}";
 
     return ok( $me, \@msg, \@perfdata );
 }
