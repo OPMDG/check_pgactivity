@@ -1448,8 +1448,12 @@ This service rise a critical if it doesn't find exactly ONE cluster production
 sub check_hot_standby_delta(@%) {
     my @perfdata;
     my @msg;
+    my @msg_crit;
+    my @msg_warn;
     my $master_location = '';
     my $num_clusters = 0;
+    my $w_limit;
+    my $c_limit;
     my $me    = 'POSTGRES_HOT_STANDBY_DELTA';
     my @hosts = @{ $_[0] };
     my %args  = %{ $_[1] };
@@ -1480,6 +1484,9 @@ sub check_hot_standby_delta(@%) {
     return critical($me, ['More than one cluster in production.'], [])
         if $num_clusters != 1;
 
+    $w_limit = get_size( $args{'warning'} );
+    $c_limit = get_size( $args{'critical'} );
+
     # we recycle this one to count the number of slave
     $num_clusters = 0;
 
@@ -1504,10 +1511,25 @@ sub check_hot_standby_delta(@%) {
             $host->{'replay_delta'} > 0 ? $host->{'replay_delta'}:0
         );
 
+        if ($host->{'receive_delta'} > $c_limit) {
+            push @msg_crit, "critical lag for $host->{'name'}";
+            next;
+        }
+
+        if ($host->{'receive_delta'} > $w_limit) {
+            push @msg_warn, "warning lag for $host->{'name'}";
+            next;
+        }
+
         $num_clusters++;
     }
 
-    return ok($me, [ 'ok' ], \@perfdata);
+    return critical( $me, [ @msg_crit, @msg_warn ], \@perfdata )
+        if @msg_crit > 0;
+
+    return warning( $me, \@msg_warn, \@perfdata ) if @msg_warn > 0;
+
+    return ok($me, [ "$num_clusters Hot standby checked" ], \@perfdata);
 }
 
 
@@ -1575,12 +1597,12 @@ sub check_streaming_delta(@%) {
         $num_clusters++;
 
         if ($flush_delta > $c_limit) {
-            push @msg_crit, 'critical lag for $name';
+            push @msg_crit, "critical lag for $name";
             next;
         }
 
         if ($flush_delta > $w_limit) {
-            push @msg_warn, 'warning lag for $name';
+            push @msg_warn, "warning lag for $name";
             next;
         }
     }
