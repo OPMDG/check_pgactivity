@@ -111,6 +111,11 @@ my %services = (
         'min'  => $PG_VERSION_90,
         'max'  => $PG_VERSION_90
     },
+    'streaming_delta' => {
+        'sub'  => \&check_streaming_delta,
+        'desc' => 'Check delta in bytes between a master and its standbys in streaming replication.',
+        'min'  => $PG_VERSION_91
+    }
 );
 
 my %args = (
@@ -1503,6 +1508,89 @@ sub check_hot_standby_delta(@%) {
     }
 
     return ok($me, [ 'ok' ], \@perfdata);
+}
+
+
+=item B<streaming_delta> (9.1+)
+
+Check the data delta between a cluster and its standbys in streaming replication.
+
+Perfdata returns the data delta in bytes between the master and all standbys
+found.
+
+Critical and Warning thresholds only accept a size (eg. 2.5G).
+
+=cut
+
+sub check_streaming_delta(@%) {
+    my @perfdata;
+    my @msg;
+    my @msg_crit;
+    my @msg_warn;
+    my @rs;
+    my $w_limit;
+    my $c_limit;
+    my $master_location = '';
+    my $num_clusters = 0;
+    my $me    = 'POSTGRES_STREAMING_DELTA';
+    my @hosts = @{ $_[0] };
+    my %args  = %{ $_[1] };
+    my $query = "SELECT application_name, client_addr, pid,
+            sent_location, write_location, flush_location, replay_location
+        FROM pg_stat_replication";
+
+    @rs = @{ query( $hosts[0], $query ) };
+
+    return unknown($me, ['No slaves connected'], []) unless @rs;
+
+    $rs[0][0] =~ m{^([0-9A-F]+)/([0-9A-F]+)$};
+    $master_location = (hex('ff000000') * hex($1)) + hex($2);
+
+    $w_limit = get_size( $args{'warning'} );
+    $c_limit = get_size( $args{'critical'} );
+
+    # compute deltas
+    foreach my $host (@rs) {
+        my $flush_delta;
+        my $replay_delta;
+        my $name;
+
+        $host->[3] =~ m{^([0-9A-F]+)/([0-9A-F]+)$};
+        $master_location = (hex('ff000000') * hex($1)) + hex($2);
+
+        $host->[5] =~ m{^([0-9A-F]+)/([0-9A-F]+)$};
+        $flush_delta = $master_location - (hex('ff000000') * hex($1)) - hex($2);
+
+        $host->[6] =~ m{^([0-9A-F]+)/([0-9A-F]+)$};
+        $replay_delta = $master_location - (hex('ff000000') * hex($1)) - hex($2);
+
+        $name = sprintf('application_name=%s host=%s pid=%d',
+            $host->[0], $host->[1], $host->[2]
+        );
+
+        push @perfdata => sprintf( "'flushed delta %s'=%d 'replay delta %s'=%d ",
+            $name, $flush_delta, $name, $replay_delta
+        );
+
+        $num_clusters++;
+
+        if ($flush_delta > $c_limit) {
+            push @msg_crit, 'critical lag for $name';
+            next;
+        }
+
+        if ($flush_delta > $w_limit) {
+            push @msg_warn, 'warning lag for $name';
+            next;
+        }
+    }
+
+    return critical( $me, [ @msg_crit, @msg_warn ], \@perfdata )
+        if @msg_crit > 0;
+
+    return warning( $me, \@msg_warn, \@perfdata ) if @msg_warn > 0;
+
+    return ok($me, [ "$num_clusters slaves checked" ], \@perfdata);
 }
 
 __END__
