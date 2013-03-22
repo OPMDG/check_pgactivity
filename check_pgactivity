@@ -1438,7 +1438,10 @@ You must give two or more hosts' connection parameters.
 Perfdata returns the data delta in bytes between the master and all given Hot
 standbys.
 
-Critical and Warning thresholds only accept a size (eg. 2.5G).
+Critical and Warning thresholds can takes one or two values separated by a
+comma. If only one value given, it applies on both received and replayed data.
+If two values given, the first one applies on received data, the second one on
+replayed ones. These threshold only accept a size (eg. 2.5G).
 
 This service rise a critical if it doesn't find exactly ONE cluster production
 (ie. critical when 0 or 2 and more masters).
@@ -1452,8 +1455,10 @@ sub check_hot_standby_delta(@%) {
     my @msg_warn;
     my $master_location = '';
     my $num_clusters = 0;
-    my $w_limit;
-    my $c_limit;
+    my $w_limit_received;
+    my $c_limit_received;
+    my $w_limit_replayed;
+    my $c_limit_replayed;
     my $me    = 'POSTGRES_HOT_STANDBY_DELTA';
     my @hosts = @{ $_[0] };
     my %args  = %{ $_[1] };
@@ -1484,8 +1489,15 @@ sub check_hot_standby_delta(@%) {
     return critical($me, ['More than one cluster in production.'], [])
         if $num_clusters != 1;
 
-    $w_limit = get_size( $args{'warning'} );
-    $c_limit = get_size( $args{'critical'} );
+    ($w_limit_received, $w_limit_replayed) = split /,/, $args{'warning'};
+    ($c_limit_received, $c_limit_replayed) = split /,/, $args{'critical'};
+    $w_limit_replayed //= $w_limit_received;
+    $c_limit_replayed //= $c_limit_received;
+
+    $w_limit_received = get_size( $w_limit_received );
+    $c_limit_received = get_size( $c_limit_received );
+    $w_limit_replayed = get_size( $w_limit_replayed );
+    $c_limit_replayed = get_size( $c_limit_replayed );
 
     # we recycle this one to count the number of slave
     $num_clusters = 0;
@@ -1511,13 +1523,23 @@ sub check_hot_standby_delta(@%) {
             $host->{'replay_delta'} > 0 ? $host->{'replay_delta'}:0
         );
 
-        if ($host->{'receive_delta'} > $c_limit) {
-            push @msg_crit, "critical lag for $host->{'name'}";
+        if ($host->{'receive_delta'} > $c_limit_received) {
+            push @msg_crit, "critical receive lag for $host->{'name'}";
             next;
         }
 
-        if ($host->{'receive_delta'} > $w_limit) {
-            push @msg_warn, "warning lag for $host->{'name'}";
+        if ($host->{'replay_delta'} > $c_limit_replayed) {
+            push @msg_crit, "critical replay lag for $host->{'name'}";
+            next;
+        }
+
+        if ($host->{'receive_delta'} > $w_limit_received) {
+            push @msg_warn, "warning receive lag for $host->{'name'}";
+            next;
+        }
+
+        if ($host->{'replay_delta'} > $w_limit_replayed) {
+            push @msg_warn, "warning replay lag for $host->{'name'}";
             next;
         }
 
@@ -1540,7 +1562,10 @@ Check the data delta between a cluster and its standbys in streaming replication
 Perfdata returns the data delta in bytes between the master and all standbys
 found.
 
-Critical and Warning thresholds only accept a size (eg. 2.5G).
+Critical and Warning thresholds can takes one or two values separated by a
+comma. If only one value given, it applies on both flushed and replayed data.
+If two values given, the first one applies on flushed data, the second one on
+replayed ones. These threshold only accept a size (eg. 2.5G).
 
 =cut
 
@@ -1550,8 +1575,10 @@ sub check_streaming_delta(@%) {
     my @msg_crit;
     my @msg_warn;
     my @rs;
-    my $w_limit;
-    my $c_limit;
+    my $w_limit_flushed;
+    my $c_limit_flushed;
+    my $w_limit_replayed;
+    my $c_limit_replayed;
     my $master_location = '';
     my $num_clusters = 0;
     my $me    = 'POSTGRES_STREAMING_DELTA';
@@ -1568,8 +1595,16 @@ sub check_streaming_delta(@%) {
     $rs[0][0] =~ m{^([0-9A-F]+)/([0-9A-F]+)$};
     $master_location = (hex('ff000000') * hex($1)) + hex($2);
 
-    $w_limit = get_size( $args{'warning'} );
-    $c_limit = get_size( $args{'critical'} );
+    ($w_limit_flushed, $w_limit_replayed) = split /,/, $args{'warning'};
+    ($c_limit_flushed, $c_limit_replayed) = split /,/, $args{'critical'};
+    $w_limit_replayed //= $w_limit_flushed;
+    $c_limit_replayed //= $c_limit_flushed;
+
+    $w_limit_flushed = get_size( $w_limit_flushed );
+    $c_limit_flushed = get_size( $c_limit_flushed );
+    $w_limit_replayed = get_size( $w_limit_replayed );
+    $c_limit_replayed = get_size( $c_limit_replayed );
+
 
     # compute deltas
     foreach my $host (@rs) {
@@ -1596,13 +1631,23 @@ sub check_streaming_delta(@%) {
 
         $num_clusters++;
 
-        if ($flush_delta > $c_limit) {
-            push @msg_crit, "critical lag for $name";
+        if ($flush_delta > $c_limit_flushed) {
+            push @msg_crit, "critical flush lag for $name";
             next;
         }
 
-        if ($flush_delta > $w_limit) {
-            push @msg_warn, "warning lag for $name";
+        if ($replay_delta > $c_limit_replayed) {
+            push @msg_crit, "critical replay lag for $name";
+            next;
+        }
+
+        if ($flush_delta > $w_limit_flushed) {
+            push @msg_warn, "warning flush lag for $name";
+            next;
+        }
+
+        if ($replay_delta > $w_limit_replayed) {
+            push @msg_warn, "warning replay lag for $name";
             next;
         }
     }
