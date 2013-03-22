@@ -529,7 +529,7 @@ sub query($$;$) {
     my $db = shift || $host->{'db'};
     my $rc;
     my $rnum = 0;
-    my @res;
+    my @res = ();
     my @err;
 
     dprint("$query\n");
@@ -553,8 +553,9 @@ sub query($$;$) {
     dprint( sprintf( "stderr: %d\n", scalar(@err) ) );
 
     unless ( $rc == 0 and scalar(@err) == 0 ) {
-        warn "Query fail !\n" . join " ", @err;
-        exit( $rc |= 1 );
+        exit unknown('CHECK_PGACTIVITY',
+            [ "Query fail !\n" . join(" ", @err) ], []
+        );
     }
 
     close PSQLERR;
@@ -649,14 +650,16 @@ sub set_pgversion($) {
     my $host = shift;
 
     unless ( $host->{'version'} ) {
-        $host->{'version'}
-            = @{ query( $host, q{SELECT current_setting('server_version')} )
-                ->[0] }[0];
+
+        my $rs = query( $host, q{SELECT current_setting('server_version')} );
 
         if ( $? != 0 ) {
             &dprint("FATAL: psql error, $!\n");
             exit 1;
         }
+
+        $host->{'version'} = $rs->[0][0];
+
         chomp( $host->{'version'} );
     }
 
