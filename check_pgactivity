@@ -501,13 +501,13 @@ sub get_size($;$) {
     }
 
     return $size           if $unit eq 'b';
-    return $size * 1024    if $unit eq 'k';
-    return $size * 1024**2 if $unit eq 'm';
-    return $size * 1024**3 if $unit eq 'g';
-    return $size * 1024**4 if $unit eq 't';
-    return $size * 1024**5 if $unit eq 'p';
-    return $size * 1024**6 if $unit eq 'e';
-    return $size * 1024**7 if $unit eq 'z';
+    return $size * 1024    if $unit =~ '^k[bo]?$';
+    return $size * 1024**2 if $unit =~ '^m[bo]?$';
+    return $size * 1024**3 if $unit =~ '^g[bo]?$';
+    return $size * 1024**4 if $unit =~ '^t[bo]?$';
+    return $size * 1024**5 if $unit =~ '^p[bo]?$';
+    return $size * 1024**6 if $unit =~ '^e[bo]?$';
+    return $size * 1024**7 if $unit =~ '^z[bo]?$';
 
     die("Unknown size unit: $unit");
 }
