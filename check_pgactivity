@@ -296,9 +296,9 @@ map {
     $_->{'psqlopts'} = [
         $args{'psql'}, '-qxXAtf', '-'
         ];
-    push $_->{'psqlopts'}, ('-h', $_->{'host'}) if defined $_->{'host'};
-    push $_->{'psqlopts'}, ('-p', $_->{'port'}) if defined $_->{'port'};
-    push $_->{'psqlopts'}, ('-U', $_->{'user'}) if defined $_->{'user'};
+    push @{ $_->{'psqlopts'} }, ('-h', $_->{'host'}) if defined $_->{'host'};
+    push @{ $_->{'psqlopts'} }, ('-p', $_->{'port'}) if defined $_->{'port'};
+    push @{ $_->{'psqlopts'} }, ('-U', $_->{'user'}) if defined $_->{'user'};
 } @hosts;
 
 # Die on kill -2, -3 or -15
