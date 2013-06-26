@@ -25,6 +25,7 @@ metrology.
 use vars qw($VERSION $PROGRAM);
 
 use strict;
+use warnings;
 
 use POSIX;
 use File::Basename 'dirname';
