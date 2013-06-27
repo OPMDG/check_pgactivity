@@ -1124,18 +1124,38 @@ sub check_locks(@%) {
     my %args        = %{ $_[1] };
     my %queries     = (
         $PG_VERSION_74 => q{
-            SELECT count(*), mode,
+            SELECT count(l.*), ref.mode,
                 current_setting('max_locks_per_transaction')::integer
                 * current_setting('max_connections')::integer
-            FROM pg_locks
+            FROM (SELECT 'AccessShareLock'
+                UNION SELECT 'RowShareLock'
+                UNION SELECT 'RowExclusiveLock'
+                UNION SELECT 'ShareUpdateExclusiveLock'
+                UNION SELECT 'ShareLock'
+                UNION SELECT 'ShareRowExclusiveLock'
+                UNION SELECT 'ExclusiveLock'
+                UNION SELECT 'AccessExclusiveLock'
+            ) ref (mode)
+            LEFT JOIN pg_locks l ON ref.mode = l.mode
             GROUP BY 2,3
         },
         $PG_VERSION_82 => q{
-            SELECT count(*), mode,
+            SELECT count(l.*), ref.mode,
                 current_setting('max_locks_per_transaction')::integer * (
                     current_setting('max_prepared_transactions')::integer
                     + current_setting('max_connections')::integer)
-            FROM pg_locks
+            FROM (SELECT * FROM ( VALUES
+                ('AccessShareLock'),
+                ('RowShareLock'),
+                ('RowExclusiveLock'),
+                ('ShareUpdateExclusiveLock'),
+                ('ShareLock'),
+                ('ShareRowExclusiveLock'),
+                ('ExclusiveLock'),
+                ('AccessExclusiveLock')
+                ) lockmode (mode)
+            ) ref
+            LEFT JOIN pg_locks l ON ref.mode = l.mode
             GROUP BY 2,3
         }
     );
