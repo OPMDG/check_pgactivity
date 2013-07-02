@@ -116,6 +116,10 @@ my %services = (
         'sub'  => \&check_streaming_delta,
         'desc' => 'Check delta in bytes between a master and its standbys in streaming replication.',
         'min'  => $PG_VERSION_91
+    },
+    'hit_ratio' => {
+        'sub'  => \&check_hit_ratio,
+        'desc' => 'Check hit ratio on databases.'
     }
 );
 
@@ -1689,6 +1693,64 @@ sub check_streaming_delta(@%) {
     return warning( $me, \@msg_warn, \@perfdata ) if @msg_warn > 0;
 
     return ok($me, [ "$num_clusters slaves checked" ], \@perfdata);
+}
+
+=item B<hit_ratio> (all)
+
+Check the cache hit ratio on the cluster.
+
+Perfdata contains the hit ratio per database. Template databases and
+databases that does not allow connections wont be checked, nor the
+databases which has never been accessed.
+
+Critical and Warning thresholds accept a percentage.
+=cut
+sub check_hit_ratio(@%) {
+    no bigint;
+    my @rc;
+    my @perfdata;
+    my @msg_crit;
+    my @msg_warn;
+    my $me           = 'POSTGRES_HIT_RATIO';
+    my @hosts        = @{ $_[0] };
+    my %args         = %{ $_[1] };
+    my $min_hit_ratio = 100000;
+    my $sql          = q{SELECT d.datname,
+        round((blks_hit::float/(blks_read+blks_hit+1)*100)::numeric, 2) as cachehitratio
+        FROM pg_stat_database sd
+        JOIN pg_database d ON d.oid = sd.datid
+        WHERE d.datallowconn AND NOT d.datistemplate
+        AND (blks_read+blks_hit) > 0
+        ORDER BY datname, cachehitratio};
+
+    @rc = @{ query( $hosts[0], $sql ) };
+
+DB_LOOP:    foreach my $db (@rc) {
+        $min_hit_ratio = $db->[1] if ( $db->[1] < $min_hit_ratio );
+
+        push @perfdata,
+            sprintf( "%s=%.2f;%d;%d",
+            $db->[0], $db->[1], $args{'warning'}, $args{'critical'} );
+
+        if ( $db->[1] < $args{'critical'} ) {
+            push @msg_crit =>
+                sprintf( "%s : %.2f", $db->[0], $db->[1] );
+            next DB_LOOP;
+        }
+        if ( $db->[1] < $args{'warning'} ) {
+            push @msg_warn =>
+                sprintf( "%s : %.2f", $db->[0], $db->[1] );
+            next DB_LOOP;
+        }
+    }
+
+    return critical( $me, [ @msg_crit, @msg_warn ], \@perfdata )
+        if $min_hit_ratio < $args{'critical'};
+
+    return warning( $me, \@msg_warn, \@perfdata )
+        if $min_hit_ratio < $args{'warning'};
+
+    return ok( $me, [ scalar(@rc) . " database(s) checked" ], \@perfdata );
 }
 
 __END__
