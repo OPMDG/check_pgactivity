@@ -773,11 +773,11 @@ sub check_backends(@%) {
 
     @rc = @{ query( $hosts[0], $sql ) };
 
-    $args{'critical'} = int( $rc[0]->[2] * $args{'critical'} / 100 )
-        if ( $args{'critical'} =~ /%$/ );
+    $args{'critical'} = int( $rc[0][2] * $1 / 100 )
+        if ( $args{'critical'} =~ /^([0-9.]+)%$/ );
 
-    $args{'warning'} = int( $rc[0]->[2] * $args{'warning'} / 100 )
-        if ( $args{'warning'} =~ /%$/ );
+    $args{'warning'} = int( $rc[0][2] * $1 / 100 )
+        if ( $args{'warning'} =~ /^([0-9.]+)%$/ );
 
     foreach my $db (@rc) {
         $num_backends += $db->[1];
@@ -1148,8 +1148,8 @@ sub check_locks(@%) {
 
     @rs = @{ query_ver( $hosts[0], \%queries ) };
 
-    $args{'critical'} = $args{'critical'} * $rs[0][0] if $args{'critical'} =~ /%$/;
-    $args{'warning'}  = $args{'warning'} * $rs[0][0]  if $args{'warning'}  =~ /%$/;
+    $args{'critical'} = int($1 * $rs[0][2]/100) if $args{'critical'} =~ /^([0-9.]+)%$/;
+    $args{'warning'}  = int($1 * $rs[0][2]/100) if $args{'warning'}  =~ /^([0-9.]+)%$/;
 
     map {
         $total_locks += $_->[0];
