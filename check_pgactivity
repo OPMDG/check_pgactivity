@@ -57,6 +57,14 @@ my $PG_VERSION_93 = 90300;
 
 # available services and descriptions
 my %services = (
+    # 'service_name' => {
+    #    'sub'     => sub reference to call to run this service
+    #    'desc'    => 'a desctiption of the service'
+    #    'min'     => the minimum version of pgsql the service supports
+    #    'max'     => the maximum version of pgsql the service supports
+    #    'offline' => (optional) is defined, the service doesn't connect
+    #                 to a cluster.
+    # }
     'backends' => {
         'sub'  => \&check_backends,
         'desc' => 'Number of connections, compared to max_connections.'
@@ -100,6 +108,7 @@ my %services = (
     'archive_folder' => {
         'sub'  => \&check_archive_folder,
         'desc' => 'Check archives in given folder.',
+        'offline' => 1
     },
     'minor_version' => {
         'sub'  => \&check_minor_version,
@@ -313,17 +322,23 @@ $SIG{'INT'} = $SIG{'QUIT'} = $SIG{'TERM'} = 'terminate';
 my $orig_name = $0;
 $0 = $PROGRAM;
 
-foreach my $host (@hosts) {
 
-    unless ( is_service_compatible( $host, $args{'service'} ) ) {
-        warn sprintf "Service %s is not compatible with host %s:%d (v%s).\n",
-            $args{'service'}, $host->{'host'}, $host->{'port'}, $host->{'version'};
-        exit 1;
+# check if cluster version is compatible with the given service if required
+unless (defined $services{ $args{'service'} }{'offline'}) {
+
+    foreach my $host (@hosts) {
+
+        unless ( is_service_compatible( $host, $args{'service'} ) ) {
+            warn sprintf "Service %s is not compatible with host %s:%d (v%s).\n",
+                $args{'service'}, $host->{'host'}, $host->{'port'}, $host->{'version'};
+            exit 1;
+        }
+
+        dprint( sprintf "Execute service %s on %s:%d (v%s)\n",
+            $args{'service'}, $host->{'host'}, $host->{'port'}, $host->{'version'} );
     }
-
-    dprint( sprintf "Execute service %s on %s:%d (v%s)\n",
-        $args{'service'}, $host->{'host'}, $host->{'port'}, $host->{'version'} );
 }
+
 
 exit $services{ $args{'service'} }{'sub'}->( \@hosts, \%args );
 
