@@ -326,9 +326,21 @@ $0 = $PROGRAM;
 # check if cluster version is compatible with the given service if required
 unless (defined $services{ $args{'service'} }{'offline'}) {
 
+    my $service = $services{ $args{'service'} };
+    my $ver;
+
     foreach my $host (@hosts) {
 
-        unless ( is_service_compatible( $host, $args{'service'} ) ) {
+        set_pgversion($host);
+
+        $ver = 100*int($host->{'version_num'}/100);
+
+        $service->{'min'} //= $PG_VERSION_74;
+        $service->{'max'} //= 9999999; # is superior to any pg version_num
+
+        unless ($ver >= $service->{'min'}
+            and $ver <= $service->{'max'}
+        ) {
             warn sprintf "Service %s is not compatible with host %s:%d (v%s).\n",
                 $args{'service'}, $host->{'host'}, $host->{'port'}, $host->{'version'};
             exit 1;
@@ -647,24 +659,6 @@ sub get_all_dbname($) {
     return \@dbs;
 }
 
-# check if given host can run the given service
-sub is_service_compatible($$) {
-    my $host    = shift;
-    my $service = shift;
-    my $ver = 100*int(get_pgversion_num($host)/100);
-
-    $services{$service}{'min'} = $PG_VERSION_74
-        if not defined $services{$service}{'min'};
-    $services{$service}{'max'} = 9999999 # is superior to any pg version_num
-        if not defined $services{$service}{'max'};
-
-    return 1
-        if $ver >= $services{$service}{'min'}
-            and $ver <= $services{$service}{'max'};
-
-    return 0;
-}
-
 # Query and set the version for the given host
 sub set_pgversion($) {
     my $host = shift;
@@ -690,27 +684,6 @@ sub set_pgversion($) {
     }
 
     return 1;
-}
-
-# returns the human readable version of the given host
-sub get_pgversion($) {
-    my $host = shift;
-    set_pgversion($host) unless $host->{'version'};
-
-    return $host->{'version'} if $host->{'version'};
-
-    return undef;
-}
-
-# returns the machine readable version (as integer) of the given host
-sub get_pgversion_num($) {
-    my $host = shift;
-
-    set_pgversion($host) unless $host->{'version_num'};
-
-    return $host->{'version_num'} if $host->{'version_num'};
-
-    return undef;
 }
 
 sub dprint {
