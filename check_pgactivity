@@ -27,7 +27,6 @@ use vars qw($VERSION $PROGRAM);
 use strict;
 
 use POSIX;
-use bigint;
 use File::Basename 'dirname';
 use Getopt::Long qw(:config bundling no_ignore_case_always);
 use List::Util qw(max);
@@ -123,7 +122,6 @@ my %services = (
     }
 );
 
-my %args;
 
 =over
 
@@ -192,49 +190,44 @@ Each available service supports one or more form (eg. a size and a percentage).
 
 =cut
 
-{
-    # WARN: Getopt::Long is not compatible with bigint as this pragma replace
-    # any integers with references to internal objects.
-    no bigint;
+my %args = (
+    'service'     => undef,
+    'host'        => undef,
+    'username'    => undef,
+    'port'        => undef,
+    'dbname'      => undef,
+    'dbservice'   => undef,
+    'warning'     => undef,
+    'critical'    => undef,
+    'exclude'     => '',
+    'psql'        => '/usr/bin/psql',
+    'path'        => undef,
+    'status-file' => dirname(__FILE__) . '/check_pgactivity.data',
+    'list'        => 0,
+    'help'        => 0,
+    'debug'       => 0
+);
 
-    %args = (
-        'service'     => undef,
-        'host'        => undef,
-        'username'    => undef,
-        'port'        => undef,
-        'dbname'      => undef,
-        'dbservice'   => undef,
-        'warning'     => undef,
-        'critical'    => undef,
-        'exclude'     => '',
-        'psql'        => '/usr/bin/psql',
-        'path'        => undef,
-        'status-file' => dirname(__FILE__) . '/check_pgactivity.data',
-        'list'        => 0,
-        'help'        => 0,
-        'debug'       => 0
-    );
+Getopt::Long::Configure('bundling');
+GetOptions(
+    \%args,
+        'service|s=s',
+        'host|h=s',
+        'username|U=s',
+        'port|p=s',
+        'dbname|d=s',
+        'dbservice|S=s',
+        'warning|w=s',
+        'critical|c=s',
+        'psql|P=s',
+        'path=s',
+        'status-file=s',
+        'list!',
+        'version|V!',
+        'help|?!',
+        'debug!'
+) or pod2usage( -exitval => 2 );
 
-    Getopt::Long::Configure('bundling');
-    GetOptions(
-        \%args,
-            'service|s=s',
-            'host|h=s',
-            'username|U=s',
-            'port|p=s',
-            'dbname|d=s',
-            'dbservice|S=s',
-            'warning|w=s',
-            'critical|c=s',
-            'psql|P=s',
-            'path=s',
-            'status-file=s',
-            'list!',
-            'version|V!',
-            'help|?!',
-            'debug!'
-    ) or pod2usage( -exitval => 2 );
-}
 
 list_services() if $args{'list'};
 version()       if $args{'version'};
@@ -647,7 +640,7 @@ sub is_service_compatible($$) {
 
     $services{$service}{'min'} = $PG_VERSION_74
         if not defined $services{$service}{'min'};
-    $services{$service}{'max'} = inf
+    $services{$service}{'max'} = 9999999 # is superior to any pg version_num
         if not defined $services{$service}{'max'};
 
     return 1
@@ -789,13 +782,10 @@ sub check_backends(@%) {
     foreach my $db (@rc) {
         $num_backends += $db->[1];
         push @perfdata,
-            sprintf( "%s=%d;%d;%d;%d;%d",
-            $db->[0], $db->[1], $args{'warning'}, $args{'critical'}, 0,
-            $db->[2] );
+            "$db->[0]=$db->[1];$args{'warning'};$args{'critical'};0;$db->[2]";
     }
 
-    push @msg =>
-        sprintf( "%d connections on %d", $num_backends, $rc[0]->[2] );
+    push @msg => "$num_backends connections on $rc[0][2]";
 
     return critical( $me, \@msg, \@perfdata )
         if $num_backends >= $args{'critical'};
@@ -840,18 +830,15 @@ DB_LOOP: foreach my $db (@rs) {
         $new_db_sizes{ $db->[0] } = $db->[1];
         $delta = $db->[1] - $db_sizes{ $db->[0] };
 
-        push @perfdata,
-            sprintf( "%s=%s;%s;%s", $db->[0], $db->[1], $w_limit, $c_limit );
+        push @perfdata => "$db->[0]=$db->[1];$w_limit;$c_limit";
 
         if ( abs($delta) >= $c_limit ) {
-            push @msg_crit =>
-                sprintf( "%s (%s, now: %s)", $db->[0], $delta, $db->[1] );
+            push @msg_crit => "$db->[0] ($delta, now: $db->[1])";
             next DB_LOOP;
         }
 
         if ( abs($delta) >= $w_limit ) {
-            push @msg_warn =>
-                sprintf( "%s (%s, now: %s)", $db->[0], $delta, $db->[1] );
+            push @msg_warn => "$db->[0] ($delta, now: $db->[1])";
             next DB_LOOP;
         }
     }
@@ -972,12 +959,9 @@ sub check_wal_files(@%) {
     $w_limit = get_size( $args{'warning'},  $rs[3] );
     $c_limit = get_size( $args{'critical'}, $rs[3] );
 
-    push @perfdata => sprintf( "total_wal=%u;%u;%u;1;%u",
-        $rs[0], $w_limit, $c_limit, $rs[3] );
-    push @perfdata => sprintf( "recycled_wal=%u;%u;%u;0;%u",
-        $rs[1], $w_limit, $c_limit, $rs[3] );
-    push @perfdata => sprintf( "written_wal=%u;%u;%u;1;%u",
-        $rs[2], $w_limit, $c_limit, $rs[3] );
+    push @perfdata => "total_wal=$rs[0];$w_limit;$c_limit;1;$rs[3]";
+    push @perfdata => "recycled_wal=$rs[1];$w_limit;$c_limit;0;$rs[3]";
+    push @perfdata => "written_wal=$rs[2];$w_limit;$c_limit;1;$rs[3]";
 
     push @msg => "$rs[0] WAL files";
 
@@ -996,7 +980,7 @@ Critical and Warning thresholds only accept a raw number of file
 =cut
 
 sub check_ready_archives(@%) {
-    my $rs;
+    my @rs;
     my @perfdata;
     my @msg;
     my $me    = 'POSTGRES_READY_ARCHIVES';
@@ -1007,15 +991,14 @@ sub check_ready_archives(@%) {
          FROM pg_ls_dir('pg_xlog/archive_status') as file
          WHERE file ~ '^[0-9A-F]{24}.ready$' };
 
-    $rs = query( $hosts[0], $query )->[0];
+    @rs = @{ query( $hosts[0], $query )->[0] };
 
-    push @perfdata => sprintf( "ready_archives=%u;%u;%u",
-        $rs->[0], $args{'warning'}, $args{'critical'} );
+    push @perfdata => "ready_archives=$rs[0];$args{'warning'};$args{'critical'}";
 
-    push @msg => "$rs->[0] WAL files ready to archive";
+    push @msg => "$rs[0] WAL files ready to archive";
 
-    return critical( $me, \@msg, \@perfdata ) if $rs->[0] >= $args{'critical'};
-    return warning( $me, \@msg, \@perfdata ) if $rs->[0] >= $args{'warning'};
+    return critical( $me, \@msg, \@perfdata ) if $rs[0] >= $args{'critical'};
+    return warning( $me, \@msg, \@perfdata ) if $rs[0] >= $args{'warning'};
     return ok( $me, \@msg, \@perfdata );
 }
 
@@ -1048,8 +1031,7 @@ sub check_last_maintenance($@%) {
 
 LOOP_DB: foreach my $db (@all_db) {
         my $rs = @{ query( $hosts[0], $query, $db )->[0] }[0];
-        push @perfdata =>
-            sprintf( '%s=%s;%s;%s', $db, $rs, $w_limit, $c_limit );
+        push @perfdata => "$db=$rs;$w_limit;$c_limit";
 
         if ( $rs =~ /^-inf/i or $rs >= $c_limit ) {
             push @msg_crit => "$db: " . to_interval($rs);
@@ -1171,8 +1153,7 @@ sub check_locks(@%) {
 
     map {
         $total_locks += $_->[0];
-        push @perfdata => sprintf( "%s=%s;%s;%s",
-            $_->[1], $_->[0], $args{'warning'}, $args{'critical'} );
+        push @perfdata => ( "$_->[1]=$_->[0];$args{'warning'};$args{'critical'}" );
     } @rs;
 
     push @msg => "$total_locks locks";
@@ -1227,32 +1208,31 @@ sub check_bgwriter(@%) {
         }
     );
 
-    @rc = @{ query_ver( $hosts[0], \%queries ) };
+    @rc = @{ query_ver( $hosts[0], \%queries )->[0] };
 
-    $delta_buffers_total = $rc[0]->[2] - $bgwriter{'buffers_checkpoint'}
-        + $rc[0]->[3] - $bgwriter{'buffers_clean'}
-        + $rc[0]->[5] - $bgwriter{'buffers_backend'};
+    $delta_buffers_total = $rc[2] - $bgwriter{'buffers_checkpoint'}
+        + $rc[3] - $bgwriter{'buffers_clean'}
+        + $rc[5] - $bgwriter{'buffers_backend'};
 
-    $delta_buffers_backend = $rc[0]->[5] - $bgwriter{'buffers_backend'};
+    $delta_buffers_backend = $rc[5] - $bgwriter{'buffers_backend'};
 
     $w_limit = get_size( $args{'warning'},  $delta_buffers_total );
     $c_limit = get_size( $args{'critical'}, $delta_buffers_total );
 
     push @perfdata,
-        sprintf(
-        'buffers_backend=%s;%s;%s checkpoint_timed=%s checkpoint_req=%s buffers_checkpoint=%s buffers_clean=%s maxwritten_clean=%s buffers_backend_fsync=%s buffers_alloc=%s',
-        $rc[0]->[5], $w_limit,    $c_limit,    $rc[0]->[0], $rc[0]->[1],
-        $rc[0]->[2], $rc[0]->[3], $rc[0]->[4], $rc[0]->[7], $rc[0]->[6]
-        );
+        "buffers_backend=$rc[5];$w_limit;$c_limit checkpoint_timed=$rc[0] ".
+        "checkpoint_req=$rc[1] buffers_checkpoint=$rc[2] buffers_clean=$rc[3] ".
+        "maxwritten_clean=$rc[4] buffers_backend_fsync=$rc[7] ".
+        "buffers_alloc=$rc[6]";
 
-    $new_bgwriter{'checkpoint_timed'}      = $rc[0]->[0];
-    $new_bgwriter{'checkpoint_req'}        = $rc[0]->[1];
-    $new_bgwriter{'buffers_checkpoint'}    = $rc[0]->[2];
-    $new_bgwriter{'buffers_clean'}         = $rc[0]->[3];
-    $new_bgwriter{'maxwritten_clean'}      = $rc[0]->[4];
-    $new_bgwriter{'buffers_backend'}       = $rc[0]->[5];
-    $new_bgwriter{'buffers_backend_fsync'} = $rc[0]->[7];
-    $new_bgwriter{'buffers_alloc'}         = $rc[0]->[6];
+    $new_bgwriter{'checkpoint_timed'}      = $rc[0];
+    $new_bgwriter{'checkpoint_req'}        = $rc[1];
+    $new_bgwriter{'buffers_checkpoint'}    = $rc[2];
+    $new_bgwriter{'buffers_clean'}         = $rc[3];
+    $new_bgwriter{'maxwritten_clean'}      = $rc[4];
+    $new_bgwriter{'buffers_backend'}       = $rc[5];
+    $new_bgwriter{'buffers_backend_fsync'} = $rc[7];
+    $new_bgwriter{'buffers_alloc'}         = $rc[6];
 
     save( $hosts[0], 'bgwriter', \%new_bgwriter, $args{'status-file'} );
 
@@ -1331,11 +1311,8 @@ sub check_archive_folder(@%) {
     $latest_wal_age = time() - $filelist_sorted[-1][1];
 
     push @perfdata,
-        sprintf(
-        'latest_archive_age=%ss;%s;%s num_archives=%s',
-        $latest_wal_age, $w_limit, $c_limit,
-        scalar @filelist_sorted
-        );
+        "latest_archive_age=${latest_wal_age}s;$w_limit;$c_limit ".
+        "num_archives=". scalar(@filelist_sorted);
 
     $timeline = hex(substr($filelist_sorted[-1][0], 0, 8));
     $wal = hex(substr($filelist_sorted[0][0], 8, 8));
@@ -1346,20 +1323,20 @@ sub check_archive_folder(@%) {
         my $curr = sprintf('%08X%08X%08X', $timeline, $wal + int(($seg + $i)/255), ($seg + $i)%255 );
 
         if ($curr ne $filelist_sorted[$i][0]) {
-            push @msg => sprintf( 'Wrong sequence or file missing @ "%s"', $curr);
+            push @msg => "Wrong sequence or file missing @ '$curr'";
             last;
         }
 
         if ($filelist_sorted[$i][2] != 16777216) {
-            push @msg => sprintf( '"%s" is not 16MB', $curr);
+            push @msg => "'$curr' is not 16MB";
             last;
         }
     }
 
     return critical( $me, \@msg, \@perfdata ) if @msg;
 
-    push @msg => sprintf( '%s WAL archived in "%s", latest archived since %s',
-        scalar @filelist_sorted, $args{'path'}, to_interval($latest_wal_age));
+    push @msg => scalar(@filelist_sorted)." WAL archived in '$args{'path'}', "
+        ."latest archived since ". to_interval($latest_wal_age);
 
     return critical( $me, \@msg, \@perfdata )
         if $latest_wal_age >= $c_limit;
@@ -1444,21 +1421,20 @@ sub check_minor_version(@%) {
     $major_version = $1;
 
     unless ( defined $latest_versions{$major_version} ) {
-        push @msg => sprintf('Unknown PostgreSQL version %s', $major_version );
+        push @msg => "Unknown PostgreSQL version $major_version";
         return unknown( $me, \@msg, [] );
     }
 
-    push @perfdata => sprintf( "version=%s", $hosts[0]{'version_num'});
+    push @perfdata => "version=". $hosts[0]{'version_num'};
 
     if ( $hosts[0]{'version_num'} < $latest_versions{$major_version}[0] ) {
-        push @msg => sprintf('Latest PostgreSQL is %s, running version is %s',
-            $latest_versions{$major_version}[1],
-            $hosts[0]{'version'}
-        );
+        push @msg => "Latest PostgreSQL is ".
+            $latest_versions{$major_version}[1].
+            "running version is ". $hosts[0]{'version'};
         return critical( $me, \@msg, \@perfdata )
     }
 
-    push @msg => "PostgreSQL version $hosts[0]{'version'}";
+    push @msg => "PostgreSQL version ". $hosts[0]{'version'};
 
     return ok( $me, \@msg, \@perfdata );
 }
@@ -1551,12 +1527,11 @@ sub check_hot_standby_delta(@%) {
 
         $host->{'name'} =~ s/ db=.*$//;
 
-        push @perfdata => sprintf( "'receive delta %s'=%s 'replay delta %s'=%s ",
-            $host->{'name'},
-            $host->{'receive_delta'} > 0 ? $host->{'receive_delta'}:0,
-            $host->{'name'},
-            $host->{'replay_delta'} > 0 ? $host->{'replay_delta'}:0
-        );
+        push @perfdata => "'receive delta $host->{'name'}'=".
+            ($host->{'receive_delta'} > 0 ? $host->{'receive_delta'}:0).
+            "'replay delta $host->{'name'}'=".
+            ($host->{'replay_delta'} > 0 ? $host->{'replay_delta'}:0)
+        ;
 
         if ($host->{'receive_delta'} > $c_limit_received) {
             push @msg_crit, "critical receive lag for $host->{'name'}";
@@ -1656,13 +1631,10 @@ sub check_streaming_delta(@%) {
         $host->[6] =~ m{^([0-9A-F]+)/([0-9A-F]+)$};
         $replay_delta = $master_location - (hex('ff000000') * hex($1)) - hex($2);
 
-        $name = sprintf('application_name=%s host=%s pid=%s',
-            $host->[0], $host->[1], $host->[2]
-        );
+        $name = "application_name=$host->[0] host=$host->[1] pid=$host->[2]";
 
-        push @perfdata => sprintf( "'flushed delta %s'=%s 'replay delta %s'=%s ",
-            $name, $flush_delta, $name, $replay_delta
-        );
+        push @perfdata => "'flushed delta $name'=$flush_delta ".
+            "'replay delta $name'=$replay_delta";
 
         $num_clusters++;
 
@@ -1729,17 +1701,16 @@ DB_LOOP:    foreach my $db (@rc) {
         $min_hit_ratio = $db->[1] if ( $db->[1] < $min_hit_ratio );
 
         push @perfdata,
-            sprintf( "%s=%.2f;%d;%d",
-            $db->[0], $db->[1], $args{'warning'}, $args{'critical'} );
+            "$db->[0]=$db->[1];$args{'warning'};$args{'critical'}";
 
         if ( $db->[1] < $args{'critical'} ) {
             push @msg_crit =>
-                sprintf( "%s : %.2f", $db->[0], $db->[1] );
+                "$db->[0]: $db->[1]";
             next DB_LOOP;
         }
         if ( $db->[1] < $args{'warning'} ) {
             push @msg_warn =>
-                sprintf( "%s : %.2f", $db->[0], $db->[1] );
+                "$db->[0]: $db->[1]";
             next DB_LOOP;
         }
     }
