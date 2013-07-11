@@ -818,7 +818,7 @@ DB_LOOP: foreach my $db (@rs) {
         $new_db_sizes{ $db->[0] } = $db->[1];
         $delta = $db->[1] - $db_sizes{ $db->[0] };
 
-        push @perfdata => "$db->[0]=$db->[1];$w_limit;$c_limit";
+        push @perfdata => "$db->[0]=$db->[1]B;$w_limit;$c_limit";
 
         if ( abs($delta) >= $c_limit ) {
             push @msg_crit => "$db->[0] ($delta, now: $db->[1])";
@@ -1019,7 +1019,7 @@ sub check_last_maintenance($@%) {
 
 LOOP_DB: foreach my $db (@all_db) {
         my $rs = @{ query( $hosts[0], $query, $db )->[0] }[0];
-        push @perfdata => "$db=$rs;$w_limit;$c_limit";
+        push @perfdata => "$db=${rs}s;$w_limit;$c_limit";
 
         if ( $rs =~ /^-inf/i or $rs >= $c_limit ) {
             push @msg_crit => "$db: " . to_interval($rs);
@@ -1517,8 +1517,8 @@ sub check_hot_standby_delta(@%) {
 
         push @perfdata => "'receive delta $host->{'name'}'=".
             ($host->{'receive_delta'} > 0 ? $host->{'receive_delta'}:0).
-            "'replay delta $host->{'name'}'=".
-            ($host->{'replay_delta'} > 0 ? $host->{'replay_delta'}:0)
+            "B 'replay delta $host->{'name'}'=".
+            ($host->{'replay_delta'} > 0 ? $host->{'replay_delta'}:0) .'B'
         ;
 
         if ($host->{'receive_delta'} > $c_limit_received) {
@@ -1621,8 +1621,8 @@ sub check_streaming_delta(@%) {
 
         $name = "application_name=$host->[0] host=$host->[1] pid=$host->[2]";
 
-        push @perfdata => "'flushed delta $name'=$flush_delta ".
-            "'replay delta $name'=$replay_delta";
+        push @perfdata => "'flushed delta $name'=${flush_delta}B ".
+            "'replay delta $name'=${replay_delta}B";
 
         $num_clusters++;
 
@@ -1689,7 +1689,7 @@ DB_LOOP:    foreach my $db (@rc) {
         $min_hit_ratio = $db->[1] if ( $db->[1] < $min_hit_ratio );
 
         push @perfdata,
-            "$db->[0]=$db->[1];$args{'warning'};$args{'critical'}";
+            "$db->[0]=$db->[1]%;$args{'warning'};$args{'critical'}";
 
         if ( $db->[1] < $args{'critical'} ) {
             push @msg_crit =>
