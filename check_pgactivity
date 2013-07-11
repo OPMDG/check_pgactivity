@@ -1173,8 +1173,8 @@ sub check_bgwriter(@%) {
     my @perfdata;
     my $delta_buffers_total;
     my $delta_buffers_backend;
-    my $w_limit;
-    my $c_limit;
+    my $delta_buffers_bgwriter;
+    my $delta_buffers_checkpointer;
     my %new_bgwriter;
     my %bgwriter
         = %{ load( $hosts[0], 'bgwriter', $args{'status-file'} ) || {} };
@@ -1183,14 +1183,22 @@ sub check_bgwriter(@%) {
     my %args    = %{ $_[1] };
     my %queries = (
         $PG_VERSION_83 => q{SELECT checkpoints_timed, checkpoints_req,
-              buffers_checkpoint, buffers_clean, maxwritten_clean,
-              buffers_backend, buffers_alloc, 0,
+              buffers_checkpoint * current_setting('block_size')::numeric,
+              buffers_clean * current_setting('block_size')::numeric,
+              maxwritten_clean,
+              buffers_backend * current_setting('block_size')::numeric,
+              buffers_alloc * current_setting('block_size')::numeric,
+              0,
               current_setting('checkpoint_segments')
             FROM pg_stat_bgwriter;
         },
         $PG_VERSION_91 => q{SELECT checkpoints_timed, checkpoints_req,
-              buffers_checkpoint, buffers_clean, maxwritten_clean,
-              buffers_backend, buffers_alloc, buffers_backend_fsync,
+              buffers_checkpoint * current_setting('block_size')::numeric,
+              buffers_clean * current_setting('block_size')::numeric,
+              maxwritten_clean,
+              buffers_backend * current_setting('block_size')::numeric,
+              buffers_alloc * current_setting('block_size')::numeric,
+              buffers_backend_fsync,
               current_setting('checkpoint_segments')
             FROM pg_stat_bgwriter;
         }
@@ -1198,20 +1206,11 @@ sub check_bgwriter(@%) {
 
     @rc = @{ query_ver( $hosts[0], \%queries )->[0] };
 
-    $delta_buffers_total = $rc[2] - $bgwriter{'buffers_checkpoint'}
-        + $rc[3] - $bgwriter{'buffers_clean'}
-        + $rc[5] - $bgwriter{'buffers_backend'};
-
-    $delta_buffers_backend = $rc[5] - $bgwriter{'buffers_backend'};
-
-    $w_limit = get_size( $args{'warning'},  $delta_buffers_total );
-    $c_limit = get_size( $args{'critical'}, $delta_buffers_total );
-
     push @perfdata,
-        "buffers_backend=$rc[5];$w_limit;$c_limit checkpoint_timed=$rc[0] ".
-        "checkpoint_req=$rc[1] buffers_checkpoint=$rc[2] buffers_clean=$rc[3] ".
+        "buffers_backend=$rc[5]B; checkpoint_timed=$rc[0] ".
+        "checkpoint_req=$rc[1] buffers_checkpoint=$rc[2]B buffers_clean=$rc[3]B ".
         "maxwritten_clean=$rc[4] buffers_backend_fsync=$rc[7] ".
-        "buffers_alloc=$rc[6]";
+        "buffers_alloc=$rc[6]B";
 
     $new_bgwriter{'checkpoint_timed'}      = $rc[0];
     $new_bgwriter{'checkpoint_req'}        = $rc[1];
@@ -1224,15 +1223,38 @@ sub check_bgwriter(@%) {
 
     save( $hosts[0], 'bgwriter', \%new_bgwriter, $args{'status-file'} );
 
-    push @msg => sprintf( "%s%% of buffers written by buffers_backend",
-        $delta_buffers_total == 0
-        ? 0
-        : 100 * $delta_buffers_backend / $delta_buffers_total );
+    $delta_buffers_total = $rc[2] - $bgwriter{'buffers_checkpoint'}
+        + $rc[3] - $bgwriter{'buffers_clean'}
+        + $rc[5] - $bgwriter{'buffers_backend'};
 
-    return critical( $me, \@msg, \@perfdata )
-        if $delta_buffers_backend >= $c_limit;
-    return warning( $me, \@msg, \@perfdata )
-        if $delta_buffers_backend >= $w_limit;
+    $delta_buffers_backend = $rc[5] - $bgwriter{'buffers_backend'};
+    $delta_buffers_bgwriter = $rc[3] - $bgwriter{'buffers_clean'};
+    $delta_buffers_checkpointer = $rc[2] - $bgwriter{'buffers_checkpoint'};
+
+    #push @msg => sprintf( "%.2f%% of buffers written by buffers_backend",
+    #    $delta_buffers_total == 0
+    #    ? 0
+    #    : 100 * $delta_buffers_backend / $delta_buffers_total );
+
+    if ($delta_buffers_total) {
+        my $w_limit = get_size( $args{'warning'},  $delta_buffers_total );
+        my $c_limit = get_size( $args{'critical'}, $delta_buffers_total );
+
+        push @msg => sprintf( "%.2f%% from backends, %.2f%% from bgwriter, %.2f%% from checkpointer",
+            100 * $delta_buffers_backend / $delta_buffers_total,
+            100 * $delta_buffers_bgwriter / $delta_buffers_total,
+            100 * $delta_buffers_checkpointer / $delta_buffers_total,
+        );
+
+        return critical( $me, \@msg, \@perfdata )
+            if $delta_buffers_backend >= $c_limit;
+        return warning( $me, \@msg, \@perfdata )
+            if $delta_buffers_backend >= $w_limit;
+    }
+    else {
+        push @msg => "No writes";
+    }
+
     return ok( $me, \@msg, \@perfdata );
 }
 
