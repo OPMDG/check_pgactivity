@@ -289,7 +289,7 @@ my @dbnames    = split( /,/, $args{'dbname'} );
 my @dbusers    = split( /,/, $args{'username'} );
 my @dbports    = split( /,/, $args{'port'} );
 my @dbservices = split( /,/, $args{'dbservice'} );
-my $nbhosts    = max $#dbhosts, $#dbnames, $#dbusers, $#dbports;
+my $nbhosts    = max $#dbhosts, $#dbnames, $#dbusers, $#dbports, $#dbservices;
 
 # Take the first value for each connection properties as default.
 # eg. "-h localhost -p 5432,5433" gives two hosts:
