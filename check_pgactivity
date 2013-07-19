@@ -267,18 +267,10 @@ pod2usage(
 
 # We set defaults only if there is no dbservice file.
 unless (defined $args{'dbservice'}) {
-    if (!defined($args{'hosts'})) {
-        $args{'hosts'} = $ENV{'PGHOST'} || 'localhost';
-    }
-    if (!defined($args{'username'})) {
-        $args{'username'} = $ENV{'PGUSER'} || 'postgres';
-    }
-    if (!defined($args{'port'})) {
-        $args{'port'} = $ENV{'PGPORT'} || '5432';
-    }
-    if (!defined($args{'dbname'})) {
-        $args{'dbname'} = $ENV{'PGDATABASE'} || 'template1';
-    }
+    $args{'host'} //= ($ENV{'PGHOST'} || 'localhost');
+    $args{'username'} //= ($ENV{'PGUSER'} || 'postgres');
+    $args{'port'} //= ($ENV{'PGPORT'} || '5432');
+    $args{'dbname'} //= ($ENV{'PGDATABASE'} || 'template1');
 }
 
 # check_pgactivity might be call with several host informations
@@ -289,7 +281,7 @@ my @dbnames    = split( /,/, $args{'dbname'} );
 my @dbusers    = split( /,/, $args{'username'} );
 my @dbports    = split( /,/, $args{'port'} );
 my @dbservices = split( /,/, $args{'dbservice'} );
-my $nbhosts    = max $#dbhosts, $#dbnames, $#dbusers, $#dbports, $#dbservices;
+my $nbhosts    = max $#dbhosts, $#dbnames, $#dbusers, $#dbports;
 
 # Take the first value for each connection properties as default.
 # eg. "-h localhost -p 5432,5433" gives two hosts:
@@ -343,12 +335,8 @@ unless (defined $services{ $args{'service'} }{'offline'}) {
 
         $ver = 100*int($host->{'version_num'}/100);
 
-        if (!defined($service->{'min'}) ) {
-            $service->{'min'} = $PG_VERSION_74;
-        }
-        if (!defined($service->{'max'}) ) {
-            $service->{'max'} = 9999999; # is superior to any pg version_num
-        }
+        $service->{'min'} //= $PG_VERSION_74;
+        $service->{'max'} //= 9999999; # is superior to any pg version_num
 
         unless ($ver >= $service->{'min'}
             and $ver <= $service->{'max'}
@@ -1524,13 +1512,8 @@ sub check_hot_standby_delta(@%) {
 
     ($w_limit_received, $w_limit_replayed) = split /,/, $args{'warning'};
     ($c_limit_received, $c_limit_replayed) = split /,/, $args{'critical'};
-
-    if (!defined($w_limit_replayed)) {
-        $w_limit_replayed = $w_limit_received;
-    }
-    if (!defined($c_limit_replayed)) {
-        $c_limit_replayed = $c_limit_received;
-    }
+    $w_limit_replayed //= $w_limit_received;
+    $c_limit_replayed //= $c_limit_received;
 
     $w_limit_received = get_size( $w_limit_received );
     $c_limit_received = get_size( $c_limit_received );
@@ -1634,13 +1617,8 @@ sub check_streaming_delta(@%) {
 
     ($w_limit_flushed, $w_limit_replayed) = split /,/, $args{'warning'};
     ($c_limit_flushed, $c_limit_replayed) = split /,/, $args{'critical'};
-
-    if (!defined($w_limit_replayed)) {
-        $w_limit_replayed = $w_limit_flushed;
-    }
-    if (!defined($c_limit_replayed)) {
-        $c_limit_replayed = $c_limit_flushed;
-    }
+    $w_limit_replayed //= $w_limit_flushed;
+    $c_limit_replayed //= $c_limit_flushed;
 
     $w_limit_flushed = get_size( $w_limit_flushed );
     $c_limit_flushed = get_size( $c_limit_flushed );
