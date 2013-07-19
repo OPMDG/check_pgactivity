@@ -1244,11 +1244,6 @@ sub check_bgwriter(@%) {
     $delta_buffers_bgwriter = $rc[3] - $bgwriter{'buffers_clean'};
     $delta_buffers_checkpointer = $rc[2] - $bgwriter{'buffers_checkpoint'};
 
-    #push @msg => sprintf( "%.2f%% of buffers written by buffers_backend",
-    #    $delta_buffers_total == 0
-    #    ? 0
-    #    : 100 * $delta_buffers_backend / $delta_buffers_total );
-
     if ($delta_buffers_total) {
         my $w_limit = get_size( $args{'warning'},  $delta_buffers_total );
         my $c_limit = get_size( $args{'critical'}, $delta_buffers_total );
