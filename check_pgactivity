@@ -1188,6 +1188,11 @@ sub check_bgwriter(@%) {
     my $delta_buffers_bgwriter;
     my $delta_buffers_checkpointer;
     my $delta_buffers_backend_ratio;
+    my $delta_buffers_alloc;
+    my $delta_checkpoint_timed;
+    my $delta_checkpoint_req;
+    my $delta_maxwritten_clean;
+    my $delta_backend_fsync;
     my %new_bgwriter;
     my %bgwriter
         = %{ load( $hosts[0], 'bgwriter', $args{'status-file'} ) || {} };
@@ -1219,12 +1224,6 @@ sub check_bgwriter(@%) {
 
     @rc = @{ query_ver( $hosts[0], \%queries )->[0] };
 
-    push @perfdata,
-        "buffers_backend=$rc[5]B; checkpoint_timed=$rc[0] ".
-        "checkpoint_req=$rc[1] buffers_checkpoint=$rc[2]B buffers_clean=$rc[3]B ".
-        "maxwritten_clean=$rc[4] buffers_backend_fsync=$rc[7] ".
-        "buffers_alloc=$rc[6]B";
-
     $new_bgwriter{'checkpoint_timed'}      = $rc[0];
     $new_bgwriter{'checkpoint_req'}        = $rc[1];
     $new_bgwriter{'buffers_checkpoint'}    = $rc[2];
@@ -1243,6 +1242,20 @@ sub check_bgwriter(@%) {
     $delta_buffers_backend = $rc[5] - $bgwriter{'buffers_backend'};
     $delta_buffers_bgwriter = $rc[3] - $bgwriter{'buffers_clean'};
     $delta_buffers_checkpointer = $rc[2] - $bgwriter{'buffers_checkpoint'};
+    $delta_buffers_alloc = $rc[6] - $bgwriter{'buffers_alloc'};
+    $delta_checkpoint_timed = $rc[0] - $bgwriter{'checkpoint_timed'};
+    $delta_checkpoint_req = $rc[1] - $bgwriter{'checkpoint_req'};
+    $delta_maxwritten_clean = $rc[4] - $bgwriter{'maxwritten_clean'};
+    $delta_backend_fsync = $rc[7] - $bgwriter{'buffers_backend_fsync'};
+
+    push @perfdata, "buffers_backend=${delta_buffers_backend}B;".
+                    " checkpoint_timed=${delta_checkpoint_timed}".
+                    " checkpoint_req=${delta_checkpoint_req}".
+                    " buffers_checkpoint=${delta_buffers_checkpointer}B".
+                    " buffers_clean=${delta_buffers_bgwriter}B".
+                    " maxwritten_clean=${delta_maxwritten_clean}".
+                    " buffers_backend_fsync=${delta_backend_fsync}".
+                    " buffers_alloc=${delta_buffers_alloc}B";
 
     if ($delta_buffers_total) {
         my $w_limit = get_size( $args{'warning'},  $delta_buffers_total );
