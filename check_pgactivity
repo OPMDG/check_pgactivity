@@ -1187,6 +1187,7 @@ sub check_bgwriter(@%) {
     my $delta_buffers_backend;
     my $delta_buffers_bgwriter;
     my $delta_buffers_checkpointer;
+    my $delta_buffers_backend_ratio;
     my %new_bgwriter;
     my %bgwriter
         = %{ load( $hosts[0], 'bgwriter', $args{'status-file'} ) || {} };
@@ -1258,10 +1259,12 @@ sub check_bgwriter(@%) {
             100 * $delta_buffers_checkpointer / $delta_buffers_total,
         );
 
+        $delta_buffers_backend_ratio = 100
+            * $delta_buffers_backend / $delta_buffers_total;
         return critical( $me, \@msg, \@perfdata )
-            if $delta_buffers_backend >= $c_limit;
+            if $delta_buffers_backend_ratio >= $c_limit;
         return warning( $me, \@msg, \@perfdata )
-            if $delta_buffers_backend >= $w_limit;
+            if $delta_buffers_backend_ratio >= $w_limit;
     }
     else {
         push @msg => "No writes";
