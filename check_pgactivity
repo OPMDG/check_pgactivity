@@ -56,7 +56,15 @@ my $PG_VERSION_91 = 90100;
 my $PG_VERSION_92 = 90200;
 my $PG_VERSION_93 = 90300;
 
-# available services and descriptions
+# Available services and descriptions.
+#
+# The referenced sub called to exec each service must take two parameters:
+#   * a reference to the hosts array, holding hosts definitions
+#   * a reference to the arguments hash (%args)
+#
+# Note that we can not use perl prototype for these subroutine as they are
+# called indirectly (thus the args given by references).
+
 my %services = (
     # 'service_name' => {
     #    'sub'     => sub reference to call to run this service
@@ -363,7 +371,6 @@ unless (defined $services{ $args{'service'} }{'offline'}) {
             $args{'service'}, $host->{'host'}, $host->{'port'}, $host->{'version'} );
     }
 }
-
 
 exit $services{ $args{'service'} }{'sub'}->( \@hosts, \%args );
 
@@ -691,7 +698,7 @@ sub set_pgversion($) {
         my $rs = query( $host, q{SELECT current_setting('server_version')} );
 
         if ( $? != 0 ) {
-            &dprint("FATAL: psql error, $!\n");
+            dprint("FATAL: psql error, $!\n");
             exit 1;
         }
 
@@ -769,14 +776,14 @@ C<max_connections>.
 
 =cut
 
-sub check_backends(@%) {
+sub check_backends {
 
     my @rc;
     my @perfdata;
     my @msg;
-    my $me           = 'POSTGRES_BACKENDS';
     my @hosts        = @{ $_[0] };
     my %args         = %{ $_[1] };
+    my $me           = 'POSTGRES_BACKENDS';
     my $num_backends = 0;
     my $sql          = q{SELECT datname, numbackends,
         current_setting('max_connections')
@@ -818,17 +825,17 @@ size (eg. 2.5G).
 
 =cut
 
-sub check_database_size(@%) {
+sub check_database_size {
     my @msg_crit;
     my @msg_warn;
     my @rs;
     my @perfdata;
     my %new_db_sizes;
-    my %db_sizes
-        = %{ load( $hosts[0], 'db_size', $args{'status-file'} ) || {} };
-    my $me    = 'POSTGRES_DB_SIZE';
     my @hosts = @{ $_[0] };
     my %args  = %{ $_[1] };
+    my $me    = 'POSTGRES_DB_SIZE';
+    my %db_sizes
+        = %{ load( $hosts[0], 'db_size', $args{'status-file'} ) || {} };
     my $sql   = q{SELECT datname, pg_database_size(datname)
         FROM pg_database};
 
@@ -881,16 +888,16 @@ or for PostgreSQL 8.1 and 8.2:
   100% = 1 + checkpoint_segments * 2
 =cut
 
-sub check_wal_files(@%) {
+sub check_wal_files {
     my $wal_num;
     my $w_limit;
     my $c_limit;
     my @rs;
     my @perfdata;
     my @msg;
-    my $me      = 'POSTGRES_WAL_FILES';
     my @hosts   = @{ $_[0] };
     my %args    = %{ $_[1] };
+    my $me      = 'POSTGRES_WAL_FILES';
     my %queries = (
         $PG_VERSION_90 => q{
             SELECT count(*) AS count, sum(is_recycled::int) AS is_recycled,
@@ -990,13 +997,13 @@ Perfdata returns the number of wal files waiting to be archived.
 Critical and Warning thresholds only accept a raw number of file
 =cut
 
-sub check_ready_archives(@%) {
+sub check_ready_archives {
     my @rs;
     my @perfdata;
     my @msg;
-    my $me    = 'POSTGRES_READY_ARCHIVES';
     my @hosts = @{ $_[0] };
     my %args  = %{ $_[1] };
+    my $me    = 'POSTGRES_READY_ARCHIVES';
     my $query = q{
          SELECT count(*) AS count
          FROM pg_ls_dir('pg_xlog/archive_status') as file
@@ -1014,18 +1021,18 @@ sub check_ready_archives(@%) {
 }
 
 # Agnostic check vacuum or analyze sub
-sub check_last_maintenance($@%) {
+sub check_last_maintenance {
     my $rs;
     my @perfdata;
     my @msg_crit;
     my @msg_warn;
+    my @msg;
+    my $type   = $_[0];
+    my @hosts  = @{ $_[1] };
+    my %args   = %{ $_[2] };
+    my @all_db = @{ get_all_dbname( $hosts[0] ) };
     my $c_limit = get_time( $args{'critical'} );
     my $w_limit = get_time( $args{'warning'} );
-    my @msg;
-    my $type   = shift;
-    my @hosts  = @{ $_[0] };
-    my %args   = %{ $_[1] };
-    my @all_db = @{ get_all_dbname( $hosts[0] ) };
     my $me     = 'POSTGRES_LAST_' . uc($type);
     my $query  = qq{
          SELECT min(
@@ -1074,7 +1081,7 @@ Perfdata returns oldest analyze per database in seconds.
 Critical and Warning thresholds only accept an interval (eg. 1h30m25s).
 =cut
 
-sub check_last_analyze(@%) {
+sub check_last_analyze {
     return check_last_maintenance( 'analyze', @_ );
 }
 
@@ -1089,7 +1096,7 @@ Critical and Warning thresholds only accept an interval (eg. 1h30m25s).
 
 =cut
 
-sub check_last_vacuum(@$) {
+sub check_last_vacuum {
     return check_last_maintenance( 'vacuum', @_ );
 }
 
@@ -1111,14 +1118,14 @@ for 8.2+:
 
 =cut
 
-sub check_locks(@%) {
+sub check_locks {
     my @rs;
     my @perfdata;
     my @msg;
-    my $total_locks = 0;
-    my $me          = 'POSTGRES_LOCKS';
     my @hosts       = @{ $_[0] };
     my %args        = %{ $_[1] };
+    my $total_locks = 0;
+    my $me          = 'POSTGRES_LOCKS';
     my %queries     = (
         $PG_VERSION_74 => q{
             SELECT count(l.*), ref.mode,
@@ -1188,7 +1195,7 @@ Critical and Warning thresholds only accept a percentage.
 
 =cut
 
-sub check_bgwriter(@%) {
+sub check_bgwriter {
     my @msg;
     my @msg_crit;
     my @msg_warn;
@@ -1205,11 +1212,11 @@ sub check_bgwriter(@%) {
     my $delta_maxwritten_clean;
     my $delta_backend_fsync;
     my %new_bgwriter;
+    my @hosts   = @{ $_[0] };
+    my %args    = %{ $_[1] };
     my %bgwriter
         = %{ load( $hosts[0], 'bgwriter', $args{'status-file'} ) || {} };
     my $me      = 'POSTGRES_BGWRITER';
-    my @hosts   = @{ $_[0] };
-    my %args    = %{ $_[1] };
     my %queries = (
         $PG_VERSION_83 => q{SELECT checkpoints_timed, checkpoints_req,
               buffers_checkpoint * current_setting('block_size')::numeric,
@@ -1308,7 +1315,7 @@ interval (eg. 5m or 300s ).
 
 =cut
 
-sub check_archive_folder(@%) {
+sub check_archive_folder {
     my @msg;
     my @msg_crit;
     my @msg_warn;
@@ -1322,9 +1329,8 @@ sub check_archive_folder(@%) {
     my $seg;
     my $latest_wal_age;
     my $dh;
-    my $me      = 'POSTGRES_ARCHIVES';
-    my @hosts   = @{ $_[0] };
     my %args    = %{ $_[1] };
+    my $me      = 'POSTGRES_ARCHIVES';
 
     # "path" argument must be given
     pod2usage(
@@ -1408,14 +1414,14 @@ ignores cirtical and warning arguments.
 
 =cut
 
-sub check_minor_version(@%) {
+sub check_minor_version {
     my @perfdata;
     my @msg;
     my %latest_versions;
     my $rss;
-    my $me    = 'POSTGRES_MINOR_VERSION';
     my @hosts = @{ $_[0] };
     my %args  = %{ $_[1] };
+    my $me    = 'POSTGRES_MINOR_VERSION';
     my $major_version;
     my $timeout = 30;
     my $url = 'http://www.postgresql.org/versions.rss';
@@ -1503,20 +1509,20 @@ This service rise a critical if it doesn't find exactly ONE cluster production
 
 =cut
 
-sub check_hot_standby_delta(@%) {
+sub check_hot_standby_delta {
     my @perfdata;
     my @msg;
     my @msg_crit;
     my @msg_warn;
-    my $master_location = '';
-    my $num_clusters = 0;
     my $w_limit_received;
     my $c_limit_received;
     my $w_limit_replayed;
     my $c_limit_replayed;
-    my $me    = 'POSTGRES_HOT_STANDBY_DELTA';
     my @hosts = @{ $_[0] };
     my %args  = %{ $_[1] };
+    my $master_location = '';
+    my $num_clusters = 0;
+    my $me    = 'POSTGRES_HOT_STANDBY_DELTA';
     my $query = "
         SELECT (NOT pg_is_in_recovery())::int,
             CASE pg_is_in_recovery()
@@ -1628,7 +1634,7 @@ replayed ones. These threshold only accept a size (eg. 2.5G).
 
 =cut
 
-sub check_streaming_delta(@%) {
+sub check_streaming_delta {
     my @perfdata;
     my @msg;
     my @msg_crit;
@@ -1638,11 +1644,11 @@ sub check_streaming_delta(@%) {
     my $c_limit_flushed;
     my $w_limit_replayed;
     my $c_limit_replayed;
-    my $master_location = '';
-    my $num_clusters = 0;
-    my $me    = 'POSTGRES_STREAMING_DELTA';
     my @hosts = @{ $_[0] };
     my %args  = %{ $_[1] };
+    my $me    = 'POSTGRES_STREAMING_DELTA';
+    my $master_location = '';
+    my $num_clusters = 0;
     my $query = "SELECT application_name, client_addr, pid,
             sent_location, write_location, flush_location, replay_location
         FROM pg_stat_replication";
@@ -1731,15 +1737,15 @@ databases which has never been accessed.
 
 Critical and Warning thresholds accept a percentage.
 =cut
-sub check_hit_ratio(@%) {
+sub check_hit_ratio {
     no bigint;
     my @rc;
     my @perfdata;
     my @msg_crit;
     my @msg_warn;
-    my $me           = 'POSTGRES_HIT_RATIO';
     my @hosts        = @{ $_[0] };
     my %args         = %{ $_[1] };
+    my $me           = 'POSTGRES_HIT_RATIO';
     my $min_hit_ratio = 100000;
     my $sql          = q{SELECT d.datname,
         round((blks_hit::float/(blks_read+blks_hit+1)*100)::numeric, 2) as cachehitratio
