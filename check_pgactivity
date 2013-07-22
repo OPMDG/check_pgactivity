@@ -646,7 +646,7 @@ sub query($$;$) {
 # Where pg_version_num is the minimum PostgreSQL version which can run the
 # query. The given versions are in numric version. See "set_pgversion" about
 # how to compute a PostgreSQL num version, or globals $PG_VERSION_*.
-sub query_ver($%;$) {
+sub query_ver($\%;$) {
     my $host    = shift;
     my %queries = %{ shift() };
 
@@ -965,7 +965,7 @@ sub check_wal_files(@%) {
             ) AS t}
     );
 
-    @rs = @{ query_ver( $hosts[0], \%queries )->[0] };
+    @rs = @{ query_ver( $hosts[0], %queries )->[0] };
 
     $w_limit = get_size( $args{'warning'},  $rs[3] );
     $c_limit = get_size( $args{'critical'}, $rs[3] );
@@ -1157,7 +1157,7 @@ sub check_locks(@%) {
         }
     );
 
-    @rs = @{ query_ver( $hosts[0], \%queries ) };
+    @rs = @{ query_ver $hosts[0], %queries };
 
     $args{'critical'} = int($1 * $rs[0][2]/100) if $args{'critical'} =~ /^([0-9.]+)%$/;
     $args{'warning'}  = int($1 * $rs[0][2]/100) if $args{'warning'}  =~ /^([0-9.]+)%$/;
@@ -1233,7 +1233,7 @@ sub check_bgwriter(@%) {
         }
     );
 
-    @rc = @{ query_ver( $hosts[0], \%queries )->[0] };
+    @rc = @{ query_ver( $hosts[0], %queries )->[0] };
 
     $new_bgwriter{'checkpoint_timed'}      = $rc[0];
     $new_bgwriter{'checkpoint_req'}        = $rc[1];
