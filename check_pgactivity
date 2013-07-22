@@ -1347,7 +1347,7 @@ sub check_archive_folder {
     opendir( $dh, $args{'path'} )
         or die "Cannot opendir $args{'path'} : $!\n";
 
-    my @filelist = map { [ $_ => (stat("$args{'path'}/$_"))[9,7] ] }
+    @filelist = map { [ $_ => (stat("$args{'path'}/$_"))[9,7] ] }
         grep( /^[0-9A-F]{24}$/, readdir($dh) );
 
     closedir($dh);
