@@ -385,7 +385,7 @@ sub list_services() {
 }
 
 # Record the given ref content for the given host in a file on disk.
-# The file is defined by argument status-file on command line. By default:
+# The file is defined by argument "--status-file" on command line. By default:
 #
 #  dirname(__FILE__) . '/check_pgactivity.data'
 #
@@ -396,17 +396,23 @@ sub list_services() {
 #     }
 #   }
 # data can be retrieved later using the "load" sub.
-sub save(%$$$) {
-    my %host    = %{ shift() };
+#
+# Parameters are :
+#  * the host structure ref that holds the "host" and "port" parameters
+#  * the name of the structure to save
+#  * the ref of the structure to save
+#  * the path to the file storage
+sub save($$$$) {
+    my $host    = shift;
     my $name    = shift;
     my $ref     = shift;
     my $storage = shift;
     my $all     = {};
-    my $hostkey = "$host{'host'}$host{'port'}";
+    my $hostkey = "$host->{'host'}$host->{'port'}";
 
     $all = retrieve($storage) if -f $storage;
 
-    $all->{$hostkey}->{$name} = $ref;
+    $all->{$hostkey}{$name} = $ref;
 
     store( $all, $storage )
         or die "Can't store data in '$storage'!\n";
@@ -415,18 +421,22 @@ sub save(%$$$) {
 # Load the given ref content for the given host from the file on disk.
 #
 # See "save" sub comments for more info.
-sub load(%$$) {
-    my %host    = %{ shift() };
+# Parameters are :
+#  * the host structure ref that holds the "host" and "port" parameters
+#  * the name of the structure to load
+#  * the path to the file storage
+sub load($$$) {
+    my $host    = shift;
     my $name    = shift;
     my $storage = shift;
-    my $hostkey = "$host{'host'}$host{'port'}";
+    my $hostkey = "$host->{'host'}$host->{'port'}";
     my $all;
 
     return undef unless -f $storage;
 
     $all = retrieve($storage);
 
-    return $all->{$hostkey}->{$name};
+    return $all->{$hostkey}{$name};
 }
 
 # Returns formated time string with units.
@@ -844,7 +854,7 @@ DB_LOOP: foreach my $db (@rs) {
         }
     }
 
-    save( $hosts[0], 'db_size', \%new_db_sizes, $args{'status-file'} );
+    save $hosts[0], 'db_size', \%new_db_sizes, $args{'status-file'};
 
     return critical( $me, [ @msg_crit, @msg_warn ], \@perfdata )
         if scalar @msg_crit > 0;
@@ -1234,7 +1244,7 @@ sub check_bgwriter(@%) {
     $new_bgwriter{'buffers_backend_fsync'} = $rc[7];
     $new_bgwriter{'buffers_alloc'}         = $rc[6];
 
-    save( $hosts[0], 'bgwriter', \%new_bgwriter, $args{'status-file'} );
+    save $hosts[0], 'bgwriter', \%new_bgwriter, $args{'status-file'};
 
     $delta_buffers_total = $rc[2] - $bgwriter{'buffers_checkpoint'}
         + $rc[3] - $bgwriter{'buffers_clean'}
