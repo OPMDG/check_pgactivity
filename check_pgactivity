@@ -1453,7 +1453,7 @@ lynx, links, links2.
 Perfdata returns the numerical version of PostgreSQL.
 
 Rise a critical alert if the minor version is not the latest. This service
-ignores cirtical and warning arguments.
+ignores critical and warning arguments.
 
 =cut
 
@@ -1838,8 +1838,6 @@ Critical and Warning thresholds only accept an interval (eg. 1h30m25s).
 sub check_backup_label_age {
     no bigint;
     my @perfdata;
-    my @msg_crit;
-    my @msg_warn;
     my @hosts        = @{ $_[0] };
     my %args         = %{ $_[1] };
     my $me           = 'POSTGRES_BACKUP_LABEL_AGE';
@@ -1853,19 +1851,8 @@ sub check_backup_label_age {
 
     my $rs = @{ query( $hosts[0], $sql )->[0] }[0];
 
-        push @perfdata,
-            "age=${rs}s;$w_limit;$c_limit";
-
-            push @msg_crit => "age: " . to_interval($rs);
-
-        if ( $rs > $c_limit ) {
-            push @msg_crit =>
-                "age: $rs";
-        }
-        if ( $rs > $w_limit ) {
-            push @msg_warn =>
-                "age: $rs";
-        }
+    push @perfdata,
+         "age=${rs}s;$w_limit;$c_limit";
 
     return critical( $me, [ "age: ".to_interval($rs) ], @perfdata )
         if $rs > $c_limit;
