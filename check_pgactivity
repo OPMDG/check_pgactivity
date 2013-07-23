@@ -137,6 +137,11 @@ my %services = (
     'hit_ratio' => {
         'sub'  => \&check_hit_ratio,
         'desc' => 'Check hit ratio on databases.'
+    },
+    'backup_label_age' => {
+        'sub'  => \&check_backup_label_age,
+        'desc' => 'Check age of backup_label file.',
+        'min'  => $PG_VERSION_80
     }
 );
 
@@ -1816,6 +1821,55 @@ DB_LOOP:    foreach my $db (@rc) {
         if $min_hit_ratio < $args{'warning'};
 
     return ok( $me, [ scalar(@rc) . " database(s) checked" ], @perfdata );
+}
+
+=item B<backup_label_age> (8.0+)
+
+Check the age of the backup label file.
+
+Perfdata returns the age of the backup_label file, -1 if not present.
+
+Critical and Warning thresholds only accept an interval (eg. 1h30m25s).
+=cut
+sub check_backup_label_age {
+    no bigint;
+    my @perfdata;
+    my @msg_crit;
+    my @msg_warn;
+    my @hosts        = @{ $_[0] };
+    my %args         = %{ $_[1] };
+    my $me           = 'POSTGRES_BACKUP_LABEL_AGE';
+    my $c_limit = get_time( $args{'critical'} );
+    my $w_limit = get_time( $args{'warning'} );
+    my $sql          = q{SELECT max(s.r) AS value FROM (
+            SELECT CAST(extract(epoch FROM current_timestamp - (pg_stat_file(file)).modification) AS integer) AS r
+            FROM pg_ls_dir($$.$$) AS ls(file)
+            WHERE file=$$backup_label$$ UNION SELECT 0
+        ) AS s};
+
+    my $rs = @{ query( $hosts[0], $sql )->[0] }[0];
+
+        push @perfdata,
+            "age=${rs}s;$w_limit;$c_limit";
+
+            push @msg_crit => "age: " . to_interval($rs);
+
+        if ( $rs > $c_limit ) {
+            push @msg_crit =>
+                "age: $rs";
+        }
+        if ( $rs > $w_limit ) {
+            push @msg_warn =>
+                "age: $rs";
+        }
+
+    return critical( $me, [ "age: ".to_interval($rs) ], @perfdata )
+        if $rs > $c_limit;
+
+    return warning( $me, [ "age: ".to_interval($rs) ], @perfdata )
+        if $rs > $w_limit;
+
+    return ok( $me, [ "backup_label file ".( $rs == 0 ? "absent":"present (age: ".to_interval($rs).")") ], @perfdata );
 }
 
 # End of SERVICE section in pod doc
