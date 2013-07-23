@@ -203,9 +203,6 @@ Show this help page.
 
 =back
 
-THRESHOLD can either be a raw number, a size, an interval or a percentage.
-Each available service supports one or more form (eg. a size and a percentage).
-
 =cut
 
 my %args = (
@@ -354,7 +351,20 @@ sub to_interval($) {
     return $interval;
 }
 
-=pod
+=head1 THRESHOLDS
+
+THRESHOLD given as warning and critical values can either be a raw number, a
+percentage, an interval or a size. Each available service supports one or more
+form (eg. a size and a percentage).
+
+=over
+
+=item B<Percentage>
+
+If threshold is a percentage, the value should finish with a '%' without space
+with the actual value. Eg.: 95%.
+
+=item B<Interval>
 
 If THRESHOLD is an interval, the following units are accepted (not case
 sensitive): s (second), m (minute), h (hour), d (day). You can use more than
@@ -406,9 +416,12 @@ LOOP_TS: while ( my $val = shift @date ) {
 
 =pod
 
+=item B<Size>
 If THRESHOLD is a size, the following units are accepted (not case sensitive):
 b (Byte), k (KB), m (MB), g (GB), t (TB), p (PB), e (EB) or Z (ZB). The factor
 between units is 1024 Bytes. Eg. 1g = 1G = 1024*1024*1024.
+
+=back
 
 =cut
 
@@ -446,6 +459,130 @@ sub get_size($;$) {
 
     die("Unknown size unit: $unit");
 }
+
+
+=head1 CONNEXIONS
+
+check_pgactivity allows two different of connexion specification: by service or
+by specifying values for host, user, port and database. Moreover, some service
+can run on multiple host or needs to connect to multiple ones.
+
+The rules with connexions parameters are:
+
+=over
+
+=item * Parameter C<--dbservice SERVICE_NAME>
+
+Define a new host using the given service. Multiple hosts can be defined by
+giving multiple services seperated by a comma. Eg.
+
+  --dbservice service1,service2
+
+=item * Parameters C<--host HOST>, C<--port PORT>, C<--user ROLE> or C<--dbname DATABASE>
+
+One of these parameters is enough to defines a new host. If some other
+parameters are missing, default values are used.
+
+If multiple values are given, define as many host as maximum given values.
+
+Values are associated by position. Eg.:
+
+  --host h1,h2 --port 5432,5433
+
+Means "host=h1 port=5432" and "host=h2 port=5433".
+
+If the number of values is different between parameters, any host that miss a
+parameter will use the first given value for this parameter. Eg.:
+
+  --host h1,h2 --port 5433
+
+Means: "host=h1 port=5433" and "host=h2 port=5433".
+
+=item * Services are define first
+
+As instance, giving:
+
+  --dbservice s1 --host h1 --port 5433
+
+Means "service=s1" and "host=h1 port=5433" in this order. If the service
+supports only one host, the second is ignored
+
+=item * Mutual exclusion between both methods
+
+You can not overwrite services connexions variables with parameters C<--host HOST>, C<--port PORT>, C<--user ROLE> or C<--dbname DATABASE>
+
+=back
+
+=cut
+
+sub parse_hosts(\%) {
+    my %args = %{ shift() };
+
+    my @hosts = ();
+
+    if (defined $args{'dbservice'}) {
+        push
+            @hosts,
+            {   'dbservice' => $_,
+                'name'      => "service=$_",
+                'psqlopts'  => [ $args{'psql'}, '-qxXAtf', '-' ],
+                'pgversion' => undef
+            }
+        foreach split /,/, $args{'dbservice'};
+    }
+
+
+    # Add as many hosts than necessary depending on given parameters
+    # host/port/db/user.
+    # Any missing parameters will be set to its default value.
+    if (defined $args{'hosts'}
+        or defined $args{'username'}
+        or defined $args{'port'}
+        or defined $args{'dbname'}
+    ) {
+        $args{'hosts'} = $ENV{'PGHOST'} || 'localhost'
+            unless defined $args{'hosts'};
+        $args{'username'} = $ENV{'PGUSER'} || 'postgres'
+            unless defined $args{'username'};
+        $args{'port'} = $ENV{'PGPORT'} || '5432'
+            unless defined $args{'port'};
+        $args{'dbname'} = $ENV{'PGDATABASE'} || 'template1'
+            unless defined $args{'dbname'};
+
+        my @dbhosts = split( /,/, $args{'hosts'} );
+        my @dbnames = split( /,/, $args{'dbname'} );
+        my @dbusers = split( /,/, $args{'username'} );
+        my @dbports = split( /,/, $args{'port'} );
+        my $nbhosts = max $#dbhosts, $#dbnames, $#dbusers, $#dbports;
+
+        # Take the first value for each connection properties as default.
+        # eg. "-h localhost -p 5432,5433" gives two hosts:
+        #    * localhost:5432
+        #    * localhost:5433
+        for ( my $i = 0; $i <= $nbhosts; $i++ ) {
+            push(
+                @hosts,
+                {   'host'      => $dbhosts[$i] || $dbhosts[0],
+                    'port'      => $dbports[$i] || $dbports[0],
+                    'db'        => $dbnames[$i] || $dbnames[0],
+                    'user'      => $dbusers[$i] || $dbusers[0],
+                    'psqlopts'  => [ $args{'psql'}, '-qxXAtf', '-' ],
+                    'pgversion' => undef
+                }
+            );
+
+            $hosts[-1]{'name'} = sprintf('host=%s port=%d db=%s',
+                $hosts[-1]{'host'}, $hosts[-1]{'port'}, $hosts[-1]{'db'}
+            );
+        }
+    }
+
+    dprint ('Hosts: '. Dumper(\@hosts));
+
+    return \@hosts;
+}
+
+
 
 # Execute a query on a host.
 # Params:
@@ -1672,6 +1809,13 @@ DB_LOOP:    foreach my $db (@rc) {
     return ok( $me, [ scalar(@rc) . " database(s) checked" ], @perfdata );
 }
 
+# End of SERVICE section in pod doc
+=pod
+
+=back
+
+=cut
+
 Getopt::Long::Configure('bundling');
 GetOptions(
     \%args,
@@ -1719,68 +1863,13 @@ pod2usage(
 ) unless ($args{'service'} eq 'minor_version')
     or (defined $args{'warning'} and $args{'critical'});
 
-# check_pgactivity might be call with several host informations
-# Build the final @hosts array with connection informations for all given host.
-my @hosts = ();
-
-if (defined $args{'dbservice'}) {
-    push
-        @hosts,
-        {   'dbservice' => $_,
-            'name'      => "service=$_",
-            'psqlopts'  => [ $args{'psql'}, '-qxXAtf', '-' ],
-            'pgversion' => undef
-        }
-        foreach split /,/, $args{'dbservice'};
-}
 
 
-# Add as many hosts than necessary depending on given parameters
-# host/port/db/user.
-# Any missing parameters will be set to its default value.
-if (defined $args{'hosts'}
-    or defined $args{'username'}
-    or defined $args{'port'}
-    or defined $args{'dbname'}
-) {
-    $args{'hosts'} = $ENV{'PGHOST'} || 'localhost'
-        unless defined $args{'hosts'};
-    $args{'username'} = $ENV{'PGUSER'} || 'postgres'
-        unless defined $args{'username'};
-    $args{'port'} = $ENV{'PGPORT'} || '5432'
-        unless defined $args{'port'};
-    $args{'dbname'} = $ENV{'PGDATABASE'} || 'template1'
-        unless defined $args{'dbname'};
 
-    my @dbhosts = split( /,/, $args{'hosts'} );
-    my @dbnames = split( /,/, $args{'dbname'} );
-    my @dbusers = split( /,/, $args{'username'} );
-    my @dbports = split( /,/, $args{'port'} );
-    my $nbhosts = max $#dbhosts, $#dbnames, $#dbusers, $#dbports;
+my @hosts = @{ parse_hosts %args };
 
-    # Take the first value for each connection properties as default.
-    # eg. "-h localhost -p 5432,5433" gives two hosts:
-    #    * localhost:5432
-    #    * localhost:5433
-    for ( my $i = 0; $i <= $nbhosts; $i++ ) {
-        push(
-            @hosts,
-            {   'host'      => $dbhosts[$i] || $dbhosts[0],
-                'port'      => $dbports[$i] || $dbports[0],
-                'db'        => $dbnames[$i] || $dbnames[0],
-                'user'      => $dbusers[$i] || $dbusers[0],
-                'psqlopts'  => [ $args{'psql'}, '-qxXAtf', '-' ],
-                'pgversion' => undef
-            }
-        );
 
-        $hosts[-1]{'name'} = sprintf('host=%s port=%d db=%s',
-            $hosts[-1]{'host'}, $hosts[-1]{'port'}, $hosts[-1]{'db'}
-        );
-    }
-}
 
-dprint ('Hosts: '. Dumper(\@hosts));
 
 # check if cluster version is compatible with the given service if required
 unless (defined $services{ $args{'service'} }{'offline'}) {
@@ -1818,15 +1907,21 @@ exit $services{ $args{'service'} }{'sub'}->( \@hosts, \%args );
 
 __END__
 
-=back
-
 =head1 EXAMPLES
 
 =over
 
 =item C<check_pgactivity -h localhost -p 5492 -s last_vacuum -w 30m -c 1h30m>
 
-=item C<check_pgactivity -s database_size -w 10% -c 1G>
+Execute service "last_vacuum" on host "host=localhost port=5432".
+
+=item C<check_pgactivity --debug --dbservice pg92,pg92s --service streaming_delta -w 60 -c 90>
+
+Execute service "streaming_delta" between hosts "service=pg92" and "service=pg92s".
+
+=item C<check_pgactivity --debug --dbservice pg92 -h slave -U supervisor --service streaming_delta -w 60 -c 90>
+
+Execute service "streaming_delta" between hosts "service=pg92" and "host=slave user=supervisor".
 
 =back
 
