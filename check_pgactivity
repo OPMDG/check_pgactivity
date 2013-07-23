@@ -628,7 +628,6 @@ sub query($$;$) {
     dprint ("Env. port   : $ENV{PGPORT}    \n") if defined $host->{'port'};
     dprint ("Env. user   : $ENV{PGUSER}    \n") if defined $host->{'user'};
     dprint ("Env. db     : $ENV{PGDATABASE}\n") if defined $host->{'db'};
-    dprint ("Query command: ". Dumper($host->{'psqlopts'}));
 
     $pid = open3( *PSQLIN, *PSQLOUT, *PSQLERR, @{ $host->{'psqlopts'} });
 
@@ -647,7 +646,7 @@ sub query($$;$) {
 
     unless ( $rc == 0 and scalar(@err) == 0 ) {
         exit unknown('CHECK_PGACTIVITY',
-            [ "Query fail !\n" . join(" ", @err) ], []
+            [ "Query fail !\n" . join(" ", @err) ]
         );
     }
 
@@ -754,37 +753,41 @@ sub dprint {
     }
 }
 
-sub unknown($++) {
+sub unknown($;++) {
     return output( 3, $_[0], $_[1], $_[2], $_[3] );
 }
 
-sub critical($++) {
+sub critical($;++) {
     return output( 2, $_[0], $_[1], $_[2], $_[3] );
 }
 
-sub warning($++) {
+sub warning($;++) {
     return output( 1, $_[0], $_[1], $_[2], $_[3] );
 }
 
-sub ok($++) {
+sub ok($;++) {
     return output( 0, $_[0], $_[1], $_[2], $_[3] );
 }
 
-sub output ($$++) {
-    my $rc       = shift;
-    my $check    = shift;
-    my @msg      = @{ shift() };
-    my @perfdata = @{ shift() };
-    my $state    = 'OK';
+sub output ($$;++) {
+    my $rc  = shift;
+    my $ret = shift;
+    my $state;
+    my @msg;
+    my @perfdata;
 
-    $state = 'WARNING'  if $rc == 1;
-    $state = 'CRITICAL' if $rc == 2;
-    $state = 'UNKNOWN'  if $rc == 3;
+    $ret .= " OK"       if $rc == 0;
+    $ret .= " WARNING"  if $rc == 1;
+    $ret .= " CRITICAL" if $rc == 2;
+    $ret .= " UNKNOWN"  if $rc == 3;
 
-    printf( "%s %s: %s | %s",
-        $check, $state,
-        join( ', ', @msg ),
-        join ' ' => @perfdata );
+    @msg      = @{ $_[0] } if defined $_[0];
+    @perfdata = @{ $_[1] } if defined $_[1];
+
+    $ret .= ": ".  join( ', ', @msg )      if @msg;
+    $ret .= " | ". join( ' ', @perfdata ) if @perfdata;
+
+    print $ret;
 
     return $rc;
 }
@@ -1492,7 +1495,7 @@ sub check_minor_version {
         last if $rss =~ 'PostgreSQL latest versions';
     }
 
-    return unknown($me, [ 'Could not fetch PostgreSQL latest versions' ], [])
+    return unknown($me, [ 'Could not fetch PostgreSQL latest versions' ])
         unless $rss;
 
     $latest_versions{"$1.$2"} = [$1 * 10000 + $2 * 100 + $3, "$1.$2.$3"]
@@ -1503,7 +1506,7 @@ sub check_minor_version {
 
     unless ( defined $latest_versions{$major_version} ) {
         push @msg => "Unknown PostgreSQL version $major_version";
-        return unknown( $me, @msg, [] );
+        return unknown( $me, @msg );
     }
 
     push @perfdata => "version=". $hosts[0]{'version_num'};
@@ -1578,7 +1581,7 @@ sub check_hot_standby_delta {
         $master_location = $host->{'rs'}[1] if $host->{'rs'}[0];
     }
 
-    return critical($me, ['More than one cluster in production.'], [])
+    return critical($me, ['More than one cluster in production.'])
         if $num_clusters != 1;
 
     ($w_limit_received, $w_limit_replayed) = split /,/, $args{'warning'};
@@ -1686,7 +1689,7 @@ sub check_streaming_delta {
 
     @rs = @{ query( $hosts[0], $query ) };
 
-    return unknown($me, ['No slaves connected'], []) unless @rs;
+    return unknown($me, ['No slaves connected']) unless @rs;
 
     $rs[0][0] =~ m{^([0-9A-F]+)/([0-9A-F]+)$};
     $master_location = (hex('ff000000') * hex($1)) + hex($2);
