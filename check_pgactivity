@@ -226,158 +226,12 @@ my %args = (
     'debug'       => 0
 );
 
-Getopt::Long::Configure('bundling');
-GetOptions(
-    \%args,
-        'service|s=s',
-        'host|h=s',
-        'username|U=s',
-        'port|p=s',
-        'dbname|d=s',
-        'dbservice|S=s',
-        'warning|w=s',
-        'critical|c=s',
-        'psql|P=s',
-        'path=s',
-        'status-file=s',
-        'list!',
-        'version|V!',
-        'help|?!',
-        'debug!'
-) or pod2usage( -exitval => 2 );
-
-
-list_services() if $args{'list'};
-version()       if $args{'version'};
-
-pod2usage( -verbose => 2 ) if $args{'help'};
-
-
-# Check that the given service exists.
-pod2usage(
-    -message => "FATAL: service $args{'service'} does not exist.\n"
-        . "    Use --list to show the available services.",
-    -exitval => 1
-) unless exists $services{ $args{'service'} };
-
-# One service must be given
-pod2usage(
-    -message => "FATAL: you must specify one service.\n"
-        . "    See -s or --service command line option.",
-    -exitval => 1
-) unless defined $args{'service'};
-
-# Critical and Warning must be given
-pod2usage(
-    -message => 'FATAL: you must specify critical and warning thresholds.',
-    -exitval => 1
-) unless ($args{'service'} eq 'minor_version')
-    or (defined $args{'warning'} and $args{'critical'});
-
-# check_pgactivity might be call with several host informations
-# Build the final @hosts array with connection informations for all given host.
-my @hosts = ();
-
-if (defined $args{'dbservice'}) {
-    push
-        @hosts,
-        {   'dbservice' => $_,
-            'name'      => "service=$_",
-            'psqlopts'  => [ $args{'psql'}, '-qxXAtf', '-' ],
-            'pgversion' => undef
-        }
-        foreach split /,/, $args{'dbservice'};
-}
-
-
-# Add as many hosts than necessary depending on given parameters
-# host/port/db/user.
-# Any missing parameters will be set to its default value.
-if (defined $args{'hosts'}
-    or defined $args{'username'}
-    or defined $args{'port'}
-    or defined $args{'dbname'}
-) {
-    $args{'hosts'} = $ENV{'PGHOST'} || 'localhost'
-        unless defined $args{'hosts'};
-    $args{'username'} = $ENV{'PGUSER'} || 'postgres'
-        unless defined $args{'username'};
-    $args{'port'} = $ENV{'PGPORT'} || '5432'
-        unless defined $args{'port'};
-    $args{'dbname'} = $ENV{'PGDATABASE'} || 'template1'
-        unless defined $args{'dbname'};
-
-    my @dbhosts = split( /,/, $args{'hosts'} );
-    my @dbnames = split( /,/, $args{'dbname'} );
-    my @dbusers = split( /,/, $args{'username'} );
-    my @dbports = split( /,/, $args{'port'} );
-    my $nbhosts = max $#dbhosts, $#dbnames, $#dbusers, $#dbports;
-
-    # Take the first value for each connection properties as default.
-    # eg. "-h localhost -p 5432,5433" gives two hosts:
-    #    * localhost:5432
-    #    * localhost:5433
-    for ( my $i = 0; $i <= $nbhosts; $i++ ) {
-        push(
-            @hosts,
-            {   'host'      => $dbhosts[$i] || $dbhosts[0],
-                'port'      => $dbports[$i] || $dbports[0],
-                'db'        => $dbnames[$i] || $dbnames[0],
-                'user'      => $dbusers[$i] || $dbusers[0],
-                'psqlopts'  => [ $args{'psql'}, '-qxXAtf', '-' ],
-                'pgversion' => undef
-            }
-        );
-
-        $hosts[-1]{'name'} = sprintf('host=%s port=%d db=%s',
-            $hosts[-1]{'host'}, $hosts[-1]{'port'}, $hosts[-1]{'db'}
-        );
-    }
-}
-
-dprint ('Hosts: '. Dumper(\@hosts));
-
-# Die on kill -2, -3 or -15
-$SIG{'INT'} = $SIG{'QUIT'} = $SIG{'TERM'} = 'terminate';
-
 # Set name of the program without path*
 my $orig_name = $0;
 $0 = $PROGRAM;
 
-
-# check if cluster version is compatible with the given service if required
-unless (defined $services{ $args{'service'} }{'offline'}) {
-
-    my $service = $services{ $args{'service'} };
-    my $ver;
-
-    foreach my $host (@hosts) {
-
-        set_pgversion($host);
-
-        $ver = 100*int($host->{'version_num'}/100);
-
-        if (!defined($service->{'min'}) ) {
-            $service->{'min'} = $PG_VERSION_74;
-        }
-        if (!defined($service->{'max'}) ) {
-            $service->{'max'} = 9999999; # is superior to any pg version_num
-        }
-
-        unless ($ver >= $service->{'min'}
-            and $ver <= $service->{'max'}
-        ) {
-            warn sprintf "Service %s is not compatible with host %s (v%s).\n",
-                $args{'service'}, $host->{'name'}, $host->{'version'};
-            exit 1;
-        }
-
-        dprint( sprintf "Execute service %s on %s (v%s)\n",
-            $args{'service'}, $host->{'name'}, $host->{'version'});
-    }
-}
-
-exit $services{ $args{'service'} }{'sub'}->( \@hosts, \%args );
+# Die on kill -2, -3 or -15
+$SIG{'INT'} = $SIG{'QUIT'} = $SIG{'TERM'} = 'terminate';
 
 # print the version and exit
 sub version() {
@@ -1817,6 +1671,150 @@ DB_LOOP:    foreach my $db (@rc) {
 
     return ok( $me, [ scalar(@rc) . " database(s) checked" ], @perfdata );
 }
+
+Getopt::Long::Configure('bundling');
+GetOptions(
+    \%args,
+        'service|s=s',
+        'host|h=s',
+        'username|U=s',
+        'port|p=s',
+        'dbname|d=s',
+        'dbservice|S=s',
+        'warning|w=s',
+        'critical|c=s',
+        'psql|P=s',
+        'path=s',
+        'status-file=s',
+        'list!',
+        'version|V!',
+        'help|?!',
+        'debug!'
+) or pod2usage( -exitval => 2 );
+
+list_services() if $args{'list'};
+version()       if $args{'version'};
+
+pod2usage( -verbose => 2 ) if $args{'help'};
+
+
+# Check that the given service exists.
+pod2usage(
+    -message => "FATAL: service $args{'service'} does not exist.\n"
+        . "    Use --list to show the available services.",
+    -exitval => 1
+) unless exists $services{ $args{'service'} };
+
+# One service must be given
+pod2usage(
+    -message => "FATAL: you must specify one service.\n"
+        . "    See -s or --service command line option.",
+    -exitval => 1
+) unless defined $args{'service'};
+
+# Critical and Warning must be given
+pod2usage(
+    -message => 'FATAL: you must specify critical and warning thresholds.',
+    -exitval => 1
+) unless ($args{'service'} eq 'minor_version')
+    or (defined $args{'warning'} and $args{'critical'});
+
+# check_pgactivity might be call with several host informations
+# Build the final @hosts array with connection informations for all given host.
+my @hosts = ();
+
+if (defined $args{'dbservice'}) {
+    push
+        @hosts,
+        {   'dbservice' => $_,
+            'name'      => "service=$_",
+            'psqlopts'  => [ $args{'psql'}, '-qxXAtf', '-' ],
+            'pgversion' => undef
+        }
+        foreach split /,/, $args{'dbservice'};
+}
+
+
+# Add as many hosts than necessary depending on given parameters
+# host/port/db/user.
+# Any missing parameters will be set to its default value.
+if (defined $args{'hosts'}
+    or defined $args{'username'}
+    or defined $args{'port'}
+    or defined $args{'dbname'}
+) {
+    $args{'hosts'} = $ENV{'PGHOST'} || 'localhost'
+        unless defined $args{'hosts'};
+    $args{'username'} = $ENV{'PGUSER'} || 'postgres'
+        unless defined $args{'username'};
+    $args{'port'} = $ENV{'PGPORT'} || '5432'
+        unless defined $args{'port'};
+    $args{'dbname'} = $ENV{'PGDATABASE'} || 'template1'
+        unless defined $args{'dbname'};
+
+    my @dbhosts = split( /,/, $args{'hosts'} );
+    my @dbnames = split( /,/, $args{'dbname'} );
+    my @dbusers = split( /,/, $args{'username'} );
+    my @dbports = split( /,/, $args{'port'} );
+    my $nbhosts = max $#dbhosts, $#dbnames, $#dbusers, $#dbports;
+
+    # Take the first value for each connection properties as default.
+    # eg. "-h localhost -p 5432,5433" gives two hosts:
+    #    * localhost:5432
+    #    * localhost:5433
+    for ( my $i = 0; $i <= $nbhosts; $i++ ) {
+        push(
+            @hosts,
+            {   'host'      => $dbhosts[$i] || $dbhosts[0],
+                'port'      => $dbports[$i] || $dbports[0],
+                'db'        => $dbnames[$i] || $dbnames[0],
+                'user'      => $dbusers[$i] || $dbusers[0],
+                'psqlopts'  => [ $args{'psql'}, '-qxXAtf', '-' ],
+                'pgversion' => undef
+            }
+        );
+
+        $hosts[-1]{'name'} = sprintf('host=%s port=%d db=%s',
+            $hosts[-1]{'host'}, $hosts[-1]{'port'}, $hosts[-1]{'db'}
+        );
+    }
+}
+
+dprint ('Hosts: '. Dumper(\@hosts));
+
+# check if cluster version is compatible with the given service if required
+unless (defined $services{ $args{'service'} }{'offline'}) {
+
+    my $service = $services{ $args{'service'} };
+    my $ver;
+
+    foreach my $host (@hosts) {
+
+        set_pgversion($host);
+
+        $ver = 100*int($host->{'version_num'}/100);
+
+        if (!defined($service->{'min'}) ) {
+            $service->{'min'} = $PG_VERSION_74;
+        }
+        if (!defined($service->{'max'}) ) {
+            $service->{'max'} = 9999999; # is superior to any pg version_num
+        }
+
+        unless ($ver >= $service->{'min'}
+            and $ver <= $service->{'max'}
+        ) {
+            warn sprintf "Service %s is not compatible with host %s (v%s).\n",
+                $args{'service'}, $host->{'name'}, $host->{'version'};
+            exit 1;
+        }
+
+        dprint( sprintf "Execute service %s on %s (v%s)\n",
+            $args{'service'}, $host->{'name'}, $host->{'version'});
+    }
+}
+
+exit $services{ $args{'service'} }{'sub'}->( \@hosts, \%args );
 
 __END__
 
