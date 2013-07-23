@@ -1804,12 +1804,12 @@ unless (defined $services{ $args{'service'} }{'offline'}) {
         unless ($ver >= $service->{'min'}
             and $ver <= $service->{'max'}
         ) {
-            warn sprintf "Service %s is not compatible with host %s (v%s).\n",
+            warn sprintf "Service %s is not compatible with host '%s' (v%s).\n",
                 $args{'service'}, $host->{'name'}, $host->{'version'};
             exit 1;
         }
 
-        dprint( sprintf "Execute service %s on %s (v%s)\n",
+        dprint( sprintf "Service %s compatible with host '%s' (v%s)\n",
             $args{'service'}, $host->{'name'}, $host->{'version'});
     }
 }
