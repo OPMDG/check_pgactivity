@@ -598,11 +598,17 @@ sub query($$;$) {
     my $host  = shift;
     my $query = shift;
     my $db = shift || $host->{'db'};
-    my $pid;
-    my $rc;
     my $rnum = 0;
     my @res = ();
+    my $pid;
+    my $rc;
     my @err;
+
+    delete $ENV{PGSERVICE};
+    delete $ENV{PGDATABASE};
+    delete $ENV{PGHOST};
+    delete $ENV{PGPORT};
+    delete $ENV{PGUSER};
 
     if (defined $db) {
         $ENV{PGDATABASE} = $db;
