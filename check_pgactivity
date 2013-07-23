@@ -142,6 +142,10 @@ my %services = (
         'sub'  => \&check_backup_label_age,
         'desc' => 'Check age of backup_label file.',
         'min'  => $PG_VERSION_80
+    },
+    'connection' => {
+        'sub'  => \&check_connection,
+        'desc' => 'Perform a simple connection test.'
     }
 );
 
@@ -1872,6 +1876,24 @@ sub check_backup_label_age {
     return ok( $me, [ "backup_label file ".( $rs == 0 ? "absent":"present (age: ".to_interval($rs).")") ], @perfdata );
 }
 
+
+=item B<connection> (all)
+
+Perform a simple connection test.
+
+No perfdata is returned.
+
+This service ignore critical and warning arguments.
+=cut
+sub check_connection {
+    my @hosts        = @{ $_[0] };
+    my $me           = 'POSTGRES_CONNECTION';
+    my $sql          = q{SELECT now(), version()};
+
+    my @rc = @{ query( $hosts[0], $sql ) };
+
+    return ok( $me, [ "Connection successful at $rc[0][0], on $rc[0][1]" ] );
+}
 # End of SERVICE section in pod doc
 =pod
 
@@ -1923,7 +1945,7 @@ pod2usage(
 pod2usage(
     -message => 'FATAL: you must specify critical and warning thresholds.',
     -exitval => 1
-) unless ($args{'service'} eq 'minor_version')
+) unless ( ($args{'service'} eq 'minor_version') or ($args{'service'} eq 'connection') )
     or (defined $args{'warning'} and $args{'critical'});
 
 
