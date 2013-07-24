@@ -150,6 +150,11 @@ my %services = (
     'custom_query' => {
         'sub'  => \&check_custom_query,
         'desc' => 'Perform the given user query.'
+    },
+    'configuration' => {
+        'sub'  => \&check_configuration,
+        'desc' => 'Check the most important settings.',
+        'min'  => $PG_VERSION_80
     }
 );
 
@@ -219,24 +224,34 @@ Show this help page.
 =cut
 
 my %args = (
-    'service'     => undef,
-    'host'        => undef,
-    'username'    => undef,
-    'port'        => undef,
-    'dbname'      => undef,
-    'dbservice'   => undef,
-    'warning'     => undef,
-    'critical'    => undef,
-    'exclude'     => '',
-    'psql'        => '/usr/bin/psql',
-    'path'        => undef,
-    'status-file' => dirname(__FILE__) . '/check_pgactivity.data',
-    'query'       => undef,
-    'type'        => undef,
-    'reverse'     => 0,
-    'list'        => 0,
-    'help'        => 0,
-    'debug'       => 0
+    'service'               => undef,
+    'host'                  => undef,
+    'username'              => undef,
+    'port'                  => undef,
+    'dbname'                => undef,
+    'dbservice'             => undef,
+    'warning'               => undef,
+    'critical'              => undef,
+    'exclude'               => '',
+    'psql'                  => '/usr/bin/psql',
+    'path'                  => undef,
+    'status-file'           => dirname(__FILE__) . '/check_pgactivity.data',
+    'query'                 => undef,
+    'type'                  => undef,
+    'reverse'               => 0,
+    'work_mem'              => undef,
+    'maintenance_work_mem'  => undef,
+    'shared_buffers'        => undef,
+    'wal_buffers'           => undef,
+    'checkpoint_segments'   => undef,
+    'effective_cache_size'  => undef,
+    'no_check_autovacuum'   => 0,
+    'no_check_fsync'        => 0,
+    'no_check_enable'       => 0,
+    'no_check_track_counts' => 0,
+    'list'                  => 0,
+    'help'                  => 0,
+    'debug'                 => 0
 );
 
 # Set name of the program without path*
@@ -1887,6 +1902,7 @@ sub check_connection {
 
     return ok( $me, [ "Connection successful at $rc[0][0], on $rc[0][1]" ] );
 }
+
 =item B<custom_query> (all)
 
 Perform the given user query.
@@ -1979,6 +1995,66 @@ DB_LOOP:    foreach my $rec (@rc) {
     return ok( $me, [ "Custom query ok" ], @perfdata );
 }
 
+=item B<configuration> (8.0+)
+
+Check the most important settings.
+
+If warning and critical tresholds are given, they will be ignored.
+
+Specific parameters are :
+--work_mem, --maintenance_work_mem, --shared_buffers,-- wal_buffers,
+--checkpoint_segments, --effective_cache_size, --no_check_autovacuum,
+--no_check_fsync, --no_check_enable, --no_check_track_counts.
+
+=cut
+sub check_configuration {
+    my @perfdata;
+    my @hosts        = @{ $_[0] };
+    my %args         = %{ $_[1] };
+    my @msg_crit;
+    my $me           = 'POSTGRES_CONFIGURATION';
+    # This service is based on a probe by Marc Cousin (cousinmarc@gmail.com)
+    # Limit parameters. Have defaut values
+    my $work_mem = $args{'work_mem'} || 4096; # At least 4MB
+    my $maintenance_work_mem = $args{'maintenance_work_mem'} || 65536; # At least 64MB
+    my $shared_buffers = $args{'shared_buffers'} || 16384; # At least 128MB
+    my $wal_buffers = $args{'wal_buffers'} || 64; # At least 512k. Or -1 for 9.1
+    my $checkpoint_segments = $args{'checkpoint_segments'} || 10;
+    my $effective_cache_size = $args{'effective_cache_size'} || 131072; # At least 1GB. No way a modern server has less than 2GB of ram
+    # These will be checked to verify they are still the default values (no parameter, for now)
+    # autovacuum, fsync, enable*,track_counts/stats_row_level
+    my $no_check_autovacuum = $args{'no_check_autovacuum'} || 0;
+    my $no_check_fsync = $args{'no_check_fsync'} || 0;
+    my $no_check_enable = $args{'no_check_enable'} || 0;
+    my $no_check_track_counts = $args{'no_check_track_counts'} || 0;
+
+    my $sql = "SELECT name,setting FROM pg_settings
+        WHERE ( ( name='work_mem' and setting::bigint < $work_mem )
+            or ( name='maintenance_work_mem' and setting::bigint < $maintenance_work_mem )
+            or ( name='shared_buffers' and setting::bigint < $shared_buffers )
+            or ( name='wal_buffers' and ( setting::bigint < $wal_buffers or setting = '-1') )
+            or ( name='checkpoint_segments' and setting::bigint < $checkpoint_segments )
+            or ( name='effective_cache_size' and setting::bigint < $effective_cache_size )
+            or ( name='autovacuum' and setting='off' and $no_check_autovacuum = 0)
+            or ( name='fsync' and setting='off' and $no_check_fsync=0  )
+            or ( name~'^enable.*' and setting='off' and $no_check_enable=0)
+            or (name='stats_row_level' and setting='off' and $no_check_track_counts=0)
+            or (name='track_counts' and setting='off' and $no_check_track_counts=0)
+        )";
+
+    my @rc = @{ query( $hosts[0], $sql ) };
+
+DB_LOOP:    foreach my $setting (@rc) {
+        push @msg_crit => ( $setting->[0] . "=" . $setting->[1] );
+    }
+
+    # All the entries in $result are an error. If the array isn't empty, we return ERROR, and the list of errors
+    return critical( $me, @msg_crit )
+        if ( @msg_crit > 0 );
+
+    return ok( $me, [ "PostgreSQL configuration ok" ] );
+}
+
 # End of SERVICE section in pod doc
 =pod
 
@@ -2003,6 +2079,16 @@ GetOptions(
         'query=s',
         'type=s',
         'reverse!',
+        'work_mem=i',
+        'maintenance_work_mem=i',
+        'shared_buffers=i',
+        'wal_buffers=i',
+        'checkpoint_segments=i',
+        'effective_cache_size=i',
+        'no_check_autovacuum!',
+        'no_check_fsync!',
+        'no_check_enable!',
+        'no_check_track_counts!',
         'list!',
         'version|V!',
         'help|?!',
@@ -2035,7 +2121,9 @@ pod2usage(
     -exitval => 1
 ) unless ( ($args{'service'} eq 'minor_version')
     or ($args{'service'} eq 'connection')
-    or ($args{'service'} eq 'custom_query') )
+    or ($args{'service'} eq 'custom_query')
+    or ($args{'service'} eq 'configuration')
+    )
     or (defined $args{'warning'} and $args{'critical'});
 
 # Both critical and warning must be given is optionnal
@@ -2056,6 +2144,15 @@ pod2usage(
     -message => 'FATAL: you must specify query with "custom_query" service.',
     -exitval => 1
 ) if ( !defined $args{'query'} and $args{'service'} eq 'custom_query' );
+
+# Check "configuration" specific arg
+pod2usage(
+    -message => 'FATAL: work_mem, maintenance_work_mem, shared_buffers, wal_buffers, checkpoint_segments, effective_cache_size, no_check_autovacuum, no_check_fsync, no_check_enable, no_check_track_counts are only allowed with "configuration" service.',
+    -exitval => 1
+) if ( (defined $args{'work_mem'} or defined $args{'maintenance_work_mem'} or defined $args{'shared_buffers'}
+    or defined $args{'wal_buffers'} or defined $args{'checkpoint_segments'} or defined $args{'effective_cache_size'}
+    or $args{'no_check_autovacuum'} == 1 or $args{'no_check_fsync'} == 1 or $args{'no_check_enable'} ==1
+    or $args{'no_check_track_counts'} == 1) and ( $args{'service'} ne 'configuration' ) );
 
 
 
