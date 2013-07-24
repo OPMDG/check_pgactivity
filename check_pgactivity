@@ -1907,11 +1907,11 @@ sub check_connection {
 
 Perform the given user query.
 
-The query is specified with the "query" parameter. The first column will be
+The query is specified with the --query parameter. The first column will be
 used to perform the test for the status, if warning and critical are provided.
 The warning and critical arguments can be treated as integer (default), size
-or time. Warning and critical will be raised if they are greater than the
-first column, or less than if the "reverse" option is used.
+or time with the --type argument. Warning and critical will be raised if they
+are greater than the first column, or less than if the --reverse option is used.
 
 All others columns will be used to generate the perfdata. The query has to
 display them in the perfdata format, with unit if needed (eg. "size=35B").
