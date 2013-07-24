@@ -1728,7 +1728,7 @@ sub check_streaming_delta {
 
     return unknown($me, ['No slaves connected']) unless @rs;
 
-    $rs[0][0] =~ m{^([0-9A-F]+)/([0-9A-F]+)$};
+    $rs[0][3] =~ m{^([0-9A-F]+)/([0-9A-F]+)$};
     $master_location = (hex('ff000000') * hex($1)) + hex($2);
 
     ($w_limit_flushed, $w_limit_replayed) = split /,/, $args{'warning'};
