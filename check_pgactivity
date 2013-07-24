@@ -1331,7 +1331,7 @@ sub check_bgwriter {
     $delta_maxwritten_clean = $rc[4] - $bgwriter{'maxwritten_clean'};
     $delta_backend_fsync = $rc[7] - $bgwriter{'buffers_backend_fsync'};
 
-    push @perfdata, "buffers_backend=${delta_buffers_backend}B;".
+    push @perfdata, "buffers_backend=${delta_buffers_backend}B".
                     " checkpoint_timed=${delta_checkpoint_timed}".
                     " checkpoint_req=${delta_checkpoint_req}".
                     " buffers_checkpoint=${delta_buffers_checkpointer}B".
