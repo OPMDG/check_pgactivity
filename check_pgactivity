@@ -146,6 +146,10 @@ my %services = (
     'connection' => {
         'sub'  => \&check_connection,
         'desc' => 'Perform a simple connection test.'
+    },
+    'custom_query' => {
+        'sub'  => \&check_custom_query,
+        'desc' => 'Perform the given user query.'
     }
 );
 
@@ -227,6 +231,9 @@ my %args = (
     'psql'        => '/usr/bin/psql',
     'path'        => undef,
     'status-file' => dirname(__FILE__) . '/check_pgactivity.data',
+    'query'       => undef,
+    'type'        => undef,
+    'reverse'     => 0,
     'list'        => 0,
     'help'        => 0,
     'debug'       => 0
@@ -1863,7 +1870,6 @@ sub check_backup_label_age {
     return ok( $me, [ "backup_label file ".( $rs == 0 ? "absent":"present (age: ".to_interval($rs).")") ], @perfdata );
 }
 
-
 =item B<connection> (all)
 
 Perform a simple connection test.
@@ -1881,6 +1887,98 @@ sub check_connection {
 
     return ok( $me, [ "Connection successful at $rc[0][0], on $rc[0][1]" ] );
 }
+=item B<custom_query> (all)
+
+Perform the given user query.
+
+The query is specified with the "query" parameter. The first column will be
+used to perform the test for the status, if warning and critical are provided.
+The warning and critical arguments can be treated as integer (default), size
+or time. Warning and critical will be raised if they are greater than the
+first column, or less than if the "reverse" option is used.
+
+All others columns will be used to generate the perfdata. The query has to
+display them in the perfdata format, with unit if needed (eg. "size=35B").
+If a field contains multiple values, they have to be space separated.
+
+=cut
+sub check_custom_query {
+    my @perfdata;
+    my @hosts        = @{ $_[0] };
+    my %args         = %{ $_[1] };
+    my $me           = 'POSTGRES_CUSTOM_QUERY';
+    my $c_limit;
+    my $w_limit;
+    my @msg_crit;
+    my @msg_warn;
+    my $sql          = $args{'query'};
+    my $type         = $args{'type'} || 'integer';
+    my $reverse      = $args{'reverse'};
+    my $bounded      = undef;
+
+    # Handle warning and critical type
+    if ($type eq 'size'){
+        $w_limit = get_size( $args{'warning'} );
+        $c_limit = get_size( $args{'critical'} );
+    } elsif ( $type eq 'time' ){
+        $w_limit = get_time( $args{'warning'} );
+        $c_limit = get_time( $args{'critical'} );
+    } else{
+        $w_limit = $args{'warning'};
+        $c_limit = $args{'critical'};
+    }
+
+    my @rc = @{ query( $hosts[0], $sql ) };
+
+    my $perf;
+    my $value;
+
+DB_LOOP:    foreach my $rec (@rc) {
+        $bounded = $rec->[0] if (!defined $bounded);
+
+        $bounded = $rec->[0] if ( (!$reverse and $rec->[0] > $bounded )
+            or ( $reverse and $rec->[0] < $bounded ) );
+
+        $value = shift(@{$rec});
+        if ( @{$rec} > 0){
+            $perf = join(';',@{$rec})
+        } else{
+            $perf = undef
+        }
+
+        push @perfdata, $perf
+            if ( defined $perf );
+
+        if ( ( defined $c_limit)
+            and ( !$reverse and ( $value > $c_limit )
+            or ( $reverse and ( $value < $c_limit ) ) ) ){
+            push @msg_crit =>
+                "value: $value ".( defined $perf ? "($perf)" : "" );
+            next DB_LOOP;
+        }
+
+        if ( ( defined $w_limit)
+            and ( !$reverse and ( $value > $w_limit )
+            or ( $reverse and ( $value < $w_limit ) ) ) ){
+            push @msg_warn =>
+                "value: $value ".( defined $perf ? "($perf)" : "" );
+            next DB_LOOP;
+        }
+    }
+
+    return critical( $me, [ @msg_crit, @msg_warn ], @perfdata )
+        if ( defined $c_limit and
+            ( !$reverse and $bounded > $c_limit)
+            or ( $reverse and $bounded < $c_limit) );
+
+    return warning( $me, [ @msg_warn ], @perfdata )
+        if ( defined $w_limit and
+            ( !$reverse and $bounded > $w_limit)
+            or ( $reverse and $bounded < $w_limit) );
+
+    return ok( $me, [ "Custom query ok" ], @perfdata );
+}
+
 # End of SERVICE section in pod doc
 =pod
 
@@ -1902,6 +2000,9 @@ GetOptions(
         'psql|P=s',
         'path=s',
         'status-file=s',
+        'query=s',
+        'type=s',
+        'reverse!',
         'list!',
         'version|V!',
         'help|?!',
@@ -1932,8 +2033,29 @@ pod2usage(
 pod2usage(
     -message => 'FATAL: you must specify critical and warning thresholds.',
     -exitval => 1
-) unless ( ($args{'service'} eq 'minor_version') or ($args{'service'} eq 'connection') )
+) unless ( ($args{'service'} eq 'minor_version')
+    or ($args{'service'} eq 'connection')
+    or ($args{'service'} eq 'custom_query') )
     or (defined $args{'warning'} and $args{'critical'});
+
+# Both critical and warning must be given is optionnal
+pod2usage(
+    -message => 'FATAL: you must provide both warning and critical thresholds.',
+    -exitval => 1
+) if ( ( defined $args{'critical'} and !defined $args{'warning'} ) or ( !defined $args{'critical'} and defined $args{'warning'} ) );
+
+
+# query,type and reverse are only allowed with "custom_query" service
+pod2usage(
+    -message => 'FATAL: query, type and reverse are only allowed with "custom_query" service.',
+    -exitval => 1
+) if ( ( defined $args{'query'} or defined $args{'type'} or $args{'reverse'} == 1 ) and ( $args{'service'} ne 'custom_query' ) );
+
+# query must be given with custom_query service
+pod2usage(
+    -message => 'FATAL: you must specify query with "custom_query" service.',
+    -exitval => 1
+) if ( !defined $args{'query'} and $args{'service'} eq 'custom_query' );
 
 
 
