@@ -2101,19 +2101,19 @@ version()       if $args{'version'};
 pod2usage( -verbose => 2 ) if $args{'help'};
 
 
-# Check that the given service exists.
-pod2usage(
-    -message => "FATAL: service $args{'service'} does not exist.\n"
-        . "    Use --list to show the available services.",
-    -exitval => 127
-) unless exists $services{ $args{'service'} };
-
 # One service must be given
 pod2usage(
     -message => "FATAL: you must specify one service.\n"
         . "    See -s or --service command line option.",
     -exitval => 127
 ) unless defined $args{'service'};
+
+# Check that the given service exists.
+pod2usage(
+    -message => "FATAL: service $args{'service'} does not exist.\n"
+        . "    Use --list to show the available services.",
+    -exitval => 127
+) unless exists $services{ $args{'service'} };
 
 # Critical and Warning must be given
 pod2usage(
