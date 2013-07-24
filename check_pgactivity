@@ -1714,11 +1714,17 @@ sub check_streaming_delta {
     my $me    = 'POSTGRES_STREAMING_DELTA';
     my $master_location = '';
     my $num_clusters = 0;
-    my $query = "SELECT application_name, client_addr, pid,
+    my %queries = (
+        $PG_VERSION_92 => q{SELECT application_name, client_addr, pid,
             sent_location, write_location, flush_location, replay_location
-        FROM pg_stat_replication";
+            FROM pg_stat_replication},
+        $PG_VERSION_91 => q{SELECT application_name, client_addr, procpid,
+            sent_location, write_location, flush_location, replay_location
+            FROM pg_stat_replication}
+    );
 
-    @rs = @{ query( $hosts[0], $query ) };
+
+    @rs = @{ query_ver( $hosts[0], %queries ) };
 
     return unknown($me, ['No slaves connected']) unless @rs;
 
