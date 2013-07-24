@@ -1400,13 +1400,13 @@ sub check_archive_folder {
     # "path" argument must be given
     pod2usage(
         -message => 'FATAL: you must specify the archive folder using "--path <dir>".',
-        -exitval => 1
+        -exitval => 127
     ) unless defined $args{'path'};
 
     # invalid "path" argument
     pod2usage(
         -message => "FATAL: \"$args{'path'}\" is not a valid folder.",
-        -exitval => 1
+        -exitval => 127
     ) unless -d $args{'path'};
 
     opendir( $dh, $args{'path'} )
@@ -1510,12 +1510,12 @@ sub check_minor_version {
 
         pod2usage(
             -message => "FATAL: \"$args{'path'}\" is not a valid program.",
-            -exitval => 1
+            -exitval => 127
         ) unless -x $args{'path'};
 
         pod2usage(
             -message => "FATAL: \"$args{'path'}\" is not a supported program.",
-            -exitval => 1
+            -exitval => 127
         ) unless $meth =~ 'GET|wget|curl|fetch|lynx|links|links2';
     }
 
@@ -1602,7 +1602,7 @@ sub check_hot_standby_delta {
 
     pod2usage(
         -message => 'FATAL: you must give two or more hosts with service "hot_standby_delta".',
-        -exitval => 1
+        -exitval => 127
     ) if @hosts < 2;
 
     # fetch LSNs
@@ -2093,7 +2093,7 @@ GetOptions(
         'version|V!',
         'help|?!',
         'debug!'
-) or pod2usage( -exitval => 2 );
+) or pod2usage( -exitval => 127 );
 
 list_services() if $args{'list'};
 version()       if $args{'version'};
@@ -2105,20 +2105,20 @@ pod2usage( -verbose => 2 ) if $args{'help'};
 pod2usage(
     -message => "FATAL: service $args{'service'} does not exist.\n"
         . "    Use --list to show the available services.",
-    -exitval => 1
+    -exitval => 127
 ) unless exists $services{ $args{'service'} };
 
 # One service must be given
 pod2usage(
     -message => "FATAL: you must specify one service.\n"
         . "    See -s or --service command line option.",
-    -exitval => 1
+    -exitval => 127
 ) unless defined $args{'service'};
 
 # Critical and Warning must be given
 pod2usage(
     -message => 'FATAL: you must specify critical and warning thresholds.',
-    -exitval => 1
+    -exitval => 127
 ) unless ( ($args{'service'} eq 'minor_version')
     or ($args{'service'} eq 'connection')
     or ($args{'service'} eq 'custom_query')
@@ -2129,26 +2129,26 @@ pod2usage(
 # Both critical and warning must be given is optionnal
 pod2usage(
     -message => 'FATAL: you must provide both warning and critical thresholds.',
-    -exitval => 1
+    -exitval => 127
 ) if ( ( defined $args{'critical'} and !defined $args{'warning'} ) or ( !defined $args{'critical'} and defined $args{'warning'} ) );
 
 
 # query,type and reverse are only allowed with "custom_query" service
 pod2usage(
     -message => 'FATAL: query, type and reverse are only allowed with "custom_query" service.',
-    -exitval => 1
+    -exitval => 127
 ) if ( ( defined $args{'query'} or defined $args{'type'} or $args{'reverse'} == 1 ) and ( $args{'service'} ne 'custom_query' ) );
 
 # query must be given with custom_query service
 pod2usage(
     -message => 'FATAL: you must specify query with "custom_query" service.',
-    -exitval => 1
+    -exitval => 127
 ) if ( !defined $args{'query'} and $args{'service'} eq 'custom_query' );
 
 # Check "configuration" specific arg
 pod2usage(
     -message => 'FATAL: work_mem, maintenance_work_mem, shared_buffers, wal_buffers, checkpoint_segments, effective_cache_size, no_check_autovacuum, no_check_fsync, no_check_enable, no_check_track_counts are only allowed with "configuration" service.',
-    -exitval => 1
+    -exitval => 127
 ) if ( (defined $args{'work_mem'} or defined $args{'maintenance_work_mem'} or defined $args{'shared_buffers'}
     or defined $args{'wal_buffers'} or defined $args{'checkpoint_segments'} or defined $args{'effective_cache_size'}
     or $args{'no_check_autovacuum'} == 1 or $args{'no_check_fsync'} == 1 or $args{'no_check_enable'} ==1
