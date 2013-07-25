@@ -1272,21 +1272,20 @@ sub check_bgwriter {
     my @msg_warn;
     my @rc;
     my @perfdata;
-    my $delta_buffers_total;
-    my $delta_buffers_backend;
-    my $delta_buffers_bgwriter;
-    my $delta_buffers_checkpointer;
-    my $delta_buffers_backend_ratio;
-    my $delta_buffers_alloc;
+    my $delta_buff_total;
+    my $delta_buff_backend;
+    my $delta_buff_bgwriter;
+    my $delta_buff_checkpointer;
+    my $delta_buff_backend_ratio;
+    my $delta_buff_alloc;
     my $delta_checkpoint_timed;
     my $delta_checkpoint_req;
     my $delta_maxwritten_clean;
     my $delta_backend_fsync;
-    my %new_bgwriter;
+    my %new_bgw;
     my @hosts   = @{ $_[0] };
     my %args    = %{ $_[1] };
-    my %bgwriter
-        = %{ load( $hosts[0], 'bgwriter', $args{'status-file'} ) || {} };
+    my %bgw = %{ load( $hosts[0], 'bgwriter', $args{'status-file'} ) || {} };
     my $me      = 'POSTGRES_BGWRITER';
     my %queries = (
         $PG_VERSION_83 => q{SELECT checkpoints_timed, checkpoints_req,
@@ -1296,7 +1295,7 @@ sub check_bgwriter {
               buffers_backend * current_setting('block_size')::numeric,
               buffers_alloc * current_setting('block_size')::numeric,
               0,
-              current_setting('checkpoint_segments')
+              0
             FROM pg_stat_bgwriter;
         },
         $PG_VERSION_91 => q{SELECT checkpoints_timed, checkpoints_req,
@@ -1306,64 +1305,76 @@ sub check_bgwriter {
               buffers_backend * current_setting('block_size')::numeric,
               buffers_alloc * current_setting('block_size')::numeric,
               buffers_backend_fsync,
-              current_setting('checkpoint_segments')
+              extract ('epoch' from stats_reset)
             FROM pg_stat_bgwriter;
         }
     );
 
     @rc = @{ query_ver( $hosts[0], %queries )->[0] };
 
-    $new_bgwriter{'checkpoint_timed'}      = $rc[0];
-    $new_bgwriter{'checkpoint_req'}        = $rc[1];
-    $new_bgwriter{'buffers_checkpoint'}    = $rc[2];
-    $new_bgwriter{'buffers_clean'}         = $rc[3];
-    $new_bgwriter{'maxwritten_clean'}      = $rc[4];
-    $new_bgwriter{'buffers_backend'}       = $rc[5];
-    $new_bgwriter{'buffers_backend_fsync'} = $rc[7];
-    $new_bgwriter{'buffers_alloc'}         = $rc[6];
+    $new_bgw{'checkpoint_timed'} = $rc[0];
+    $new_bgw{'checkpoint_req'}   = $rc[1];
+    $new_bgw{'buff_checkpoint'}  = $rc[2];
+    $new_bgw{'buff_clean'}       = $rc[3];
+    $new_bgw{'maxwritten_clean'} = $rc[4];
+    $new_bgw{'buff_backend'}     = $rc[5];
+    $new_bgw{'buff_alloc'}       = $rc[6];
+    $new_bgw{'backend_fsync'}    = $rc[7];
+    $new_bgw{'stat_reset'}       = $rc[8];
 
-    save $hosts[0], 'bgwriter', \%new_bgwriter, $args{'status-file'};
+    save $hosts[0], 'bgwriter', \%new_bgw, $args{'status-file'};
 
-    return ok( $me, ['First call'] ) unless keys %bgwriter;
+    return ok( $me, ['First call'] ) unless keys %bgw;
+    return ok( $me, ['Stats reseted since last call'] )
+        if $new_bgw{'stat_reset'}       > $bgw{'stat_reset'}
+        or $new_bgw{'checkpoint_timed'} < $bgw{'checkpoint_timed'}
+        or $new_bgw{'checkpoint_req'}   < $bgw{'checkpoint_req'}
+        or $new_bgw{'buff_checkpoint'}  < $bgw{'buff_checkpoint'}
+        or $new_bgw{'buff_clean'}       < $bgw{'buff_clean'}
+        or $new_bgw{'maxwritten_clean'} < $bgw{'maxwritten_clean'}
+        or $new_bgw{'buff_backend'}     < $bgw{'buff_backend'}
+        or $new_bgw{'buff_alloc'}       < $bgw{'buff_alloc'}
+        or $new_bgw{'backend_fsync'}    < $bgw{'backend_fsync'};
 
-    $delta_buffers_total = $rc[2] - $bgwriter{'buffers_checkpoint'}
-        + $rc[3] - $bgwriter{'buffers_clean'}
-        + $rc[5] - $bgwriter{'buffers_backend'};
+    $delta_buff_total = $rc[2] - $bgw{'buff_checkpoint'}
+        + $rc[3] - $bgw{'buff_clean'}
+        + $rc[5] - $bgw{'buff_backend'};
 
-    $delta_buffers_backend      = $rc[5] - $bgwriter{'buffers_backend'};
-    $delta_buffers_bgwriter     = $rc[3] - $bgwriter{'buffers_clean'};
-    $delta_buffers_checkpointer = $rc[2] - $bgwriter{'buffers_checkpoint'};
-    $delta_buffers_alloc        = $rc[6] - $bgwriter{'buffers_alloc'};
-    $delta_checkpoint_timed     = $rc[0] - $bgwriter{'checkpoint_timed'};
-    $delta_checkpoint_req       = $rc[1] - $bgwriter{'checkpoint_req'};
-    $delta_maxwritten_clean     = $rc[4] - $bgwriter{'maxwritten_clean'};
-    $delta_backend_fsync        = $rc[7] - $bgwriter{'buffers_backend_fsync'};
+    $delta_buff_backend      = $rc[5] - $bgw{'buff_backend'};
+    $delta_buff_bgwriter     = $rc[3] - $bgw{'buff_clean'};
+    $delta_buff_checkpointer = $rc[2] - $bgw{'buff_checkpoint'};
+    $delta_buff_alloc        = $rc[6] - $bgw{'buff_alloc'};
+    $delta_checkpoint_timed  = $rc[0] - $bgw{'checkpoint_timed'};
+    $delta_checkpoint_req    = $rc[1] - $bgw{'checkpoint_req'};
+    $delta_maxwritten_clean  = $rc[4] - $bgw{'maxwritten_clean'};
+    $delta_backend_fsync     = $rc[7] - $bgw{'backend_fsync'};
 
-    push @perfdata, "buffers_backend=${delta_buffers_backend}B".
+    push @perfdata, "buffers_backend=${delta_buff_backend}B".
                     " checkpoint_timed=${delta_checkpoint_timed}".
                     " checkpoint_req=${delta_checkpoint_req}".
-                    " buffers_checkpoint=${delta_buffers_checkpointer}B".
-                    " buffers_clean=${delta_buffers_bgwriter}B".
+                    " buffers_checkpoint=${delta_buff_checkpointer}B".
+                    " buffers_clean=${delta_buff_bgwriter}B".
                     " maxwritten_clean=${delta_maxwritten_clean}".
                     " buffers_backend_fsync=${delta_backend_fsync}".
-                    " buffers_alloc=${delta_buffers_alloc}B";
+                    " buffers_alloc=${delta_buff_alloc}B";
 
-    if ($delta_buffers_total) {
-        my $w_limit = get_size( $args{'warning'},  $delta_buffers_total );
-        my $c_limit = get_size( $args{'critical'}, $delta_buffers_total );
+    if ($delta_buff_total) {
+        my $w_limit = get_size( $args{'warning'},  $delta_buff_total );
+        my $c_limit = get_size( $args{'critical'}, $delta_buff_total );
 
-        push @msg => sprintf( "%.2f%% from backends, %.2f%% from bgwriter, %.2f%% from checkpointer",
-            100 * $delta_buffers_backend / $delta_buffers_total,
-            100 * $delta_buffers_bgwriter / $delta_buffers_total,
-            100 * $delta_buffers_checkpointer / $delta_buffers_total,
+        push @msg => sprintf(
+            "%.2f%% from backends, %.2f%% from bgwriter, %.2f%% from checkpointer",
+            100 * $delta_buff_backend      / $delta_buff_total,
+            100 * $delta_buff_bgwriter     / $delta_buff_total,
+            100 * $delta_buff_checkpointer / $delta_buff_total
         );
 
-        $delta_buffers_backend_ratio = 100
-            * $delta_buffers_backend / $delta_buffers_total;
+        $delta_buff_backend_ratio = 100
+            * $delta_buff_backend / $delta_buff_total;
         return critical( $me, @msg, @perfdata )
-            if $delta_buffers_backend_ratio >= $c_limit;
+            if $delta_buff_backend_ratio >= $c_limit;
         return warning( $me, @msg, @perfdata )
-            if $delta_buffers_backend_ratio >= $w_limit;
+            if $delta_buff_backend_ratio >= $w_limit;
     }
     else {
         push @msg => "No writes";
