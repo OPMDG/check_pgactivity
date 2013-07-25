@@ -908,9 +908,15 @@ sub check_database_size {
 
 DB_LOOP: foreach my $db (@rs) {
         my $delta;
-        my $w_limit = get_size( $args{'warning'},  $db->[1] );
-        my $c_limit = get_size( $args{'critical'}, $db->[1] );
+        my $w_limit;
+        my $c_limit;
+
         $new_db_sizes{ $db->[0] } = $db->[1];
+
+        next DB_LOOP unless defined $db_sizes{ $db->[0] };
+
+        $w_limit = get_size( $args{'warning'},  $db->[1] );
+        $c_limit = get_size( $args{'critical'}, $db->[1] );
         $delta = $db->[1] - $db_sizes{ $db->[0] };
 
         push @perfdata => "$db->[0]=$db->[1]B;$w_limit;$c_limit";
@@ -1318,18 +1324,20 @@ sub check_bgwriter {
 
     save $hosts[0], 'bgwriter', \%new_bgwriter, $args{'status-file'};
 
+    return ok( $me, ['First call'] ) unless keys %bgwriter;
+
     $delta_buffers_total = $rc[2] - $bgwriter{'buffers_checkpoint'}
         + $rc[3] - $bgwriter{'buffers_clean'}
         + $rc[5] - $bgwriter{'buffers_backend'};
 
-    $delta_buffers_backend = $rc[5] - $bgwriter{'buffers_backend'};
-    $delta_buffers_bgwriter = $rc[3] - $bgwriter{'buffers_clean'};
+    $delta_buffers_backend      = $rc[5] - $bgwriter{'buffers_backend'};
+    $delta_buffers_bgwriter     = $rc[3] - $bgwriter{'buffers_clean'};
     $delta_buffers_checkpointer = $rc[2] - $bgwriter{'buffers_checkpoint'};
-    $delta_buffers_alloc = $rc[6] - $bgwriter{'buffers_alloc'};
-    $delta_checkpoint_timed = $rc[0] - $bgwriter{'checkpoint_timed'};
-    $delta_checkpoint_req = $rc[1] - $bgwriter{'checkpoint_req'};
-    $delta_maxwritten_clean = $rc[4] - $bgwriter{'maxwritten_clean'};
-    $delta_backend_fsync = $rc[7] - $bgwriter{'buffers_backend_fsync'};
+    $delta_buffers_alloc        = $rc[6] - $bgwriter{'buffers_alloc'};
+    $delta_checkpoint_timed     = $rc[0] - $bgwriter{'checkpoint_timed'};
+    $delta_checkpoint_req       = $rc[1] - $bgwriter{'checkpoint_req'};
+    $delta_maxwritten_clean     = $rc[4] - $bgwriter{'maxwritten_clean'};
+    $delta_backend_fsync        = $rc[7] - $bgwriter{'buffers_backend_fsync'};
 
     push @perfdata, "buffers_backend=${delta_buffers_backend}B".
                     " checkpoint_timed=${delta_checkpoint_timed}".
