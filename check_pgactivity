@@ -796,23 +796,23 @@ sub dprint {
     }
 }
 
-sub unknown($;++) {
+sub unknown($;$$) {
     return output( 3, $_[0], $_[1], $_[2], $_[3] );
 }
 
-sub critical($;++) {
+sub critical($;$$) {
     return output( 2, $_[0], $_[1], $_[2], $_[3] );
 }
 
-sub warning($;++) {
+sub warning($;$$) {
     return output( 1, $_[0], $_[1], $_[2], $_[3] );
 }
 
-sub ok($;++) {
+sub ok($;$$) {
     return output( 0, $_[0], $_[1], $_[2], $_[3] );
 }
 
-sub output ($$;++) {
+sub output ($$;$$) {
     my $rc  = shift;
     my $ret = shift;
     my $state;
@@ -827,7 +827,7 @@ sub output ($$;++) {
     @msg      = @{ $_[0] } if defined $_[0];
     @perfdata = @{ $_[1] } if defined $_[1];
 
-    $ret .= ": ".  join( ', ', @msg )      if @msg;
+    $ret .= ": ".  join( ', ', @msg )     if @msg;
     $ret .= " | ". join( ' ', @perfdata ) if @perfdata;
 
     print $ret;
@@ -882,13 +882,13 @@ sub check_backends {
 
     push @msg => "$num_backends connections on $rc[0][2]";
 
-    return critical( $me, @msg, @perfdata )
+    return critical( $me, \@msg, \@perfdata )
         if $num_backends >= $args{'critical'};
 
-    return warning( $me, @msg, @perfdata )
+    return warning( $me, \@msg, \@perfdata )
         if $num_backends >= $args{'warning'};
 
-    return ok( $me, @msg, @perfdata );
+    return ok( $me, \@msg, \@perfdata );
 }
 
 =item B<database_size> (8.1+)
@@ -946,12 +946,12 @@ DB_LOOP: foreach my $db (@rs) {
 
     save $hosts[0], 'db_size', \%new_db_sizes, $args{'status-file'};
 
-    return critical( $me, [ @msg_crit, @msg_warn ], @perfdata )
+    return critical( $me, [ @msg_crit, @msg_warn ], \@perfdata )
         if scalar @msg_crit > 0;
 
-    return warning( $me, @msg_warn, @perfdata ) if scalar @msg_warn > 0;
+    return warning( $me, \@msg_warn, \@perfdata ) if scalar @msg_warn > 0;
 
-    return ok( $me, [ scalar(@rs) . " database(s) checked" ], @perfdata );
+    return ok( $me, [ scalar(@rs) . " database(s) checked" ], \@perfdata );
 }
 
 =item B<wal_files> (8.1+)
@@ -1066,9 +1066,9 @@ sub check_wal_files {
 
     push @msg => "$rs[0] WAL files";
 
-    return critical( $me, @msg, @perfdata ) if $rs[0] >= $c_limit;
-    return warning( $me, @msg, @perfdata ) if $rs[0] >= $w_limit;
-    return ok( $me, @msg, @perfdata );
+    return critical( $me, \@msg, \@perfdata ) if $rs[0] >= $c_limit;
+    return warning( $me, \@msg, \@perfdata ) if $rs[0] >= $w_limit;
+    return ok( $me, \@msg, \@perfdata );
 }
 
 =item B<ready_archives> (8.1+)
@@ -1098,9 +1098,9 @@ sub check_ready_archives {
 
     push @msg => "$rs[0] WAL files ready to archive";
 
-    return critical( $me, @msg, @perfdata ) if $rs[0] >= $args{'critical'};
-    return warning( $me, @msg, @perfdata ) if $rs[0] >= $args{'warning'};
-    return ok( $me, @msg, @perfdata );
+    return critical( $me, \@msg, \@perfdata ) if $rs[0] >= $args{'critical'};
+    return warning( $me, \@msg, \@perfdata ) if $rs[0] >= $args{'warning'};
+    return ok( $me, \@msg, \@perfdata );
 }
 
 # Agnostic check vacuum or analyze sub
@@ -1145,13 +1145,12 @@ LOOP_DB: foreach my $db (@all_db) {
         }
     }
 
-    return critical( $me, [ @msg_crit, @msg_warn ], @perfdata )
+    return critical( $me, [ @msg_crit, @msg_warn ], \@perfdata )
         if scalar @msg_crit > 0;
 
-    return warning( $me, @msg_warn, @perfdata ) if scalar @msg_warn > 0;
+    return warning( $me, \@msg_warn, \@perfdata ) if scalar @msg_warn > 0;
 
-    return ok( $me, [ scalar(@all_db) . " database(s) checked" ],
-        @perfdata );
+    return ok( $me, [ scalar(@all_db) . " database(s) checked" ], \@perfdata );
 }
 
 =item B<last_analyze> (8.2+)
@@ -1259,13 +1258,13 @@ sub check_locks {
 
     push @msg => "$total_locks locks";
 
-    return critical( $me, @msg, @perfdata )
+    return critical( $me, \@msg, \@perfdata )
         if $total_locks >= $args{'critical'};
 
-    return warning( $me, @msg, @perfdata )
+    return warning( $me, \@msg, \@perfdata )
         if $total_locks >= $args{'warning'};
 
-    return ok( $me, @msg, @perfdata );
+    return ok( $me, \@msg, \@perfdata );
 }
 
 =item B<bgwriter> (8.3+)
@@ -1383,16 +1382,16 @@ sub check_bgwriter {
 
         $delta_buff_backend_ratio = 100
             * $delta_buff_backend / $delta_buff_total;
-        return critical( $me, @msg, @perfdata )
+        return critical( $me, \@msg, \@perfdata )
             if $delta_buff_backend_ratio >= $c_limit;
-        return warning( $me, @msg, @perfdata )
+        return warning( $me, \@msg, \@perfdata )
             if $delta_buff_backend_ratio >= $w_limit;
     }
     else {
         push @msg => "No writes";
     }
 
-    return ok( $me, @msg, @perfdata );
+    return ok( $me, \@msg, \@perfdata );
 }
 
 
@@ -1479,18 +1478,18 @@ sub check_archive_folder {
         }
     }
 
-    return critical( $me, @msg, @perfdata ) if @msg;
+    return critical( $me, \@msg, \@perfdata ) if @msg;
 
     push @msg => scalar(@filelist_sorted)." WAL archived in '$args{'path'}', "
         ."latest archived since ". to_interval($latest_wal_age);
 
-    return critical( $me, @msg, @perfdata )
+    return critical( $me, \@msg, \@perfdata )
         if $latest_wal_age >= $c_limit;
 
-    return warning( $me, @msg, @perfdata )
+    return warning( $me, \@msg, \@perfdata )
         if $latest_wal_age >= $w_limit;
 
-    return ok( $me, @msg, @perfdata );
+    return ok( $me, \@msg, \@perfdata );
 }
 
 
@@ -1568,7 +1567,7 @@ sub check_minor_version {
 
     unless ( defined $latest_versions{$major_version} ) {
         push @msg => "Unknown PostgreSQL version $major_version";
-        return unknown( $me, @msg );
+        return unknown( $me, \@msg );
     }
 
     push @perfdata => "version=". $hosts[0]{'version_num'};
@@ -1577,12 +1576,12 @@ sub check_minor_version {
         push @msg => "Latest PostgreSQL is ".
             $latest_versions{$major_version}[1].
             "running version is ". $hosts[0]{'version'};
-        return critical( $me, @msg, @perfdata )
+        return critical( $me, \@msg, \@perfdata )
     }
 
     push @msg => "PostgreSQL version ". $hosts[0]{'version'};
 
-    return ok( $me, @msg, @perfdata );
+    return ok( $me, \@msg, \@perfdata );
 }
 
 
@@ -1707,12 +1706,12 @@ sub check_hot_standby_delta {
         $num_clusters++;
     }
 
-    return critical( $me, [ @msg_crit, @msg_warn ], @perfdata )
+    return critical( $me, [ @msg_crit, @msg_warn ], \@perfdata )
         if @msg_crit > 0;
 
-    return warning( $me, @msg_warn, @perfdata ) if @msg_warn > 0;
+    return warning( $me, \@msg_warn, \@perfdata ) if @msg_warn > 0;
 
-    return ok($me, [ "$num_clusters Hot standby checked" ], @perfdata);
+    return ok($me, [ "$num_clusters Hot standby checked" ], \@perfdata);
 }
 
 
@@ -1821,12 +1820,12 @@ sub check_streaming_delta {
         }
     }
 
-    return critical( $me, [ @msg_crit, @msg_warn ], @perfdata )
+    return critical( $me, [ @msg_crit, @msg_warn ], \@perfdata )
         if @msg_crit > 0;
 
-    return warning( $me, @msg_warn, @perfdata ) if @msg_warn > 0;
+    return warning( $me, \@msg_warn, \@perfdata ) if @msg_warn > 0;
 
-    return ok($me, [ "$num_clusters slaves checked" ], @perfdata);
+    return ok($me, [ "$num_clusters slaves checked" ], \@perfdata);
 }
 
 =item B<hit_ratio> (all)
@@ -1876,13 +1875,13 @@ DB_LOOP:    foreach my $db (@rc) {
         }
     }
 
-    return critical( $me, [ @msg_crit, @msg_warn ], @perfdata )
+    return critical( $me, [ @msg_crit, @msg_warn ], \@perfdata )
         if $min_hit_ratio < $args{'critical'};
 
-    return warning( $me, @msg_warn, @perfdata )
+    return warning( $me, \@msg_warn, \@perfdata )
         if $min_hit_ratio < $args{'warning'};
 
-    return ok( $me, [ scalar(@rc) . " database(s) checked" ], @perfdata );
+    return ok( $me, [ scalar(@rc) . " database(s) checked" ], \@perfdata );
 }
 
 =item B<backup_label_age> (8.0+)
@@ -1911,13 +1910,13 @@ sub check_backup_label_age {
     push @perfdata,
          "age=${rs}s;$w_limit;$c_limit";
 
-    return critical( $me, [ "age: ".to_interval($rs) ], @perfdata )
+    return critical( $me, [ "age: ".to_interval($rs) ], \@perfdata )
         if $rs > $c_limit;
 
-    return warning( $me, [ "age: ".to_interval($rs) ], @perfdata )
+    return warning( $me, [ "age: ".to_interval($rs) ], \@perfdata )
         if $rs > $w_limit;
 
-    return ok( $me, [ "backup_label file ".( $rs == 0 ? "absent":"present (age: ".to_interval($rs).")") ], @perfdata );
+    return ok( $me, [ "backup_label file ".( $rs == 0 ? "absent":"present (age: ".to_interval($rs).")") ], \@perfdata );
 }
 
 
@@ -2021,13 +2020,13 @@ sub check_longest_query {
         }
     }
 
-    return critical( $me, @msg, @perfdata )
+    return critical( $me, \@msg, \@perfdata )
         if $longest_query > $c_limit;
 
-    return warning( $me, @msg, @perfdata )
+    return warning( $me, \@msg, \@perfdata )
         if $longest_query > $w_limit;
 
-    return ok( $me, [ "$nb_query running querie(s)" ], @perfdata );
+    return ok( $me, [ "$nb_query running querie(s)" ], \@perfdata );
 }
 
 =item B<connection> (all)
@@ -2127,17 +2126,17 @@ DB_LOOP:    foreach my $rec (@rc) {
         }
     }
 
-    return critical( $me, [ @msg_crit, @msg_warn ], @perfdata )
+    return critical( $me, [ @msg_crit, @msg_warn ], \@perfdata )
         if ( defined $c_limit and
             ( !$reverse and $bounded > $c_limit)
             or ( $reverse and $bounded < $c_limit) );
 
-    return warning( $me, [ @msg_warn ], @perfdata )
+    return warning( $me, [ @msg_warn ], \@perfdata )
         if ( defined $w_limit and
             ( !$reverse and $bounded > $w_limit)
             or ( $reverse and $bounded < $w_limit) );
 
-    return ok( $me, [ "Custom query ok" ], @perfdata );
+    return ok( $me, [ "Custom query ok" ], \@perfdata );
 }
 
 =item B<configuration> (8.0+)
@@ -2194,7 +2193,7 @@ DB_LOOP:    foreach my $setting (@rc) {
     }
 
     # All the entries in $result are an error. If the array isn't empty, we return ERROR, and the list of errors
-    return critical( $me, @msg_crit )
+    return critical( $me, \@msg_crit )
         if ( @msg_crit > 0 );
 
     return ok( $me, [ "PostgreSQL configuration ok" ] );
@@ -2383,7 +2382,7 @@ ALLDB_LOOP: foreach my $db (@all_db) {
 
     return critical( $me, [ $c_t_count . " table" . ( $c_t_count > 1 ? "s" : "" ) . " " . $c_i_count . " index" . ( $c_i_count > 1 ? "es" : "" ) ], [ "t_count=$c_t_count i_count=$c_i_count", @perfdata ] ) if ( ( $c_t_count + $c_i_count ) > 0 );
     return warning( $me, [ $w_t_count . " table" . ( $w_t_count > 1 ? "s" : "" ) . " " . $w_i_count . " index" . ( $w_i_count > 1 ? "es" : "" ) ], [ "t_count=$w_t_count i_count=$w_i_count", @perfdata ] ) if ( ( $w_t_count + $w_i_count ) > 0 );
-    return ok( $me, [ "Database bloat ok" ], @perfdata );
+    return ok( $me, [ "Database bloat ok" ], \@perfdata );
 }
 
 # End of SERVICE section in pod doc
