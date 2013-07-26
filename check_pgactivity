@@ -422,7 +422,7 @@ sub get_time($) {
 LOOP_TS: while ( my $val = shift @date ) {
 
         $val = int($val) || die("Wrong value for an interval: «$val»!");
-        my $unit = shift @date;
+        my $unit = shift(@date) || '';
 
         if ( $unit eq 'm' ) {
             $ts += $val * 60;
