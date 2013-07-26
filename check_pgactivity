@@ -579,13 +579,13 @@ sub parse_hosts(\%) {
     # Add as many hosts than necessary depending on given parameters
     # host/port/db/user.
     # Any missing parameters will be set to its default value.
-    if (defined $args{'hosts'}
+    if (defined $args{'host'}
         or defined $args{'username'}
         or defined $args{'port'}
         or defined $args{'dbname'}
     ) {
-        $args{'hosts'} = $ENV{'PGHOST'} || 'localhost'
-            unless defined $args{'hosts'};
+        $args{'host'} = $ENV{'PGHOST'} || 'localhost'
+            unless defined $args{'host'};
         $args{'username'} = $ENV{'PGUSER'} || 'postgres'
             unless defined $args{'username'};
         $args{'port'} = $ENV{'PGPORT'} || '5432'
@@ -593,7 +593,7 @@ sub parse_hosts(\%) {
         $args{'dbname'} = $ENV{'PGDATABASE'} || 'template1'
             unless defined $args{'dbname'};
 
-        my @dbhosts = split( /,/, $args{'hosts'} );
+        my @dbhosts = split( /,/, $args{'host'} );
         my @dbnames = split( /,/, $args{'dbname'} );
         my @dbusers = split( /,/, $args{'username'} );
         my @dbports = split( /,/, $args{'port'} );
