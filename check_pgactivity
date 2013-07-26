@@ -159,6 +159,10 @@ my %services = (
         'sub'  => \&check_configuration,
         'desc' => 'Check the most important settings.',
         'min'  => $PG_VERSION_80
+    },
+    'bloat' => {
+        'sub'  => \&check_bloat,
+        'desc' => 'Check table and index bloat.'
     }
 );
 
@@ -2191,6 +2195,189 @@ DB_LOOP:    foreach my $setting (@rc) {
         if ( @msg_crit > 0 );
 
     return ok( $me, [ "PostgreSQL configuration ok" ] );
+}
+
+=item B<bloat> (all)
+
+Check the table and index bloat.
+
+Warning and critical thresholds accept either a raw number, a percentage or a
+size (eg. 125M). If a percentage is given, the threshold will be applied on
+each table or index.
+
+Perfdata will give the number or tables and indexes concerned by warning and
+critical threshold, and max bloat (both size and percentage) and average bloat (both
+size and percentage) for tables and indexes (not filtered by thresholds).
+=cut
+sub check_bloat {
+    my @perfdata;
+    my @hosts        = @{ $_[0] };
+    my %args         = %{ $_[1] };
+    my $w_limit;
+    my $c_limit;
+    my $w_t_count      = 0;
+    my $w_i_count      = 0;
+    my $c_t_count      = 0;
+    my $c_i_count      = 0;
+    my $me           = 'POSTGRES_BLOAT';
+    my @all_db = @{ get_all_dbname( $hosts[0] ) };
+    my $BLOCK_SIZE = "(SELECT current_setting('block_size')::numeric)";
+    $BLOCK_SIZE = "(SELECT 8192)" if ( $hosts[0]->{'version_num'} == $PG_VERSION_74 );
+    # This query is based on check_postgres,
+    # by Greg Sabino Mullane <greg@endpoint.com>,
+    # licenced under BSD
+    my $sql = qq{
+        SELECT DISTINCT current_database(), relkind, schemaname, relname,
+          ROUND(CASE WHEN otta=0 OR relpages=0 OR relpages<=otta THEN 0.0 ELSE 100-(otta::numeric*100/relpages) END,1) AS bloat,
+          CASE WHEN relpages <= otta THEN 0 ELSE bs*(relpages-otta)::bigint END AS wastedbytes,
+          bs*relpages::bigint AS totalbytes
+        FROM (
+          SELECT ref.relkind, tbl.oid as o1,ind.oid as o2,
+            CASE WHEN ref.relkind = 'r' THEN tbl.nspname ELSE ni.nspname END AS schemaname,
+            CASE WHEN ref.relkind = 'r' THEN tbl.relname ELSE ind.relname END AS relname,
+            CASE WHEN ref.relkind = 'r' THEN tbl.reltuples ELSE ind.reltuples END AS reltuples,
+            CASE WHEN ref.relkind = 'r' THEN tbl.relpages ELSE ind.relpages END AS relpages,
+            tbl.bs, tbl.datahdr,
+            CASE WHEN ref.relkind = 'r' THEN tbl.otta ELSE COALESCE(
+                CEIL((ind.reltuples*(datahdr-12))/(bs-20::float))
+                + CASE WHEN am.amname IN ('hash','btree') THEN 1 ELSE 0 END,0 -- btree and hash have a metadata reserved block
+            ) END AS otta -- very rough approximation, assumes all cols
+          FROM (
+            SELECT
+              cc.oid, nn.nspname,cc.relname, cc.reltuples, cc.relpages + COALESCE(t.relpages,0) as relpages, bs AS bs, datahdr, cc.relkind,
+              COALESCE(CEIL((cc.reltuples*((datahdr+ma-
+                (CASE WHEN datahdr%ma=0 THEN ma ELSE datahdr%ma END))+nullhdr2+4))/(bs-20::float)),0) AS otta
+            FROM
+              pg_class cc
+              JOIN pg_namespace nn ON cc.relnamespace = nn.oid AND nn.nspname <> 'information_schema'
+              LEFT JOIN
+              (
+                SELECT
+                  ma,bs,foo.nspname,foo.relname,
+                  (datawidth+(hdr+ma-(case when hdr%ma=0 THEN ma ELSE hdr%ma END)))::numeric AS datahdr,
+                  (maxfracsum*(nullhdr+ma-(case when nullhdr%ma=0 THEN ma ELSE nullhdr%ma END))) AS nullhdr2
+                FROM (
+                  SELECT
+                    ns.nspname, tbl.relname, hdr, ma, bs,
+                    SUM((1-coalesce(null_frac,0))*coalesce(avg_width, 2048)) AS datawidth,
+                    MAX(coalesce(null_frac,0)) AS maxfracsum,
+                    hdr+(
+                      SELECT 1+count(*)/8
+                      FROM pg_stats s2
+                      WHERE null_frac<>0 AND s2.schemaname = ns.nspname AND s2.tablename = tbl.relname
+                    ) AS nullhdr
+                  FROM pg_attribute att
+                  JOIN pg_class tbl ON att.attrelid = tbl.oid
+                  JOIN pg_namespace ns ON ns.oid = tbl.relnamespace
+                  LEFT JOIN pg_stats s ON s.schemaname=ns.nspname
+                  AND s.tablename = tbl.relname
+                  AND s.inherited=false
+                  AND s.attname=att.attname,
+                  (
+                    SELECT
+                      $BLOCK_SIZE as bs,
+                        CASE WHEN SUBSTRING(SPLIT_PART(v, ' ', 2) FROM '#"[0-9]+#"%' for '#')::integer > 7
+                          THEN 27 ELSE 23 END AS hdr,
+                      CASE WHEN v ~ 'mingw32' OR v ~ '64-bit' THEN 8 ELSE 4 END AS ma
+                    FROM (SELECT version() AS v) AS foo
+                  ) AS constants
+                  WHERE att.attnum > 0
+                  GROUP BY 1,2,3,4,5
+                ) AS foo
+              ) AS rs
+              ON cc.relname = rs.relname AND nn.nspname = rs.nspname
+              LEFT JOIN pg_class t ON cc.reltoastrelid = t.oid
+              WHERE cc.reltoastidxid = 0 -- join on pg_class using reltoastrelid to get toast size, but don't iterate though toast tables
+              AND cc.relkind = 'r'
+        ) AS tbl
+          CROSS JOIN (SELECT 'r' as relkind UNION SELECT 'i') as ref
+          LEFT JOIN pg_index i ON indrelid = tbl.oid
+          LEFT JOIN pg_class ind ON ind.oid = i.indexrelid AND ref.relkind = ind.relkind AND ind.relkind = 'i'
+          LEFT JOIN pg_namespace ni ON ind.relnamespace = ni.oid
+          LEFT JOIN pg_am am ON ind.relam = am.oid
+        WHERE NOT (ref.relkind = 'i' AND ind.oid IS NULL) -- handle tables without index
+        ) AS sql
+        WHERE ROUND(CASE WHEN otta=0 OR relpages=0 OR relpages=otta THEN 0.0 ELSE relpages/otta::numeric END,1) > 1.0
+        order by 4 desc
+    };
+
+# Iterate over all db
+ALLDB_LOOP: foreach my $db (@all_db) {
+        my @rc = @{ query( $hosts[0], $sql, $db ) };
+        # Var to handle max,avg and count for size and percentage, per relkind
+        my $nb_ind = 0;
+        my $max_ind_size = 0;
+        my $sum_ind_size = 0;
+        my $avg_ind_size = 0;
+        my $max_ind_percent = 0;
+        my $sum_ind_percent = 0;
+        my $avg_ind_percent = 0;
+        my $nb_tab = 0;
+        my $max_tab_size = 0;
+        my $sum_tab_size = 0;
+        my $avg_tab_size = 0;
+        my $max_tab_percent = 0;
+        my $sum_tab_percent = 0;
+        my $avg_tab_percent = 0;
+        BLOAT_LOOP:    foreach my $bloat (@rc) {
+            # We need to calculate threshold on each object, has the value can be given in percetage
+            $w_limit = get_size( $args{'warning'}, $bloat->[6] );
+            $c_limit = get_size( $args{'critical'}, $bloat->[6] );
+
+            $w_t_count++ if ($bloat->[1] eq 'r' and $bloat->[5] > $w_limit );
+            $w_i_count++ if ($bloat->[1] eq 'i' and $bloat->[5] > $w_limit );
+
+            $c_t_count++ if ($bloat->[1] eq 'r' and $bloat->[5] > $c_limit );
+            $c_i_count++ if ($bloat->[1] eq 'i' and $bloat->[5] > $c_limit );
+
+            if ( $bloat->[1] eq "i" ){
+                $nb_ind++;
+                $max_ind_size = $bloat->[5] if ( $bloat->[5] > $max_ind_size);
+                $sum_ind_size += $bloat->[5];
+                $max_ind_percent = $bloat->[4] if ( $bloat->[4] > $max_ind_percent);
+                $sum_ind_percent += $bloat->[4];
+            } else {
+                $nb_tab++;
+                $max_tab_size = $bloat->[5] if ( $bloat->[5] > $max_tab_size);
+                $sum_tab_size += $bloat->[5];
+                $max_tab_percent = $bloat->[4] if ( $bloat->[4] > $max_tab_percent);
+                $sum_tab_percent += $bloat->[4];
+            }
+        }
+        # Display "NaN" values to make sure grapher will break the line.
+        if ( $nb_ind == 0 ){
+                $max_ind_size = "NaN";
+                $sum_ind_size = "NaN";
+                $avg_ind_size = "NaN";
+                $max_ind_percent = "NaN";
+                $sum_ind_percent = "NaN";
+                $avg_ind_percent = "NaN";
+        } else{
+                $avg_ind_size = ( $sum_ind_size / $nb_ind );
+                $avg_ind_percent = ( $sum_ind_percent / $nb_ind )
+        }
+        if ( $nb_tab == 0 ){
+                $max_tab_size = "NaN";
+                $sum_tab_size = "NaN";
+                $avg_tab_size = "NaN";
+                $max_tab_percent = "NaN";
+                $sum_tab_percent = "NaN";
+                $avg_tab_percent = "NaN";
+        } else{
+                $avg_tab_size = ( $sum_tab_size / $nb_tab );
+                $avg_tab_percent = ( $sum_tab_percent / $nb_tab )
+        }
+        # Construc perfdata
+        my $perf = "${db}_i_max_s=${max_ind_size}B ${db}_i_avg_s=${avg_ind_size}B"
+            . " ${db}_i_max_p=${max_ind_percent}% ${db}_i_avg_p=${avg_ind_percent}%"
+            . " ${db}_t_max_s=${max_tab_size}B ${db}_t_avg_s=${avg_tab_size}B"
+            . " ${db}_t_max_p=${max_tab_percent}% ${db}_t_avg_p=${avg_tab_percent}%";
+        push @perfdata => $perf;
+    }
+
+    return critical( $me, [ $c_t_count . " table" . ( $c_t_count > 1 ? "s" : "" ) . " " . $c_i_count . " index" . ( $c_i_count > 1 ? "es" : "" ) ], [ "t_count=$c_t_count i_count=$c_i_count", @perfdata ] ) if ( ( $c_t_count + $c_i_count ) > 0 );
+    return warning( $me, [ $w_t_count . " table" . ( $w_t_count > 1 ? "s" : "" ) . " " . $w_i_count . " index" . ( $w_i_count > 1 ? "es" : "" ) ], [ "t_count=$w_t_count i_count=$w_i_count", @perfdata ] ) if ( ( $w_t_count + $w_i_count ) > 0 );
+    return ok( $me, [ "Database bloat ok" ], @perfdata );
 }
 
 # End of SERVICE section in pod doc
