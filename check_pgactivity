@@ -548,15 +548,20 @@ You can not overwrite services connexions variables with parameters C<--host HOS
 
 sub parse_hosts(\%) {
     my %args = %{ shift() };
-
     my @hosts = ();
+    my $psql_opts = [
+        $args{'psql'},
+        '-qXAtf', '-',
+        '-R', chr(30), # ASCII RS  (record separator)
+        '-F', chr(3)   # ASCII ETX (end of text)
+    ];
 
     if (defined $args{'dbservice'}) {
         push
             @hosts,
             {   'dbservice' => $_,
                 'name'      => "service=$_",
-                'psqlopts'  => [ $args{'psql'}, '-qxXAtf', '-' ],
+                'psqlopts'  => $psql_opts,
                 'pgversion' => undef
             }
         foreach split /,/, $args{'dbservice'};
@@ -597,7 +602,7 @@ sub parse_hosts(\%) {
                     'port'      => $dbports[$i] || $dbports[0],
                     'db'        => $dbnames[$i] || $dbnames[0],
                     'user'      => $dbusers[$i] || $dbusers[0],
-                    'psqlopts'  => [ $args{'psql'}, '-qxXAtf', '-' ],
+                    'psqlopts'  => $psql_opts,
                     'pgversion' => undef
                 }
             );
@@ -635,6 +640,8 @@ sub query($$;$) {
     my $rc;
     my @err;
 
+    local $/ = undef;
+
     delete $ENV{PGSERVICE};
     delete $ENV{PGDATABASE};
     delete $ENV{PGHOST};
@@ -661,6 +668,7 @@ sub query($$;$) {
     dprint ("Env. db     : $ENV{PGDATABASE}\n") if defined $host->{'db'};
 
     $pid = open3( *PSQLIN, *PSQLOUT, *PSQLERR, @{ $host->{'psqlopts'} });
+    binmode PSQLOUT;
 
     print PSQLIN $query;
 
@@ -683,22 +691,15 @@ sub query($$;$) {
 
     close PSQLERR;
 
-    foreach my $field (<PSQLOUT>) {
+    my $res = <PSQLOUT>;
+    close PSQLOUT;
 
-        if ( $field =~ /^\s*$/ ) {
-            $rnum++;
-            next;
-        }
+    chop $res;
 
-        chomp($field);
-
-        $field =~ /^[^|]+\|(.*)$/;
-        push @{ $res[$rnum] }, $1;
-    }
+    push @res, [ split(chr(3) => $_, -1) ]
+        foreach split (chr(30) => $res, -1);
 
     dprint( "Query result: ". Dumper( \@res ) );
-
-    close PSQLOUT;
 
     return \@res;
 }
@@ -1907,6 +1908,7 @@ sub check_backup_label_age {
 
     return ok( $me, [ "backup_label file ".( $rs == 0 ? "absent":"present (age: ".to_interval($rs).")") ], @perfdata );
 }
+
 
 =item B<connection> (all)
 
