@@ -1828,7 +1828,6 @@ databases which has never been accessed.
 Critical and Warning thresholds accept a percentage.
 =cut
 sub check_hit_ratio {
-    no bigint;
     my @rc;
     my @perfdata;
     my @msg_crit;
@@ -1883,7 +1882,6 @@ Perfdata returns the age of the backup_label file, -1 if not present.
 Critical and Warning thresholds only accept an interval (eg. 1h30m25s).
 =cut
 sub check_backup_label_age {
-    no bigint;
     my @perfdata;
     my @hosts        = @{ $_[0] };
     my %args         = %{ $_[1] };
