@@ -2223,6 +2223,9 @@ sub check_bloat {
     my @all_db = @{ get_all_dbname( $hosts[0] ) };
     my $BLOCK_SIZE = "(SELECT current_setting('block_size')::numeric)";
     $BLOCK_SIZE = "(SELECT 8192)" if ( $hosts[0]->{'version_num'} == $PG_VERSION_74 );
+    my $USE_INHERITED = "AND s.inherited=false";
+    $USE_INHERITED = "" if ( $hosts[0]->{'version_num'} < $PG_VERSION_90 );
+
     # This query is based on check_postgres,
     # by Greg Sabino Mullane <greg@endpoint.com>,
     # licenced under BSD
@@ -2271,7 +2274,7 @@ sub check_bloat {
                   JOIN pg_namespace ns ON ns.oid = tbl.relnamespace
                   LEFT JOIN pg_stats s ON s.schemaname=ns.nspname
                   AND s.tablename = tbl.relname
-                  AND s.inherited=false
+                  $USE_INHERITED
                   AND s.attname=att.attname,
                   (
                     SELECT
