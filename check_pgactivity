@@ -2234,14 +2234,15 @@ sub check_bloat {
     my $sql = qq{
         SELECT DISTINCT current_database(), relkind, schemaname, relname,
           ROUND(CASE WHEN otta=0 OR relpages=0 OR relpages<=otta THEN 0.0 ELSE 100-(otta::numeric*100/relpages) END,1) AS bloat,
-          CASE WHEN relpages <= otta THEN 0 ELSE bs*(relpages-otta)::bigint END AS wastedbytes,
-          bs*relpages::bigint AS totalbytes
+          CASE WHEN relpages <= otta THEN 0 ELSE bs*(relpages-otta)::bigint+bs*(toastpages*(100-(otta::numeric*100/relpages))/100)::bigint END AS wastedbytes,
+          bs*(relpages+toastpages)::bigint AS totalbytes
         FROM (
           SELECT ref.relkind, tbl.oid as o1,ind.oid as o2,
             CASE WHEN ref.relkind = 'r' THEN tbl.nspname ELSE ni.nspname END AS schemaname,
             CASE WHEN ref.relkind = 'r' THEN tbl.relname ELSE ind.relname END AS relname,
             CASE WHEN ref.relkind = 'r' THEN tbl.reltuples ELSE ind.reltuples END AS reltuples,
             CASE WHEN ref.relkind = 'r' THEN tbl.relpages ELSE ind.relpages END AS relpages,
+            CASE WHEN ref.relkind = 'r' THEN tbl.toastpages ELSE 0 END AS toastpages,
             tbl.bs, tbl.datahdr,
             CASE WHEN ref.relkind = 'r' THEN tbl.otta ELSE COALESCE(
                 CEIL((ind.reltuples*(datahdr-12))/(bs-20::float))
@@ -2249,7 +2250,7 @@ sub check_bloat {
             ) END AS otta -- very rough approximation, assumes all cols
           FROM (
             SELECT
-              cc.oid, nn.nspname,cc.relname, cc.reltuples, cc.relpages + COALESCE(t.relpages,0) as relpages, bs AS bs, datahdr, cc.relkind,
+              cc.oid, nn.nspname,cc.relname, cc.reltuples, cc.relpages, COALESCE(t.relpages,0) as toastpages, bs AS bs, datahdr, cc.relkind,
               COALESCE(CEIL((cc.reltuples*((datahdr+ma-
                 (CASE WHEN datahdr%ma=0 THEN ma ELSE datahdr%ma END))+nullhdr2+4))/(bs-20::float)),0) AS otta
             FROM
@@ -2274,7 +2275,7 @@ sub check_bloat {
                   FROM pg_attribute att
                   JOIN pg_class tbl ON att.attrelid = tbl.oid
                   JOIN pg_namespace ns ON ns.oid = tbl.relnamespace
-                  LEFT JOIN pg_stats s ON s.schemaname=ns.nspname
+                  JOIN pg_stats s ON s.schemaname=ns.nspname
                   AND s.tablename = tbl.relname
                   $USE_INHERITED
                   AND s.attname=att.attname,
@@ -2292,8 +2293,7 @@ sub check_bloat {
               ) AS rs
               ON cc.relname = rs.relname AND nn.nspname = rs.nspname
               LEFT JOIN pg_class t ON cc.reltoastrelid = t.oid
-              WHERE cc.reltoastidxid = 0 -- join on pg_class using reltoastrelid to get toast size, but don't iterate though toast tables
-              AND cc.relkind = 'r'
+              WHERE cc.relkind = 'r' -- only tables, will therefore exlclude toast tables
         ) AS tbl
           CROSS JOIN (SELECT 'r' as relkind UNION SELECT 'i') as ref
           LEFT JOIN pg_index i ON indrelid = tbl.oid
