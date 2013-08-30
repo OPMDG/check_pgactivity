@@ -2233,8 +2233,9 @@ sub check_bloat {
     # licenced under BSD
     my $sql = qq{
         SELECT DISTINCT current_database(), relkind, schemaname, relname,
-          ROUND(CASE WHEN otta=0 OR relpages=0 OR relpages<=otta THEN 0.0 ELSE 100-(otta::numeric*100/relpages) END,1) AS bloat,
-          CASE WHEN relpages <= otta THEN 0 ELSE bs*(relpages-otta)::bigint+bs*(toastpages*(100-(otta::numeric*100/relpages))/100)::bigint END AS wastedbytes,
+          (CASE WHEN relpages <= otta THEN 0 ELSE bs*(relpages-otta)::bigint+bs*((toastpages)-(toasttuples/4))::bigint END) * 100 
+            / (bs*(relpages+toastpages)::bigint) AS realbloat,
+          CASE WHEN relpages <= otta THEN 0 ELSE bs*(relpages-otta)::bigint+bs*((toastpages)-(toasttuples/4))::bigint END AS wastedbytes,
           bs*(relpages+toastpages)::bigint AS totalbytes
         FROM (
           SELECT ref.relkind, tbl.oid as o1,ind.oid as o2,
@@ -2243,6 +2244,7 @@ sub check_bloat {
             CASE WHEN ref.relkind = 'r' THEN tbl.reltuples ELSE ind.reltuples END AS reltuples,
             CASE WHEN ref.relkind = 'r' THEN tbl.relpages ELSE ind.relpages END AS relpages,
             CASE WHEN ref.relkind = 'r' THEN tbl.toastpages ELSE 0 END AS toastpages,
+            CASE WHEN ref.relkind = 'r' THEN tbl.toasttuples ELSE 0 END AS toasttuples,
             tbl.bs, tbl.datahdr,
             CASE WHEN ref.relkind = 'r' THEN tbl.otta ELSE COALESCE(
                 CEIL((ind.reltuples*(datahdr-12))/(bs-20::float))
@@ -2250,7 +2252,7 @@ sub check_bloat {
             ) END AS otta -- very rough approximation, assumes all cols
           FROM (
             SELECT
-              cc.oid, nn.nspname,cc.relname, cc.reltuples, cc.relpages, COALESCE(t.relpages,0) as toastpages, bs AS bs, datahdr, cc.relkind,
+              cc.oid, nn.nspname,cc.relname, cc.reltuples, COALESCE(t.reltuples,0) as toasttuples, cc.relpages, COALESCE(t.relpages,0) as toastpages, bs AS bs, datahdr, cc.relkind,
               COALESCE(CEIL((cc.reltuples*((datahdr+ma-
                 (CASE WHEN datahdr%ma=0 THEN ma ELSE datahdr%ma END))+nullhdr2+4))/(bs-20::float)),0) AS otta
             FROM
