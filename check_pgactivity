@@ -1398,7 +1398,9 @@ sub check_bgwriter {
 =item B<archive_folder>
 
 Check if all archived WAL exist between the oldest and the latest WAL in the
-archive folder and make sure they are 16MB.
+archive folder and make sure they are 16MB. The given folder must have archived
+files from ONE cluster. The version of PostgreSQL that created the archives is
+only checked on the last one for speed consideration.
 
 This service requires the argument C<--path> on the command line to specify the
 archive folder path to check.
@@ -1424,8 +1426,21 @@ sub check_archive_folder {
     my $seg;
     my $latest_wal_age;
     my $dh;
-    my %args    = %{ $_[1] };
-    my $me      = 'POSTGRES_ARCHIVES';
+    my $wal_version;
+    my $me             = 'POSTGRES_ARCHIVES';
+    my $seg_per_wal    = 255; # increased later for pg > 9.2
+    my %args           = %{ $_[1] };
+    my %wal_versions   = (
+        '80' => 53340,
+        '81' => 53341,
+        '82' => 53342,
+        '83' => 53346,
+        '84' => 53347,
+        '90' => 53348,
+        '91' => 53350,
+        '92' => 53361,
+        '93' => 53365
+    );
 
     # "path" argument must be given
     pod2usage(
@@ -1455,6 +1470,20 @@ sub check_archive_folder {
 
     $latest_wal_age = time() - $filelist_sorted[-1][1];
 
+    # We need to read the XLOG_PAGE_MAGIC to be able to guess $seg_per_wal
+    open FIRST_WAL, "<$args{'path'}/$filelist_sorted[-1][0]";
+    read(FIRST_WAL, $wal_version, 2);
+    close FIRST_WAL;
+    $wal_version = unpack('S', $wal_version);
+
+    dprint ("wal version: $wal_version\n");
+
+    # FIXME: As there is no consensus about XLOG_PAGE_MAGIC algo accros postrges
+    # versions this piece of code should checked for compatibility for each new
+    # PostgreSQL version to confirm the new XLOG_PAGE_MAGIC is still greater
+    # than the previous one (or at least the 9.2 one).
+    $seg_per_wal++ if $wal_version >= $wal_versions{'93'};
+
     push @perfdata,
         "latest_archive_age=${latest_wal_age}s;$w_limit;$c_limit ".
         "num_archives=". scalar(@filelist_sorted);
@@ -1465,7 +1494,8 @@ sub check_archive_folder {
 
     # check ALL archives are here.
     for (my $i = 0; $i <= $#filelist_sorted ; $i++) {
-        my $curr = sprintf('%08X%08X%08X', $timeline, $wal + int(($seg + $i)/255), ($seg + $i)%255 );
+        dprint ("Checking WAL $filelist_sorted[$i][0]\n");
+        my $curr = sprintf('%08X%08X%08X', $timeline, $wal + int(($seg + $i)/$seg_per_wal), ($seg + $i)%$seg_per_wal );
 
         if ($curr ne $filelist_sorted[$i][0]) {
             push @msg => "Wrong sequence or file missing @ '$curr'";
