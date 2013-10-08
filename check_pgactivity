@@ -557,19 +557,12 @@ You can not overwrite services connexions variables with parameters C<--host HOS
 sub parse_hosts(\%) {
     my %args = %{ shift() };
     my @hosts = ();
-    my $psql_opts = [
-        $args{'psql'},
-        '-qXAtf', '-',
-        '-R', chr(30), # ASCII RS  (record separator)
-        '-F', chr(3)   # ASCII ETX (end of text)
-    ];
 
     if (defined $args{'dbservice'}) {
         push
             @hosts,
             {   'dbservice' => $_,
                 'name'      => "service=$_",
-                'psqlopts'  => $psql_opts,
                 'pgversion' => undef
             }
         foreach split /,/, $args{'dbservice'};
@@ -610,7 +603,6 @@ sub parse_hosts(\%) {
                     'port'      => $dbports[$i] || $dbports[0],
                     'db'        => $dbnames[$i] || $dbnames[0],
                     'user'      => $dbusers[$i] || $dbusers[0],
-                    'psqlopts'  => $psql_opts,
                     'pgversion' => undef
                 }
             );
@@ -641,9 +633,15 @@ sub parse_hosts(\%) {
 sub query($$;$) {
     my $host  = shift;
     my $query = shift;
-    my $db = shift || $host->{'db'};
-    my $rnum = 0;
-    my @res = ();
+    my $db    = shift || $host->{'db'};
+    my $rnum  = 0;
+    my @res   = ();
+    my @psqlopts = (
+        $args{'psql'},
+        '-qXAtf', '-',
+        '-R', chr(30), # ASCII RS  (record separator)
+        '-F', chr(3)   # ASCII ETX (end of text)
+    );
     my $res;
     my @err;
     my $pid;
@@ -676,7 +674,7 @@ sub query($$;$) {
     dprint ("Env. user   : $ENV{PGUSER}    \n") if defined $host->{'user'};
     dprint ("Env. db     : $ENV{PGDATABASE}\n") if defined $host->{'db'};
 
-    $pid = open3( *PSQLIN, *PSQLOUT, *PSQLERR, @{ $host->{'psqlopts'} });
+    $pid = open3( *PSQLIN, *PSQLOUT, *PSQLERR, @psqlopts);
     binmode PSQLOUT;
 
     print PSQLIN $query;
