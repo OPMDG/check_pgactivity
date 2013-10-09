@@ -2218,8 +2218,9 @@ Perform the given user query.
 The query is specified with the --query parameter. The first column will be
 used to perform the test for the status, if warning and critical are provided.
 The warning and critical arguments can be treated as integer (default), size
-or time with the --type argument. Warning and critical will be raised if they
-are greater than the first column, or less than if the --reverse option is used.
+or time depending to the --type argument. Warning and critical will be raised if
+they are greater than the first column, or less if the --reverse option is
+used.
 
 All others columns will be used to generate the perfdata. The query has to
 display them in the perfdata format, with unit if needed (eg. "size=35B").
@@ -2258,47 +2259,62 @@ sub check_custom_query {
         -exitval => 127
     ) unless defined $args{'query'} ;
 
+    # Critical and Warning must be given with --type argument
+    pod2usage(
+        -message => 'FATAL: you must specify critical and warning thresholds with "--type" parameter.',
+        -exitval => 127
+    ) unless ( not defined $args{'type'} ) or
+        ( defined $args{'type'} and $args{'warning'} and $args{'critical'} );
+
+
     # Handle warning and critical type
-    if ($type eq 'size'){
+    if ( $type eq 'size' ) {
         $w_limit = get_size( $args{'warning'} );
         $c_limit = get_size( $args{'critical'} );
-    } elsif ( $type eq 'time' ){
+    }
+    elsif ( $type eq 'time' ) {
         $w_limit = get_time( $args{'warning'} );
         $c_limit = get_time( $args{'critical'} );
-    } else{
+    }
+    else {
         $w_limit = $args{'warning'};
         $c_limit = $args{'critical'};
     }
 
     @rs = @{ query( $hosts[0], $sql ) };
 
-DB_LOOP:    foreach my $rec (@rs) {
-        $bounded = $rec->[0] if (!defined $bounded);
+    DB_LOOP: foreach my $rec ( @rs ) {
+        $bounded = $rec->[0] if !defined $bounded;
 
-        $bounded = $rec->[0] if ( (!$reverse and $rec->[0] > $bounded )
-            or ( $reverse and $rec->[0] < $bounded ) );
+        $bounded = $rec->[0] if ( !$reverse and $rec->[0] > $bounded )
+            or ( $reverse and $rec->[0] < $bounded );
 
-        $value = shift(@{$rec});
-        if ( @{$rec} > 0){
-            $perf = join(';',@{$rec})
+        $value = shift( @{$rec} );
+        if ( @{$rec} > 0 ) {
+            $perf = join(';',@{$rec});
         } else{
-            $perf = undef
+            $perf = undef;
         }
 
-        push @perfdata, $perf
-            if ( defined $perf );
+        push @perfdata, $perf if defined $perf;
 
-        if ( ( defined $c_limit)
-            and ( !$reverse and ( $value > $c_limit )
-            or ( $reverse and ( $value < $c_limit ) ) ) ){
+        if ( ( defined $c_limit )
+            and (
+                ( !$reverse and ( $value > $c_limit ) )
+                or ( $reverse and ( $value < $c_limit ) )
+            )
+        ) {
             push @msg_crit =>
                 "value: $value ".( defined $perf ? "($perf)" : "" );
             next DB_LOOP;
         }
 
-        if ( ( defined $w_limit)
-            and ( !$reverse and ( $value > $w_limit )
-            or ( $reverse and ( $value < $w_limit ) ) ) ){
+        if ( ( defined $w_limit )
+            and (
+                ( !$reverse and ( $value > $w_limit ) )
+                or ( $reverse  and ( $value < $w_limit ) )
+            )
+        ) {
             push @msg_warn =>
                 "value: $value ".( defined $perf ? "($perf)" : "" );
             next DB_LOOP;
@@ -2306,13 +2322,13 @@ DB_LOOP:    foreach my $rec (@rs) {
     }
 
     return critical( $me, [ @msg_crit, @msg_warn ], \@perfdata )
-        if ( defined $c_limit and
-            ( !$reverse and $bounded > $c_limit)
+        if defined $c_limit and
+            ( ( !$reverse and $bounded > $c_limit)
             or ( $reverse and $bounded < $c_limit) );
 
     return warning( $me, [ @msg_warn ], \@perfdata )
-        if ( defined $w_limit and
-            ( !$reverse and $bounded > $w_limit)
+        if defined $w_limit and
+            ( ( !$reverse and $bounded > $w_limit)
             or ( $reverse and $bounded < $w_limit) );
 
     return ok( $me, [ "Custom query ok" ], \@perfdata );
@@ -2650,18 +2666,6 @@ pod2usage(
         . "    Use --list to show the available services.",
     -exitval => 127
 ) unless exists $services{ $args{'service'} };
-
-
-# Critical and Warning must be given
-pod2usage(
-    -message => 'FATAL: you must specify critical and warning thresholds.',
-    -exitval => 127
-) unless ( ($args{'service'} eq 'minor_version')
-    or ($args{'service'} eq 'connection')
-    or ($args{'service'} eq 'custom_query')
-    or ($args{'service'} eq 'configuration')
-    )
-    or (defined $args{'warning'} and $args{'critical'});
 
 
 # Both critical and warning must be given is optionnal
