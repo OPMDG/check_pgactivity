@@ -45,22 +45,23 @@ $| = 1;
 $VERSION = '1.0';
 $PROGRAM = 'check_pgactivity';
 
-my $PG_VERSION_74 = 70400;
-my $PG_VERSION_80 = 80000;
-my $PG_VERSION_81 = 80100;
-my $PG_VERSION_82 = 80200;
-my $PG_VERSION_83 = 80300;
-my $PG_VERSION_84 = 80400;
-my $PG_VERSION_90 = 90000;
-my $PG_VERSION_91 = 90100;
-my $PG_VERSION_92 = 90200;
-my $PG_VERSION_93 = 90300;
+my $PG_VERSION_MIN = 70400;
+my $PG_VERSION_74  = 70400;
+my $PG_VERSION_80  = 80000;
+my $PG_VERSION_81  = 80100;
+my $PG_VERSION_82  = 80200;
+my $PG_VERSION_83  = 80300;
+my $PG_VERSION_84  = 80400;
+my $PG_VERSION_90  = 90000;
+my $PG_VERSION_91  = 90100;
+my $PG_VERSION_92  = 90200;
+my $PG_VERSION_93  = 90300;
+my $PG_VERSION_MAX = 9999999;
 
 # Available services and descriptions.
 #
-# The referenced sub called to exec each service must take two parameters:
-#   * a reference to the hosts array, holding hosts definitions
-#   * a reference to the arguments hash (%args)
+# The referenced sub called to exec each service takes one parameters: a
+# reference to the arguments hash (%args)
 #
 # Note that we can not use perl prototype for these subroutine as they are
 # called indirectly (thus the args given by references).
@@ -69,11 +70,8 @@ my %services = (
     # 'service_name' => {
     #    'sub'     => sub reference to call to run this service
     #    'desc'    => 'a desctiption of the service'
-    #    'min'     => the minimum version of pgsql the service supports
-    #    'max'     => the maximum version of pgsql the service supports
-    #    'offline' => (optional) is defined, the service doesn't connect
-    #                 to a cluster.
     # }
+
     'backends' => {
         'sub'  => \&check_backends,
         'desc' => 'Number of connections, compared to max_connections.'
@@ -81,29 +79,24 @@ my %services = (
     'database_size' => {
         'sub'  => \&check_database_size,
         'desc' => 'Variation of database sizes.',
-        'min'  => $PG_VERSION_81
     },
     'wal_files' => {
         'sub'  => \&check_wal_files,
         'desc' => 'Total number of WAL files.',
-        'min'  => $PG_VERSION_81
     },
     'ready_archives' => {
         'sub'  => \&check_ready_archives,
         'desc' => 'Check the number of wal files ready to archive.',
-        'min'  => $PG_VERSION_81
     },
     'last_vacuum' => {
         'sub' => \&check_last_vacuum,
         'desc' =>
             'Check the oldest vacuum (from autovacuum or not) on the database.',
-        'min' => $PG_VERSION_82
     },
     'last_analyze' => {
         'sub' => \&check_last_analyze,
         'desc' =>
             'Check the oldest analyze (from autovacuum or not) on the database.',
-        'min' => $PG_VERSION_82
     },
     'locks' => {
         'sub'  => \&check_locks,
@@ -116,12 +109,10 @@ my %services = (
     'bgwriter' => {
         'sub'  => \&check_bgwriter,
         'desc' => 'Check the bgwriter activity.',
-        'min'  => $PG_VERSION_83
     },
     'archive_folder' => {
         'sub'  => \&check_archive_folder,
         'desc' => 'Check archives in given folder.',
-        'offline' => 1
     },
     'minor_version' => {
         'sub'  => \&check_minor_version,
@@ -130,13 +121,10 @@ my %services = (
     'hot_standby_delta' => {
         'sub'  => \&check_hot_standby_delta,
         'desc' => 'Check delta in bytes between a master and its Hot standbys.',
-        'min'  => $PG_VERSION_90,
-        'max'  => $PG_VERSION_90
     },
     'streaming_delta' => {
         'sub'  => \&check_streaming_delta,
         'desc' => 'Check delta in bytes between a master and its standbys in streaming replication.',
-        'min'  => $PG_VERSION_91
     },
     'hit_ratio' => {
         'sub'  => \&check_hit_ratio,
@@ -145,7 +133,6 @@ my %services = (
     'backup_label_age' => {
         'sub'  => \&check_backup_label_age,
         'desc' => 'Check age of backup_label file.',
-        'min'  => $PG_VERSION_80
     },
     'connection' => {
         'sub'  => \&check_connection,
@@ -158,7 +145,6 @@ my %services = (
     'configuration' => {
         'sub'  => \&check_configuration,
         'desc' => 'Check the most important settings.',
-        'min'  => $PG_VERSION_80
     },
     'bloat' => {
         'sub'  => \&check_bloat,
@@ -280,9 +266,11 @@ sub version() {
 sub list_services() {
 
     print "List of available services:\n\n";
+
     foreach my $service ( sort keys %services ) {
-        printf "\t%-15s\t%s\n", $service, $services{$service}{'desc'};
+        printf "\t%-17s\t%s\n", $service, $services{$service}{'desc'};
     }
+
     exit 0;
 }
 
@@ -503,8 +491,12 @@ sub get_size($;$) {
 =head1 CONNEXIONS
 
 check_pgactivity allows two different of connexion specification: by service or
-by specifying values for host, user, port and database. Moreover, some service
+by specifying values for host, user, port and database. Moreover, some services
 can run on multiple host or needs to connect to multiple ones.
+
+You must specify one of the parameters bellow if the service need to connect
+to your PostgreSQL instance. In other words, check_pgactivity will NOT look for
+the libpq environment variables.
 
 The rules with connexions parameters are:
 
@@ -732,6 +724,8 @@ sub query_ver($\%;$) {
     # "query" sub
     my $db = shift;
 
+    set_pgversion($host);
+
     foreach my $ver ( sort { $b cmp $a } keys %queries ) {
         return query( $host, $queries{$ver}, $db )
             if ( $ver <= $host->{'version_num'} );
@@ -782,6 +776,29 @@ sub set_pgversion($) {
         $host->{'version_num'} = int($1) * 10000 + int($2) * 100 + int($4);
 
         return;
+    }
+
+    return 1;
+}
+
+# Check host compatibility
+sub is_compat($$$;$) {
+    my $host    = shift;
+    my $service = shift;
+    my $min     = shift;
+    my $max     = shift() || $PG_VERSION_MAX;
+    my $ver;
+
+    set_pgversion($host);
+    $ver = 100*int($host->{'version_num'}/100);
+
+    unless (
+        $ver >= $min
+        and $ver <= $max
+    ) {
+        warn sprintf "Service %s is not compatible with host '%s' (v%s).\n",
+            $service, $host->{'name'}, $host->{'version'};
+        return 0;
     }
 
     return 1;
@@ -853,32 +870,39 @@ C<max_connections>.
 
 sub check_backends {
 
-    my @rc;
+    my @rs;
     my @perfdata;
     my @msg;
-    my @hosts        = @{ $_[0] };
-    my %args         = %{ $_[1] };
+    my @hosts;
+    my %args         = %{ $_[0] };
     my $me           = 'POSTGRES_BACKENDS';
     my $num_backends = 0;
     my $sql          = q{SELECT datname, numbackends,
         current_setting('max_connections')
         FROM pg_stat_database};
 
-    @rc = @{ query( $hosts[0], $sql ) };
+    @hosts = @{ parse_hosts %args };
 
-    $args{'critical'} = int( $rc[0][2] * $1 / 100 )
+    pod2usage(
+        -message => 'FATAL: you must give one host with service "backends".',
+        -exitval => 127
+    ) if @hosts != 1;
+
+    @rs = @{ query( $hosts[0], $sql ) };
+
+    $args{'critical'} = int( $rs[0][2] * $1 / 100 )
         if ( $args{'critical'} =~ /^([0-9.]+)%$/ );
 
-    $args{'warning'} = int( $rc[0][2] * $1 / 100 )
+    $args{'warning'} = int( $rs[0][2] * $1 / 100 )
         if ( $args{'warning'} =~ /^([0-9.]+)%$/ );
 
-    foreach my $db (@rc) {
+    foreach my $db (@rs) {
         $num_backends += $db->[1];
         push @perfdata,
             "$db->[0]=$db->[1];$args{'warning'};$args{'critical'};0;$db->[2]";
     }
 
-    push @msg => "$num_backends connections on $rc[0][2]";
+    push @msg => "$num_backends connections on $rs[0][2]";
 
     return critical( $me, \@msg, \@perfdata )
         if $num_backends >= $args{'critical'};
@@ -906,13 +930,23 @@ sub check_database_size {
     my @rs;
     my @perfdata;
     my %new_db_sizes;
-    my @hosts = @{ $_[0] };
-    my %args  = %{ $_[1] };
-    my $me    = 'POSTGRES_DB_SIZE';
-    my %db_sizes
-        = %{ load( $hosts[0], 'db_size', $args{'status-file'} ) || {} };
-    my $sql   = q{SELECT datname, pg_database_size(datname)
+    my @hosts;
+    my %db_sizes;
+    my %args = %{ $_[0] };
+    my $me   = 'POSTGRES_DB_SIZE';
+    my $sql  = q{SELECT datname, pg_database_size(datname)
         FROM pg_database};
+
+    @hosts = @{ parse_hosts %args };
+
+    pod2usage(
+        -message => 'FATAL: you must give one host with service "database_size".',
+        -exitval => 127
+    ) if @hosts != 1;
+
+    is_compat $hosts[0], 'database_size', $PG_VERSION_81 or exit 1;
+
+    %db_sizes = %{ load( $hosts[0], 'db_size', $args{'status-file'} ) || {} };
 
     @rs = @{ query( $hosts[0], $sql ) };
 
@@ -976,8 +1010,8 @@ sub check_wal_files {
     my @rs;
     my @perfdata;
     my @msg;
-    my @hosts   = @{ $_[0] };
-    my %args    = %{ $_[1] };
+    my @hosts;
+    my %args    = %{ $_[0] };
     my $me      = 'POSTGRES_WAL_FILES';
     my %queries = (
         $PG_VERSION_90 => q{
@@ -1053,6 +1087,15 @@ sub check_wal_files {
             ) AS t}
     );
 
+    @hosts = @{ parse_hosts %args };
+
+    pod2usage(
+        -message => 'FATAL: you must give one host with service "wal_files".',
+        -exitval => 127
+    ) if @hosts != 1;
+
+    is_compat $hosts[0], 'wal_files', $PG_VERSION_81 or exit 1;
+
     @rs = @{ query_ver( $hosts[0], %queries )->[0] };
 
     $w_limit = get_size( $args{'warning'},  $rs[3] );
@@ -1082,13 +1125,22 @@ sub check_ready_archives {
     my @rs;
     my @perfdata;
     my @msg;
-    my @hosts = @{ $_[0] };
-    my %args  = %{ $_[1] };
+    my @hosts;
+    my %args  = %{ $_[0] };
     my $me    = 'POSTGRES_READY_ARCHIVES';
     my $query = q{
          SELECT count(*) AS count
          FROM pg_ls_dir('pg_xlog/archive_status') as file
          WHERE file ~ '^[0-9A-F]{24}.ready$' };
+
+    @hosts = @{ parse_hosts %args };
+
+    pod2usage(
+        -message => 'FATAL: you must give one host with service "ready_archives".',
+        -exitval => 127
+    ) if @hosts != 1;
+
+    is_compat $hosts[0], 'ready_archives', $PG_VERSION_81 or exit 1;
 
     @rs = @{ query( $hosts[0], $query )->[0] };
 
@@ -1108,25 +1160,35 @@ sub check_last_maintenance {
     my @msg_crit;
     my @msg_warn;
     my @msg;
-    my $type   = $_[0];
-    my @hosts  = @{ $_[1] };
-    my %args   = %{ $_[2] };
-    my @all_db = @{ get_all_dbname( $hosts[0] ) };
+    my @hosts;
+    my @all_db;
+    my $type    = $_[0];
+    my %args    = %{ $_[1] };
     my $c_limit = get_time( $args{'critical'} );
     my $w_limit = get_time( $args{'warning'} );
-    my $me     = 'POSTGRES_LAST_' . uc($type);
-    my $query  = qq{
-         SELECT min(
-            coalesce(
+    my $me      = 'POSTGRES_LAST_' . uc($type);
+    my $query   = qq{
+         SELECT coalesce(min(
                 extract(epoch FROM current_timestamp -
                     CASE last_auto${type} > last_${type}
                         WHEN 't' THEN last_auto${type}
                         ELSE last_${type}
                     END
-                )::float, 'NaN'::float
-            ))
+                )::float
+            ), 'NaN'::float)
             FROM pg_stat_user_tables
     };
+
+    @hosts = @{ parse_hosts %args };
+
+    pod2usage(
+        -message => "FATAL: you must give one host with service \"last_$type\".",
+        -exitval => 127
+    ) if @hosts != 1;
+
+    is_compat $hosts[0], "last_$type", $PG_VERSION_82 or exit 1;
+
+    @all_db = @{ get_all_dbname( $hosts[0] ) };
 
 LOOP_DB: foreach my $db (@all_db) {
         my $rs = @{ query( $hosts[0], $query, $db )->[0] }[0];
@@ -1202,8 +1264,8 @@ sub check_locks {
     my @rs;
     my @perfdata;
     my @msg;
-    my @hosts       = @{ $_[0] };
-    my %args        = %{ $_[1] };
+    my @hosts;
+    my %args        = %{ $_[0] };
     my $total_locks = 0;
     my $me          = 'POSTGRES_LOCKS';
     my %queries     = (
@@ -1244,6 +1306,13 @@ sub check_locks {
         }
     );
 
+    @hosts = @{ parse_hosts %args };
+
+    pod2usage(
+        -message => 'FATAL: you must give one host with service "locks".',
+        -exitval => 127
+    ) if @hosts != 1;
+
     @rs = @{ query_ver $hosts[0], %queries };
 
     $args{'critical'} = int($1 * $rs[0][2]/100) if $args{'critical'} =~ /^([0-9.]+)%$/;
@@ -1279,7 +1348,7 @@ sub check_bgwriter {
     my @msg;
     my @msg_crit;
     my @msg_warn;
-    my @rc;
+    my @rs;
     my @perfdata;
     my $delta_buff_total;
     my $delta_buff_backend;
@@ -1292,9 +1361,9 @@ sub check_bgwriter {
     my $delta_maxwritten_clean;
     my $delta_backend_fsync;
     my %new_bgw;
-    my @hosts   = @{ $_[0] };
-    my %args    = %{ $_[1] };
-    my %bgw = %{ load( $hosts[0], 'bgwriter', $args{'status-file'} ) || {} };
+    my %bgw;
+    my @hosts;
+    my %args    = %{ $_[0] };
     my $me      = 'POSTGRES_BGWRITER';
     my %queries = (
         $PG_VERSION_83 => q{SELECT checkpoints_timed, checkpoints_req,
@@ -1319,17 +1388,28 @@ sub check_bgwriter {
         }
     );
 
-    @rc = @{ query_ver( $hosts[0], %queries )->[0] };
+    @hosts = @{ parse_hosts %args };
 
-    $new_bgw{'checkpoint_timed'} = $rc[0];
-    $new_bgw{'checkpoint_req'}   = $rc[1];
-    $new_bgw{'buff_checkpoint'}  = $rc[2];
-    $new_bgw{'buff_clean'}       = $rc[3];
-    $new_bgw{'maxwritten_clean'} = $rc[4];
-    $new_bgw{'buff_backend'}     = $rc[5];
-    $new_bgw{'buff_alloc'}       = $rc[6];
-    $new_bgw{'backend_fsync'}    = $rc[7];
-    $new_bgw{'stat_reset'}       = $rc[8];
+    pod2usage(
+        -message => 'FATAL: you must give one host with service "bgwriter".',
+        -exitval => 127
+    ) if @hosts != 1;
+
+    is_compat $hosts[0], 'bgwriter', $PG_VERSION_83 or exit 1;
+
+    %bgw = %{ load( $hosts[0], 'bgwriter', $args{'status-file'} ) || {} };
+
+    @rs = @{ query_ver( $hosts[0], %queries )->[0] };
+
+    $new_bgw{'checkpoint_timed'} = $rs[0];
+    $new_bgw{'checkpoint_req'}   = $rs[1];
+    $new_bgw{'buff_checkpoint'}  = $rs[2];
+    $new_bgw{'buff_clean'}       = $rs[3];
+    $new_bgw{'maxwritten_clean'} = $rs[4];
+    $new_bgw{'buff_backend'}     = $rs[5];
+    $new_bgw{'buff_alloc'}       = $rs[6];
+    $new_bgw{'backend_fsync'}    = $rs[7];
+    $new_bgw{'stat_reset'}       = $rs[8];
 
     save $hosts[0], 'bgwriter', \%new_bgw, $args{'status-file'};
 
@@ -1345,18 +1425,18 @@ sub check_bgwriter {
         or $new_bgw{'buff_alloc'}       < $bgw{'buff_alloc'}
         or $new_bgw{'backend_fsync'}    < $bgw{'backend_fsync'};
 
-    $delta_buff_total = $rc[2] - $bgw{'buff_checkpoint'}
-        + $rc[3] - $bgw{'buff_clean'}
-        + $rc[5] - $bgw{'buff_backend'};
+    $delta_buff_total = $rs[2] - $bgw{'buff_checkpoint'}
+        + $rs[3] - $bgw{'buff_clean'}
+        + $rs[5] - $bgw{'buff_backend'};
 
-    $delta_buff_backend      = $rc[5] - $bgw{'buff_backend'};
-    $delta_buff_bgwriter     = $rc[3] - $bgw{'buff_clean'};
-    $delta_buff_checkpointer = $rc[2] - $bgw{'buff_checkpoint'};
-    $delta_buff_alloc        = $rc[6] - $bgw{'buff_alloc'};
-    $delta_checkpoint_timed  = $rc[0] - $bgw{'checkpoint_timed'};
-    $delta_checkpoint_req    = $rc[1] - $bgw{'checkpoint_req'};
-    $delta_maxwritten_clean  = $rc[4] - $bgw{'maxwritten_clean'};
-    $delta_backend_fsync     = $rc[7] - $bgw{'backend_fsync'};
+    $delta_buff_backend      = $rs[5] - $bgw{'buff_backend'};
+    $delta_buff_bgwriter     = $rs[3] - $bgw{'buff_clean'};
+    $delta_buff_checkpointer = $rs[2] - $bgw{'buff_checkpoint'};
+    $delta_buff_alloc        = $rs[6] - $bgw{'buff_alloc'};
+    $delta_checkpoint_timed  = $rs[0] - $bgw{'checkpoint_timed'};
+    $delta_checkpoint_req    = $rs[1] - $bgw{'checkpoint_req'};
+    $delta_maxwritten_clean  = $rs[4] - $bgw{'maxwritten_clean'};
+    $delta_backend_fsync     = $rs[7] - $bgw{'backend_fsync'};
 
     push @perfdata, "buffers_backend=${delta_buff_backend}B".
                     " checkpoint_timed=${delta_checkpoint_timed}".
@@ -1427,7 +1507,7 @@ sub check_archive_folder {
     my $wal_version;
     my $me             = 'POSTGRES_ARCHIVES';
     my $seg_per_wal    = 255; # increased later for pg > 9.2
-    my %args           = %{ $_[1] };
+    my %args           = %{ $_[0] };
     my %wal_versions   = (
         '80' => 53340,
         '81' => 53341,
@@ -1542,12 +1622,21 @@ sub check_minor_version {
     my @msg;
     my %latest_versions;
     my $rss;
-    my @hosts = @{ $_[0] };
-    my %args  = %{ $_[1] };
-    my $me    = 'POSTGRES_MINOR_VERSION';
+    my @hosts;
     my $major_version;
+    my %args    = %{ $_[0] };
+    my $me      = 'POSTGRES_MINOR_VERSION';
     my $timeout = 30;
-    my $url = 'http://www.postgresql.org/versions.rss';
+    my $url     = 'http://www.postgresql.org/versions.rss';
+
+    @hosts = @{ parse_hosts %args };
+
+    pod2usage(
+        -message => 'FATAL: you must give one host with service "bgwriter".',
+        -exitval => 127
+    ) if @hosts != 1;
+
+    set_pgversion($hosts[0]);
 
     # These methods comes from check_postgres,
     # by Greg Sabino Mullane <greg@endpoint.com>,
@@ -1641,8 +1730,8 @@ sub check_hot_standby_delta {
     my $c_limit_received;
     my $w_limit_replayed;
     my $c_limit_replayed;
-    my @hosts = @{ $_[0] };
-    my %args  = %{ $_[1] };
+    my @hosts;
+    my %args  = %{ $_[0] };
     my $master_location = '';
     my $num_clusters = 0;
     my $me    = 'POSTGRES_HOT_STANDBY_DELTA';
@@ -1658,10 +1747,14 @@ sub check_hot_standby_delta {
             END
     ";
 
+    @hosts = @{ parse_hosts %args };
+
     pod2usage(
         -message => 'FATAL: you must give two or more hosts with service "hot_standby_delta".',
         -exitval => 127
     ) if @hosts < 2;
+
+    is_compat $hosts[0], 'hot_standby_delta', $PG_VERSION_90, $PG_VERSION_90 or exit 1;
 
     # fetch LSNs
     foreach my $host (@hosts) {
@@ -1767,12 +1860,12 @@ sub check_streaming_delta {
     my $c_limit_flushed;
     my $w_limit_replayed;
     my $c_limit_replayed;
-    my @hosts = @{ $_[0] };
-    my %args  = %{ $_[1] };
-    my $me    = 'POSTGRES_STREAMING_DELTA';
+    my @hosts;
+    my %args            = %{ $_[0] };
+    my $me              = 'POSTGRES_STREAMING_DELTA';
     my $master_location = '';
-    my $num_clusters = 0;
-    my %queries = (
+    my $num_clusters    = 0;
+    my %queries         = (
         $PG_VERSION_92 => q{SELECT application_name, client_addr, pid,
             sent_location, write_location, flush_location, replay_location
             FROM pg_stat_replication},
@@ -1781,6 +1874,16 @@ sub check_streaming_delta {
             FROM pg_stat_replication}
     );
 
+    # FIXME this service should check for given slaves in opts!
+
+    @hosts = @{ parse_hosts %args };
+
+    pod2usage(
+        -message => 'FATAL: you must give two or more hosts with service "streaming_delta".',
+        -exitval => 127
+    ) if @hosts != 1;
+
+    is_compat $hosts[0], 'streaming_delta', $PG_VERSION_91 or exit 1;
 
     @rs = @{ query_ver( $hosts[0], %queries ) };
 
@@ -1867,12 +1970,12 @@ databases which has never been accessed.
 Critical and Warning thresholds accept a percentage.
 =cut
 sub check_hit_ratio {
-    my @rc;
+    my @rs;
     my @perfdata;
     my @msg_crit;
     my @msg_warn;
-    my @hosts        = @{ $_[0] };
-    my %args         = %{ $_[1] };
+    my @hosts;
+    my %args         = %{ $_[0] };
     my $me           = 'POSTGRES_HIT_RATIO';
     my $min_hit_ratio = 100000;
     my $sql          = q{SELECT d.datname,
@@ -1883,9 +1986,16 @@ sub check_hit_ratio {
         AND (blks_read+blks_hit) > 0
         ORDER BY datname, cachehitratio};
 
-    @rc = @{ query( $hosts[0], $sql ) };
+    @hosts = @{ parse_hosts %args };
 
-DB_LOOP:    foreach my $db (@rc) {
+    pod2usage(
+        -message => 'FATAL: you must give one host with service "hit_ratio".',
+        -exitval => 127
+    ) if @hosts != 1;
+
+    @rs = @{ query( $hosts[0], $sql ) };
+
+DB_LOOP:    foreach my $db (@rs) {
         $min_hit_ratio = $db->[1] if ( $db->[1] < $min_hit_ratio );
 
         push @perfdata,
@@ -1909,10 +2019,10 @@ DB_LOOP:    foreach my $db (@rc) {
     return warning( $me, \@msg_warn, \@perfdata )
         if $min_hit_ratio < $args{'warning'};
 
-    return ok( $me, [ scalar(@rc) . " database(s) checked" ], \@perfdata );
+    return ok( $me, [ scalar(@rs) . " database(s) checked" ], \@perfdata );
 }
 
-=item B<backup_label_age> (8.0+)
+=item B<backup_label_age> (8.1+)
 
 Check the age of the backup label file.
 
@@ -1921,19 +2031,29 @@ Perfdata returns the age of the backup_label file, -1 if not present.
 Critical and Warning thresholds only accept an interval (eg. 1h30m25s).
 =cut
 sub check_backup_label_age {
+    my $rs;
     my @perfdata;
-    my @hosts        = @{ $_[0] };
-    my %args         = %{ $_[1] };
-    my $me           = 'POSTGRES_BACKUP_LABEL_AGE';
+    my @hosts;
+    my %args    = %{ $_[0] };
+    my $me      = 'POSTGRES_BACKUP_LABEL_AGE';
     my $c_limit = get_time( $args{'critical'} );
     my $w_limit = get_time( $args{'warning'} );
-    my $sql          = q{SELECT max(s.r) AS value FROM (
+    my $sql     = q{SELECT max(s.r) AS value FROM (
             SELECT CAST(extract(epoch FROM current_timestamp - (pg_stat_file(file)).modification) AS integer) AS r
-            FROM pg_ls_dir($$.$$) AS ls(file)
-            WHERE file=$$backup_label$$ UNION SELECT 0
+            FROM pg_ls_dir('.') AS ls(file)
+            WHERE file='backup_label' UNION SELECT 0
         ) AS s};
 
-    my $rs = @{ query( $hosts[0], $sql )->[0] }[0];
+    @hosts = @{ parse_hosts %args };
+
+    pod2usage(
+        -message => 'FATAL: you must give one host with service "backup_label_age".',
+        -exitval => 127
+    ) if @hosts != 1;
+
+    is_compat $hosts[0], 'backup_label_age', $PG_VERSION_81 or exit 1;
+
+    $rs = @{ query( $hosts[0], $sql )->[0] }[0];
 
     push @perfdata,
          "age=${rs}s;$w_limit;$c_limit";
@@ -1948,7 +2068,7 @@ sub check_backup_label_age {
 }
 
 
-=item B<check_longest_query> (all)
+=item B<longest_query> (all)
 
 Check the longest running query n the cluster. this service supports argument
 C<--exclude REGEX> to exclude queries matching the given regexp from the check.
@@ -1963,12 +2083,12 @@ sub check_longest_query {
     my @rs;
     my @perfdata;
     my @msg;
-    my @hosts         = @{ $_[0] };
-    my %args          = %{ $_[1] };
+    my @hosts;
+    my $qr_exclude;
+    my %args          = %{ $_[0] };
     my $c_limit       = get_time( $args{'critical'} );
     my $w_limit       = get_time( $args{'warning'} );
     my $me            = 'POSTGRES_LONGEST_QUERY';
-    my $qr_exclude;
     my $longest_query = 0;
     my $nb_query      = 0;
     my %stats         = ();
@@ -1999,6 +2119,13 @@ sub check_longest_query {
                 WHERE state = 'active'
             ) AS s ON (d.datname=s.datname)}
     );
+
+    @hosts = @{ parse_hosts %args };
+
+    pod2usage(
+        -message => 'FATAL: you must give one host with service "longest_query".',
+        -exitval => 127
+    ) if @hosts != 1;
 
     $qr_exclude = qr/$args{'exclude'}/ if $args{'exclude'};
 
@@ -2066,13 +2193,22 @@ No perfdata is returned.
 This service ignore critical and warning arguments.
 =cut
 sub check_connection {
-    my @hosts        = @{ $_[0] };
-    my $me           = 'POSTGRES_CONNECTION';
-    my $sql          = q{SELECT now(), version()};
+    my @rs;
+    my @hosts;
+    my %args = %{ $_[0] };
+    my $me   = 'POSTGRES_CONNECTION';
+    my $sql  = q{SELECT now(), version()};
 
-    my @rc = @{ query( $hosts[0], $sql ) };
+    @hosts = @{ parse_hosts %args };
 
-    return ok( $me, [ "Connection successful at $rc[0][0], on $rc[0][1]" ] );
+    pod2usage(
+        -message => 'FATAL: you must give one host with service "connection".',
+        -exitval => 127
+    ) if @hosts != 1;
+
+    @rs = @{ query( $hosts[0], $sql ) };
+
+    return ok( $me, [ "Connection successful at $rs[0][0], on $rs[0][1]" ] );
 }
 
 =item B<custom_query> (all)
@@ -2091,18 +2227,36 @@ If a field contains multiple values, they have to be space separated.
 
 =cut
 sub check_custom_query {
+    my %args    = %{ $_[0] };
+    my $me      = 'POSTGRES_CUSTOM_QUERY';
+    my $sql     = $args{'query'};
+    my $type    = $args{'type'} || 'integer';
+    my $reverse = $args{'reverse'};
+    my $bounded = undef;
+    my @rs;
     my @perfdata;
-    my @hosts        = @{ $_[0] };
-    my %args         = %{ $_[1] };
-    my $me           = 'POSTGRES_CUSTOM_QUERY';
-    my $c_limit;
-    my $w_limit;
+    my @hosts;
     my @msg_crit;
     my @msg_warn;
-    my $sql          = $args{'query'};
-    my $type         = $args{'type'} || 'integer';
-    my $reverse      = $args{'reverse'};
-    my $bounded      = undef;
+    my $c_limit;
+    my $w_limit;
+    my $perf;
+    my $value;
+
+    # FIXME: add warn/crit threshold in perfdata
+
+    @hosts = @{ parse_hosts %args };
+
+    pod2usage(
+        -message => 'FATAL: you must give one host with service "custom_query".',
+        -exitval => 127
+    ) if @hosts != 1;
+
+    # query must be given
+    pod2usage(
+        -message => 'FATAL: you must set parameter "--query" with "custom_query" service.',
+        -exitval => 127
+    ) unless defined $args{'query'} ;
 
     # Handle warning and critical type
     if ($type eq 'size'){
@@ -2116,12 +2270,9 @@ sub check_custom_query {
         $c_limit = $args{'critical'};
     }
 
-    my @rc = @{ query( $hosts[0], $sql ) };
+    @rs = @{ query( $hosts[0], $sql ) };
 
-    my $perf;
-    my $value;
-
-DB_LOOP:    foreach my $rec (@rc) {
+DB_LOOP:    foreach my $rec (@rs) {
         $bounded = $rec->[0] if (!defined $bounded);
 
         $bounded = $rec->[0] if ( (!$reverse and $rec->[0] > $bounded )
@@ -2181,23 +2332,23 @@ Specific parameters are :
 =cut
 sub check_configuration {
     my @perfdata;
-    my @hosts        = @{ $_[0] };
-    my %args         = %{ $_[1] };
+    my @hosts;
     my @msg_crit;
-    my $me           = 'POSTGRES_CONFIGURATION';
+    my %args = %{ $_[0] };
+    my $me   = 'POSTGRES_CONFIGURATION';
     # This service is based on a probe by Marc Cousin (cousinmarc@gmail.com)
     # Limit parameters. Have defaut values
-    my $work_mem = $args{'work_mem'} || 4096; # At least 4MB
+    my $work_mem             = $args{'work_mem'} || 4096; # At least 4MB
     my $maintenance_work_mem = $args{'maintenance_work_mem'} || 65536; # At least 64MB
-    my $shared_buffers = $args{'shared_buffers'} || 16384; # At least 128MB
-    my $wal_buffers = $args{'wal_buffers'} || 64; # At least 512k. Or -1 for 9.1
-    my $checkpoint_segments = $args{'checkpoint_segments'} || 10;
+    my $shared_buffers       = $args{'shared_buffers'} || 16384; # At least 128MB
+    my $wal_buffers          = $args{'wal_buffers'} || 64; # At least 512k. Or -1 for 9.1
+    my $checkpoint_segments  = $args{'checkpoint_segments'} || 10;
     my $effective_cache_size = $args{'effective_cache_size'} || 131072; # At least 1GB. No way a modern server has less than 2GB of ram
     # These will be checked to verify they are still the default values (no parameter, for now)
     # autovacuum, fsync, enable*,track_counts/stats_row_level
-    my $no_check_autovacuum = $args{'no_check_autovacuum'} || 0;
-    my $no_check_fsync = $args{'no_check_fsync'} || 0;
-    my $no_check_enable = $args{'no_check_enable'} || 0;
+    my $no_check_autovacuum   = $args{'no_check_autovacuum'} || 0;
+    my $no_check_fsync        = $args{'no_check_fsync'} || 0;
+    my $no_check_enable       = $args{'no_check_enable'} || 0;
     my $no_check_track_counts = $args{'no_check_track_counts'} || 0;
 
     my $sql = "SELECT name,setting FROM pg_settings
@@ -2213,6 +2364,17 @@ sub check_configuration {
             or (name='stats_row_level' and setting='off' and $no_check_track_counts=0)
             or (name='track_counts' and setting='off' and $no_check_track_counts=0)
         )";
+
+    # FIXME make one parameter --ignore to rules 'em all.
+
+    @hosts = @{ parse_hosts %args };
+
+    pod2usage(
+        -message => 'FATAL: you must give one host with service "configuration".',
+        -exitval => 127
+    ) if @hosts != 1;
+
+    is_compat $hosts[0], 'configuration', $PG_VERSION_80 or exit 1;
 
     my @rc = @{ query( $hosts[0], $sql ) };
 
@@ -2241,20 +2403,32 @@ size and percentage) for tables and indexes (not filtered by thresholds).
 =cut
 sub check_bloat {
     my @perfdata;
-    my @hosts        = @{ $_[0] };
-    my %args         = %{ $_[1] };
     my $w_limit;
     my $c_limit;
-    my $w_t_count      = 0;
-    my $w_i_count      = 0;
-    my $c_t_count      = 0;
-    my $c_i_count      = 0;
-    my $me           = 'POSTGRES_BLOAT';
-    my @all_db = @{ get_all_dbname( $hosts[0] ) };
-    my $BLOCK_SIZE = "(SELECT current_setting('block_size')::numeric)";
-    $BLOCK_SIZE = "(SELECT 8192)" if ( $hosts[0]->{'version_num'} == $PG_VERSION_74 );
+    my @hosts;
+    my @all_db;
+    my %args          = %{ $_[0] };
+    my $w_t_count     = 0;
+    my $w_i_count     = 0;
+    my $c_t_count     = 0;
+    my $c_i_count     = 0;
+    my $me            = 'POSTGRES_BLOAT';
+    my $BLOCK_SIZE    = "(SELECT current_setting('block_size')::numeric)";
     my $USE_INHERITED = "AND s.inherited=false";
-    $USE_INHERITED = "" if ( $hosts[0]->{'version_num'} < $PG_VERSION_90 );
+
+    @hosts = @{ parse_hosts %args };
+
+    pod2usage(
+        -message => 'FATAL: you must give one host with service "bloat".',
+        -exitval => 127
+    ) if @hosts != 1;
+
+    set_pgversion($hosts[0]);
+
+    $BLOCK_SIZE = "(SELECT 8192)" if $hosts[0]->{'version_num'} == $PG_VERSION_74;
+    $USE_INHERITED = "" if $hosts[0]->{'version_num'} < $PG_VERSION_90;
+
+    @all_db = @{ get_all_dbname( $hosts[0] ) };
 
     # This query is based on check_postgres,
     # by Greg Sabino Mullane <greg@endpoint.com>,
@@ -2469,12 +2643,14 @@ pod2usage(
     -exitval => 127
 ) unless defined $args{'service'};
 
+
 # Check that the given service exists.
 pod2usage(
     -message => "FATAL: service $args{'service'} does not exist.\n"
         . "    Use --list to show the available services.",
     -exitval => 127
 ) unless exists $services{ $args{'service'} };
+
 
 # Critical and Warning must be given
 pod2usage(
@@ -2487,6 +2663,7 @@ pod2usage(
     )
     or (defined $args{'warning'} and $args{'critical'});
 
+
 # Both critical and warning must be given is optionnal
 pod2usage(
     -message => 'FATAL: you must provide both warning and critical thresholds.',
@@ -2494,17 +2671,12 @@ pod2usage(
 ) if ( ( defined $args{'critical'} and !defined $args{'warning'} ) or ( !defined $args{'critical'} and defined $args{'warning'} ) );
 
 
-# query,type and reverse are only allowed with "custom_query" service
+# query, type and reverse are only allowed with "custom_query" service
 pod2usage(
     -message => 'FATAL: query, type and reverse are only allowed with "custom_query" service.',
     -exitval => 127
 ) if ( ( defined $args{'query'} or defined $args{'type'} or $args{'reverse'} == 1 ) and ( $args{'service'} ne 'custom_query' ) );
 
-# query must be given with custom_query service
-pod2usage(
-    -message => 'FATAL: you must specify query with "custom_query" service.',
-    -exitval => 127
-) if ( !defined $args{'query'} and $args{'service'} eq 'custom_query' );
 
 # Check "configuration" specific arg
 pod2usage(
@@ -2516,46 +2688,7 @@ pod2usage(
     or $args{'no_check_track_counts'} == 1) and ( $args{'service'} ne 'configuration' ) );
 
 
-
-
-my @hosts = @{ parse_hosts %args };
-
-
-
-
-# check if cluster version is compatible with the given service if required
-unless (defined $services{ $args{'service'} }{'offline'}) {
-
-    my $service = $services{ $args{'service'} };
-    my $ver;
-
-    foreach my $host (@hosts) {
-
-        set_pgversion($host);
-
-        $ver = 100*int($host->{'version_num'}/100);
-
-        if (!defined($service->{'min'}) ) {
-            $service->{'min'} = $PG_VERSION_74;
-        }
-        if (!defined($service->{'max'}) ) {
-            $service->{'max'} = 9999999; # is superior to any pg version_num
-        }
-
-        unless ($ver >= $service->{'min'}
-            and $ver <= $service->{'max'}
-        ) {
-            warn sprintf "Service %s is not compatible with host '%s' (v%s).\n",
-                $args{'service'}, $host->{'name'}, $host->{'version'};
-            exit 1;
-        }
-
-        dprint( sprintf "Service %s compatible with host '%s' (v%s)\n",
-            $args{'service'}, $host->{'name'}, $host->{'version'});
-    }
-}
-
-exit $services{ $args{'service'} }{'sub'}->( \@hosts, \%args );
+exit $services{ $args{'service'} }{'sub'}->( \%args );
 
 __END__
 
