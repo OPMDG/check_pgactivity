@@ -244,6 +244,7 @@ my %args = (
     'no_check_enable'       => 0,
     'no_check_track_counts' => 0,
     'ignore-wal-size'       => 0,
+    'suffix'                => '',
     'list'                  => 0,
     'help'                  => 0,
     'debug'                 => 0
@@ -1576,6 +1577,13 @@ only checked on the last one for speed consideration.
 This service requires the argument C<--path> on the command line to specify the
 archive folder path to check.
 
+Optionnal argument C<--ignore-wal-size> allows to NOT check the WAL size. Usefull if your
+archived WALs are compressed. Default behaviour is to check the WALs size.
+
+Optionnal argument C<--suffix> allows you define the prefix of your archived
+WALs. Usefull if they are compressed with an extension (eg. .gz, .bz2, ...).
+Default is no suffix.
+
 Perfdata contains the number of WAL archived and the age of the latest one.
 
 Critical and Warning define the max age of the latest archived WAL as an
@@ -1598,10 +1606,12 @@ sub check_archive_folder {
     my $latest_wal_age;
     my $dh;
     my $wal_version;
+    my $filename_re;
+    my $suffix         = $args{'suffix'};
+    my $check_size     = not $args{'ignore-wal-size'};
     my $me             = 'POSTGRES_ARCHIVES';
     my $seg_per_wal    = 255; # increased later for pg > 9.2
     my %args           = %{ $_[0] };
-    my $check_size     = not $args{'ignore-wal-size'};
     my %wal_versions   = (
         '80' => 53340,
         '81' => 53341,
@@ -1636,10 +1646,14 @@ sub check_archive_folder {
     opendir( $dh, $args{'path'} )
         or die "Cannot opendir $args{'path'} : $!\n";
 
+    $filename_re = qr/^[0-9A-F]{24}$suffix$/;
     @filelist = map { [ $_ => (stat("$args{'path'}/$_"))[9,7] ] }
-        grep( /^[0-9A-F]{24}$/, readdir($dh) );
+        grep( /$filename_re/, readdir($dh) );
 
     closedir($dh);
+
+    return unknown $me, ['No archived WAL found.'] unless @filelist;
+
 
     $w_limit = get_time($args{'warning'});
     $c_limit = get_time($args{'critical'});
@@ -1674,7 +1688,12 @@ sub check_archive_folder {
     # check ALL archives are here.
     for ( my $i = 0; $i <= $#filelist_sorted ; $i++ ) {
         dprint ("Checking WAL $filelist_sorted[$i][0]\n");
-        my $curr = sprintf('%08X%08X%08X', $timeline, $wal + int(($seg + $i)/$seg_per_wal), ($seg + $i)%$seg_per_wal );
+        my $curr = sprintf('%08X%08X%08X%s',
+            $timeline,
+            $wal + int(($seg + $i)/$seg_per_wal),
+            ($seg + $i)%$seg_per_wal,
+            $suffix
+        );
 
         if ( $curr ne $filelist_sorted[$i][0] ) {
             push @msg => "Wrong sequence or file missing @ '$curr'";
@@ -2766,7 +2785,7 @@ ALLDB_LOOP: foreach my $db (@all_db) {
                 $avg_tab_size = ( $sum_tab_size / $nb_tab );
                 $avg_tab_percent = ( $sum_tab_percent / $nb_tab )
         }
-        # Construc perfdata
+        # Construct perfdata
         my $perf = "${db}_i_max_s=${max_ind_size}B ${db}_i_avg_s=${avg_ind_size}B"
             . " ${db}_i_max_p=${max_ind_percent}% ${db}_i_avg_p=${avg_ind_percent}%"
             . " ${db}_t_max_s=${max_tab_size}B ${db}_t_avg_s=${avg_tab_size}B"
@@ -2815,6 +2834,7 @@ GetOptions(
         'no_check_enable!',
         'no_check_track_counts!',
         'ignore-wal-size!',
+        'suffix=s',
         'list!',
         'version|V!',
         'help|?!',
@@ -2869,9 +2889,10 @@ pod2usage(
 
 # Check "archive_folder" specific arg --ignore-wal-size
 pod2usage(
-    -message => 'FATAL: "ignore-wal-size" is only allowed with "archive_folder" service.',
+    -message => 'FATAL: "ignore-wal-size" and "suffix" are only allowed with "archive_folder" service.',
     -exitval => 127
-) if defined $args{'ignore-wal-size'} and $args{'service'} ne 'archive_folder';
+) if ( defined $args{'ignore-wal-size'} or defined $args{'suffix'} )
+    and $args{'service'} ne 'archive_folder';
 
 
 exit $services{ $args{'service'} }{'sub'}->( \%args );
