@@ -2891,7 +2891,7 @@ pod2usage(
 pod2usage(
     -message => 'FATAL: "ignore-wal-size" and "suffix" are only allowed with "archive_folder" service.',
     -exitval => 127
-) if ( defined $args{'ignore-wal-size'} or defined $args{'suffix'} )
+) if ( $args{'ignore-wal-size'} or $args{'suffix'} )
     and $args{'service'} ne 'archive_folder';
 
 
@@ -2903,7 +2903,7 @@ __END__
 
 =over
 
-=item C<check_pgactivity -h localhost -p 5492 -s last_vacuum -w 30m -c 1h30m>
+=item C<gactivity -h localhost -p 5492 -s last_vacuum -w 30m -c 1h30m>
 
 Execute service "last_vacuum" on host "host=localhost port=5432".
 
