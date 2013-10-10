@@ -1335,44 +1335,66 @@ sub check_locks {
     my @perfdata;
     my @msg;
     my @hosts;
-    my %args        = %{ $_[0] };
-    my $total_locks = 0;
-    my $me          = 'POSTGRES_LOCKS';
-    my %queries     = (
+    my %args          = %{ $_[0] };
+    my $total_locks   = 0;
+    my $waiting_locks = 0;
+    my $me            = 'POSTGRES_LOCKS';
+    my %queries       = (
         $PG_VERSION_74 => q{
             SELECT count(l.*), ref.mode,
                 current_setting('max_locks_per_transaction')::integer
-                * current_setting('max_connections')::integer
-            FROM (SELECT 'AccessShareLock'
-                UNION SELECT 'RowShareLock'
-                UNION SELECT 'RowExclusiveLock'
-                UNION SELECT 'ShareUpdateExclusiveLock'
-                UNION SELECT 'ShareLock'
-                UNION SELECT 'ShareRowExclusiveLock'
-                UNION SELECT 'ExclusiveLock'
-                UNION SELECT 'AccessExclusiveLock'
-            ) ref (mode)
-            LEFT JOIN pg_locks l ON ref.mode = l.mode
-            GROUP BY 2,3
+                * current_setting('max_connections')::integer, ref.granted
+            FROM (
+                SELECT 'AccessShareLock',                't'::boolean
+                UNION SELECT 'RowShareLock',             't'
+                UNION SELECT 'RowExclusiveLock',         't'
+                UNION SELECT 'ShareUpdateExclusiveLock', 't'
+                UNION SELECT 'ShareLock',                't'
+                UNION SELECT 'ShareRowExclusiveLock',    't'
+                UNION SELECT 'ExclusiveLock',            't'
+                UNION SELECT 'AccessExclusiveLock',      't'
+                UNION SELECT 'AccessShareLock',          'f'
+                UNION SELECT 'RowShareLock',             'f'
+                UNION SELECT 'RowExclusiveLock',         'f'
+                UNION SELECT 'ShareUpdateExclusiveLock', 'f'
+                UNION SELECT 'ShareLock',                'f'
+                UNION SELECT 'ShareRowExclusiveLock',    'f'
+                UNION SELECT 'ExclusiveLock',            'f'
+                UNION SELECT 'AccessExclusiveLock',      'f'
+            ) ref (mode, granted)
+            LEFT JOIN pg_locks l
+                ON (ref.mode, ref.granted) = (l.mode, l.granted)
+            GROUP BY 2,3,4
+            ORDER BY ref.granted, ref.mode
         },
         $PG_VERSION_82 => q{
             SELECT count(l.*), ref.mode,
                 current_setting('max_locks_per_transaction')::integer * (
                     current_setting('max_prepared_transactions')::integer
-                    + current_setting('max_connections')::integer)
+                    + current_setting('max_connections')::integer), ref.granted
             FROM (SELECT * FROM ( VALUES
-                ('AccessShareLock'),
-                ('RowShareLock'),
-                ('RowExclusiveLock'),
-                ('ShareUpdateExclusiveLock'),
-                ('ShareLock'),
-                ('ShareRowExclusiveLock'),
-                ('ExclusiveLock'),
-                ('AccessExclusiveLock')
-                ) lockmode (mode)
+                ('AccessShareLock',          't'::boolean),
+                ('RowShareLock',             't'),
+                ('RowExclusiveLock',         't'),
+                ('ShareUpdateExclusiveLock', 't'),
+                ('ShareLock',                't'),
+                ('ShareRowExclusiveLock',    't'),
+                ('ExclusiveLock',            't'),
+                ('AccessExclusiveLock',      't'),
+                ('AccessShareLock',          'f'),
+                ('RowShareLock',             'f'),
+                ('RowExclusiveLock',         'f'),
+                ('ShareUpdateExclusiveLock', 'f'),
+                ('ShareLock',                'f'),
+                ('ShareRowExclusiveLock',    'f'),
+                ('ExclusiveLock',            'f'),
+                ('AccessExclusiveLock',      'f')
+                ) lockmode (mode, granted)
             ) ref
-            LEFT JOIN pg_locks l ON ref.mode = l.mode
-            GROUP BY 2,3
+            LEFT JOIN pg_locks l
+                ON (ref.mode, ref.granted) = (l.mode, l.granted)
+            GROUP BY 2,3,4
+            ORDER BY ref.granted, ref.mode
         }
     );
 
@@ -1405,10 +1427,18 @@ sub check_locks {
 
     map {
         $total_locks += $_->[0];
-        push @perfdata => ( "$_->[1]=$_->[0];$args{'warning'};$args{'critical'}" );
+        if ($_->[3] eq 't') {
+            push @perfdata =>
+                ( "$_->[1]=$_->[0];$args{'warning'};$args{'critical'}" );
+        }
+        else {
+            $waiting_locks += $_->[0];
+            push @perfdata =>
+                ( "'Waiting $_->[1]'=$_->[0];$args{'warning'};$args{'critical'}" );
+        }
     } @rs;
 
-    push @msg => "$total_locks locks";
+    push @msg => "$total_locks locks, $waiting_locks waiting locks";
 
     return critical( $me, \@msg, \@perfdata )
         if $total_locks >= $args{'critical'};
