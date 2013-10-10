@@ -249,6 +249,7 @@ my %args = (
     'no_check_track_counts' => 0,
     'ignore-wal-size'       => 0,
     'suffix'                => '',
+    'slave'                 => [],
     'list'                  => 0,
     'help'                  => 0,
     'debug'                 => 0
@@ -2007,8 +2008,15 @@ sub check_hot_standby_delta {
 
 Check the data delta between a cluster and its standbys in streaming replication.
 
+Optionnal argument "--slave" allows to specify some slaves that MUST be
+connected. This argument can be used as many time as you need to check multiple
+slaves connections. The given value must be "APPLICATION_NAME IP". The
+following example will check for the presence of two slaves:
+
+  --slave 'slave1 192.168.1.11' --slave 'slave2 192.168.1.12'
+
 Perfdata returns the data delta in bytes between the master and all standbys
-found.
+found and the number of slave connected.
 
 Critical and Warning thresholds can takes one or two values separated by a
 comma. If only one value given, it applies on both flushed and replayed data.
@@ -2028,6 +2036,7 @@ sub check_streaming_delta {
     my $w_limit_replayed;
     my $c_limit_replayed;
     my @hosts;
+    my %slaves;
     my %args            = %{ $_[0] };
     my $me              = 'POSTGRES_STREAMING_DELTA';
     my $master_location = '';
@@ -2059,10 +2068,15 @@ sub check_streaming_delta {
 
     is_compat $hosts[0], 'streaming_delta', $PG_VERSION_91 or exit 1;
 
+    if ( scalar @{ $args{'slave'} } ) {
+        $slaves{$_} = 0 foreach ( @{ $args{'slave'} } );
+    }
+
 
     @rs = @{ query_ver( $hosts[0], %queries ) };
 
-    return unknown($me, ['No slaves connected']) unless @rs;
+    return unknown($me, ['No slaves connected'], ["'# of slaves'=0"])
+        unless @rs;
 
     $rs[0][3] =~ m{^([0-9A-F]+)/([0-9A-F]+)$};
     $master_location = (hex('ff000000') * hex($1)) + hex($2);
@@ -2082,6 +2096,8 @@ sub check_streaming_delta {
     $w_limit_replayed = get_size( $w_limit_replayed );
     $c_limit_replayed = get_size( $c_limit_replayed );
 
+
+    push @perfdata => "'# of slaves'=". scalar @rs;
 
     # compute deltas
     foreach my $host (@rs) {
@@ -2105,6 +2121,8 @@ sub check_streaming_delta {
 
         $num_clusters++;
 
+        $slaves{"$host->[0] $host->[1]"} = 1;
+
         if ($flush_delta > $c_limit_flushed) {
             push @msg_crit, "critical flush lag for $name";
             next;
@@ -2124,6 +2142,10 @@ sub check_streaming_delta {
             push @msg_warn, "warning replay lag for $name";
             next;
         }
+    }
+
+    while ( my ( $host, $connected ) = each %slaves ) {
+        unshift @msg_crit => "$host not connected" unless $connected;
     }
 
     return critical( $me, [ @msg_crit, @msg_warn ], \@perfdata )
@@ -2984,6 +3006,7 @@ GetOptions(
         'no_check_track_counts!',
         'ignore-wal-size!',
         'suffix=s',
+        'slave=s',
         'list!',
         'version|V!',
         'help|?!',
@@ -3036,12 +3059,19 @@ pod2usage(
     or $args{'no_check_track_counts'} == 1) and ( $args{'service'} ne 'configuration' ) );
 
 
-# Check "archive_folder" specific arg --ignore-wal-size
+# Check "archive_folder" specific args --ignore-wal-size and --suffix
 pod2usage(
     -message => 'FATAL: "ignore-wal-size" and "suffix" are only allowed with "archive_folder" service.',
     -exitval => 127
 ) if ( $args{'ignore-wal-size'} or $args{'suffix'} )
     and $args{'service'} ne 'archive_folder';
+
+
+# Check "streaming_delta" specific args --slave
+pod2usage(
+    -message => 'FATAL: "slave" is only allowed with "streaming_delta" service.',
+    -exitval => 127
+) if scalar @{ $args{'slave'} }  and $args{'service'} ne 'streaming_delta';
 
 
 exit $services{ $args{'service'} }{'sub'}->( \%args );
