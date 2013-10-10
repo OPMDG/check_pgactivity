@@ -1029,8 +1029,6 @@ or for PostgreSQL 8.1 and 8.2:
 
 sub check_wal_files {
     my $wal_num;
-    my $w_limit;
-    my $c_limit;
     my @rs;
     my @perfdata;
     my @msg;
@@ -1111,18 +1109,20 @@ sub check_wal_files {
             ) AS t}
     );
 
-    # warning and critical are mandatory.
-    pod2usage(
-        -message => "FATAL: you must specify critical and warning thresholds.",
-        -exitval => 127
-    ) unless defined $args{'warning'} and defined $args{'critical'} ;
+    if ( defined $args{'warning'} ) {
+        # warning and critical are mandatory.
+        pod2usage(
+            -message => "FATAL: you must specify critical and warning thresholds.",
+            -exitval => 127
+        ) unless defined $args{'warning'} and defined $args{'critical'} ;
 
-    # warning and critical must be raw or %.
-    pod2usage(
-        -message => "FATAL: critical and warning thresholds only accept raw numbers or %.",
-        -exitval => 127
-    ) unless $args{'warning'}  =~ m/^([0-9.]+)%?$/
-        and  $args{'critical'} =~ m/^([0-9.]+)%?$/;
+        # warning and critical must be raw or %.
+        pod2usage(
+            -message => "FATAL: critical and warning thresholds only accept raw numbers or %.",
+            -exitval => 127
+        ) unless $args{'warning'}  =~ m/^([0-9.]+)%?$/
+            and  $args{'critical'} =~ m/^([0-9.]+)%?$/;
+    }
 
     @hosts = @{ parse_hosts %args };
 
@@ -1135,17 +1135,22 @@ sub check_wal_files {
 
     @rs = @{ query_ver( $hosts[0], %queries )->[0] };
 
-    $w_limit = get_size( $args{'warning'},  $rs[3] );
-    $c_limit = get_size( $args{'critical'}, $rs[3] );
-
-    push @perfdata => "total_wal=$rs[0];$w_limit;$c_limit;1;$rs[3]";
-    push @perfdata => "recycled_wal=$rs[1];$w_limit;$c_limit;0;$rs[3]";
-    push @perfdata => "written_wal=$rs[2];$w_limit;$c_limit;1;$rs[3]";
+    push @perfdata => "total_wal=$rs[0]";
+    push @perfdata => "recycled_wal=$rs[1]";
+    push @perfdata => "written_wal=$rs[2]";
 
     push @msg => "$rs[0] WAL files";
 
-    return critical( $me, \@msg, \@perfdata ) if $rs[0] >= $c_limit;
-    return warning( $me, \@msg, \@perfdata ) if $rs[0] >= $w_limit;
+    if ( defined $args{'warning'} ) {
+        my $w_limit = get_size( $args{'warning'},  $rs[3] );
+        my $c_limit = get_size( $args{'critical'}, $rs[3] );
+
+        $perfdata[0] .= ";$w_limit;$c_limit;1;$rs[3]";
+
+        return critical( $me, \@msg, \@perfdata ) if $rs[0] >= $c_limit;
+        return warning( $me, \@msg, \@perfdata )  if $rs[0] >= $w_limit;
+    }
+
     return ok( $me, \@msg, \@perfdata );
 }
 
@@ -2642,6 +2647,7 @@ sub check_bloat {
     # This query is based on check_postgres,
     # by Greg Sabino Mullane <greg@endpoint.com>,
     # licenced under BSD
+    # Heavily refactored and fixed by Julien Rouhaud <julien.rouhaud@dalibo.com>
     my $sql = qq{
         SELECT DISTINCT current_database(), relkind, schemaname, relname,
           (CASE WHEN relpages <= otta THEN 0 ELSE bs*(relpages-otta)::bigint+bs*((toastpages)-(toasttuples/4))::bigint END) * 100 
