@@ -881,6 +881,19 @@ sub check_backends {
         current_setting('max_connections')
         FROM pg_stat_database};
 
+    # warning and critical are mandatory.
+    pod2usage(
+        -message => "FATAL: you must specify critical and warning thresholds.",
+        -exitval => 127
+    ) unless defined $args{'warning'} and defined $args{'critical'} ;
+
+    # warning and critical must be raw or %.
+    pod2usage(
+        -message => "FATAL: critical and warning thresholds only accept raw numbers or %.",
+        -exitval => 127
+    ) unless $args{'warning'}  =~ m/^([0-9.]+)%?$/
+        and  $args{'critical'} =~ m/^([0-9.]+)%?$/;
+
     @hosts = @{ parse_hosts %args };
 
     pod2usage(
@@ -888,13 +901,14 @@ sub check_backends {
         -exitval => 127
     ) if @hosts != 1;
 
+
     @rs = @{ query( $hosts[0], $sql ) };
 
     $args{'critical'} = int( $rs[0][2] * $1 / 100 )
-        if ( $args{'critical'} =~ /^([0-9.]+)%$/ );
+        if $args{'critical'} =~ /^([0-9.]+)%$/;
 
     $args{'warning'} = int( $rs[0][2] * $1 / 100 )
-        if ( $args{'warning'} =~ /^([0-9.]+)%$/ );
+        if $args{'warning'} =~ /^([0-9.]+)%$/;
 
     foreach my $db (@rs) {
         $num_backends += $db->[1];
@@ -937,6 +951,13 @@ sub check_database_size {
     my $sql  = q{SELECT datname, pg_database_size(datname)
         FROM pg_database};
 
+    # warning and critical are mandatory.
+    pod2usage(
+        -message => "FATAL: you must specify critical and warning thresholds.",
+        -exitval => 127
+    ) unless defined $args{'warning'} and defined $args{'critical'} ;
+
+
     @hosts = @{ parse_hosts %args };
 
     pod2usage(
@@ -945,6 +966,7 @@ sub check_database_size {
     ) if @hosts != 1;
 
     is_compat $hosts[0], 'database_size', $PG_VERSION_81 or exit 1;
+
 
     %db_sizes = %{ load( $hosts[0], 'db_size', $args{'status-file'} ) || {} };
 
@@ -1087,6 +1109,19 @@ sub check_wal_files {
             ) AS t}
     );
 
+    # warning and critical are mandatory.
+    pod2usage(
+        -message => "FATAL: you must specify critical and warning thresholds.",
+        -exitval => 127
+    ) unless defined $args{'warning'} and defined $args{'critical'} ;
+
+    # warning and critical must be raw or %.
+    pod2usage(
+        -message => "FATAL: critical and warning thresholds only accept raw numbers or %.",
+        -exitval => 127
+    ) unless $args{'warning'}  =~ m/^([0-9.]+)%?$/
+        and  $args{'critical'} =~ m/^([0-9.]+)%?$/;
+
     @hosts = @{ parse_hosts %args };
 
     pod2usage(
@@ -1133,6 +1168,19 @@ sub check_ready_archives {
          FROM pg_ls_dir('pg_xlog/archive_status') as file
          WHERE file ~ '^[0-9A-F]{24}.ready$' };
 
+    # warning and critical are mandatory.
+    pod2usage(
+        -message => "FATAL: you must specify critical and warning thresholds.",
+        -exitval => 127
+    ) unless defined $args{'warning'} and defined $args{'critical'} ;
+
+    # warning and critical must be raw
+    pod2usage(
+        -message => "FATAL: critical and warning thresholds only accept raw numbers.",
+        -exitval => 127
+    ) unless $args{'warning'}  =~ m/^([0-9]+)$/
+        and  $args{'critical'} =~ m/^([0-9]+)$/;
+
     @hosts = @{ parse_hosts %args };
 
     pod2usage(
@@ -1156,6 +1204,8 @@ sub check_ready_archives {
 # Agnostic check vacuum or analyze sub
 sub check_last_maintenance {
     my $rs;
+    my $c_limit;
+    my $w_limit;
     my @perfdata;
     my @msg_crit;
     my @msg_warn;
@@ -1164,8 +1214,6 @@ sub check_last_maintenance {
     my @all_db;
     my $type    = $_[0];
     my %args    = %{ $_[1] };
-    my $c_limit = get_time( $args{'critical'} );
-    my $w_limit = get_time( $args{'warning'} );
     my $me      = 'POSTGRES_LAST_' . uc($type);
     my $query   = qq{
          SELECT coalesce(min(
@@ -1179,6 +1227,16 @@ sub check_last_maintenance {
             FROM pg_stat_user_tables
     };
 
+    # warning and critical are mandatory.
+    pod2usage(
+        -message => "FATAL: you must specify critical and warning thresholds.",
+        -exitval => 127
+    ) unless defined $args{'warning'} and defined $args{'critical'} ;
+
+    $c_limit = get_time $args{'critical'};
+    $w_limit = get_time $args{'warning'};
+
+
     @hosts = @{ parse_hosts %args };
 
     pod2usage(
@@ -1187,6 +1245,7 @@ sub check_last_maintenance {
     ) if @hosts != 1;
 
     is_compat $hosts[0], "last_$type", $PG_VERSION_82 or exit 1;
+
 
     @all_db = @{ get_all_dbname( $hosts[0] ) };
 
@@ -1306,12 +1365,27 @@ sub check_locks {
         }
     );
 
+    # warning and critical are mandatory.
+    pod2usage(
+        -message => "FATAL: you must specify critical and warning thresholds.",
+        -exitval => 127
+    ) unless defined $args{'warning'} and defined $args{'critical'} ;
+
+    # warning and critical must be raw or %.
+    pod2usage(
+        -message => "FATAL: critical and warning thresholds only accept raw numbers or %.",
+        -exitval => 127
+    ) unless $args{'warning'}  =~ m/^([0-9.]+)%?$/
+        and  $args{'critical'} =~ m/^([0-9.]+)%?$/;
+
+
     @hosts = @{ parse_hosts %args };
 
     pod2usage(
         -message => 'FATAL: you must give one host with service "locks".',
         -exitval => 127
     ) if @hosts != 1;
+
 
     @rs = @{ query_ver $hosts[0], %queries };
 
@@ -1340,7 +1414,8 @@ Check the percentage of pages written by backends since last check.
 
 Perfdata contains pg_stat_bgwriter counters.
 
-Critical and Warning thresholds only accept a percentage.
+Critical and Warning thresholds are optionnal. If set, they only accept a
+percentage.
 
 =cut
 
@@ -1354,7 +1429,6 @@ sub check_bgwriter {
     my $delta_buff_backend;
     my $delta_buff_bgwriter;
     my $delta_buff_checkpointer;
-    my $delta_buff_backend_ratio;
     my $delta_buff_alloc;
     my $delta_checkpoint_timed;
     my $delta_checkpoint_req;
@@ -1388,6 +1462,16 @@ sub check_bgwriter {
         }
     );
 
+    # warning and critical must be %.
+    pod2usage(
+        -message => "FATAL: critical and warning thresholds only accept percentages.",
+        -exitval => 127
+    ) unless not (defined $args{'warning'} and defined $args{'critical'} )
+        or (
+            $args{'warning'}  =~ m/^([0-9.]+)%$/
+            and $args{'critical'} =~ m/^([0-9.]+)%$/
+        );
+
     @hosts = @{ parse_hosts %args };
 
     pod2usage(
@@ -1396,6 +1480,7 @@ sub check_bgwriter {
     ) if @hosts != 1;
 
     is_compat $hosts[0], 'bgwriter', $PG_VERSION_83 or exit 1;
+
 
     %bgw = %{ load( $hosts[0], 'bgwriter', $args{'status-file'} ) || {} };
 
@@ -1414,6 +1499,7 @@ sub check_bgwriter {
     save $hosts[0], 'bgwriter', \%new_bgw, $args{'status-file'};
 
     return ok( $me, ['First call'] ) unless keys %bgw;
+
     return ok( $me, ['Stats reseted since last call'] )
         if $new_bgw{'stat_reset'}       > $bgw{'stat_reset'}
         or $new_bgw{'checkpoint_timed'} < $bgw{'checkpoint_timed'}
@@ -1448,8 +1534,6 @@ sub check_bgwriter {
                     " buffers_alloc=${delta_buff_alloc}B";
 
     if ($delta_buff_total) {
-        my $w_limit = get_size( $args{'warning'},  $delta_buff_total );
-        my $c_limit = get_size( $args{'critical'}, $delta_buff_total );
 
         push @msg => sprintf(
             "%.2f%% from backends, %.2f%% from bgwriter, %.2f%% from checkpointer",
@@ -1457,16 +1541,24 @@ sub check_bgwriter {
             100 * $delta_buff_bgwriter     / $delta_buff_total,
             100 * $delta_buff_checkpointer / $delta_buff_total
         );
-
-        $delta_buff_backend_ratio = 100
-            * $delta_buff_backend / $delta_buff_total;
-        return critical( $me, \@msg, \@perfdata )
-            if $delta_buff_backend_ratio >= $c_limit;
-        return warning( $me, \@msg, \@perfdata )
-            if $delta_buff_backend_ratio >= $w_limit;
     }
     else {
         push @msg => "No writes";
+    }
+
+    # Alarm if asked.
+    # FIXME: threshold should accept a % and a minimal writen size
+    if ( defined $args{'warning'}
+        and defined $args{'critical'}
+        and $delta_buff_total
+    ) {
+        my $w_limit = get_size( $args{'warning'},  $delta_buff_total );
+        my $c_limit = get_size( $args{'critical'}, $delta_buff_total );
+
+        return critical( $me, \@msg, \@perfdata )
+            if $delta_buff_backend >= $c_limit;
+        return warning( $me, \@msg, \@perfdata )
+            if $delta_buff_backend >= $w_limit;
     }
 
     return ok( $me, \@msg, \@perfdata );
@@ -1531,6 +1623,13 @@ sub check_archive_folder {
         -message => "FATAL: \"$args{'path'}\" is not a valid folder.",
         -exitval => 127
     ) unless -d $args{'path'};
+
+    # warning and critical are mandatory.
+    pod2usage(
+        -message => "FATAL: you must specify critical and warning thresholds.",
+        -exitval => 127
+    ) unless defined $args{'warning'} and defined $args{'critical'} ;
+
 
     opendir( $dh, $args{'path'} )
         or die "Cannot opendir $args{'path'} : $!\n";
@@ -1747,6 +1846,13 @@ sub check_hot_standby_delta {
             END
     ";
 
+    # warning and critical are mandatory.
+    pod2usage(
+        -message => "FATAL: you must specify critical and warning thresholds.",
+        -exitval => 127
+    ) unless defined $args{'warning'} and defined $args{'critical'} ;
+
+
     @hosts = @{ parse_hosts %args };
 
     pod2usage(
@@ -1755,6 +1861,7 @@ sub check_hot_standby_delta {
     ) if @hosts < 2;
 
     is_compat $hosts[0], 'hot_standby_delta', $PG_VERSION_90, $PG_VERSION_90 or exit 1;
+
 
     # fetch LSNs
     foreach my $host (@hosts) {
@@ -1876,6 +1983,13 @@ sub check_streaming_delta {
 
     # FIXME this service should check for given slaves in opts!
 
+    # warning and critical are mandatory.
+    pod2usage(
+        -message => "FATAL: you must specify critical and warning thresholds.",
+        -exitval => 127
+    ) unless defined $args{'warning'} and defined $args{'critical'} ;
+
+
     @hosts = @{ parse_hosts %args };
 
     pod2usage(
@@ -1884,6 +1998,7 @@ sub check_streaming_delta {
     ) if @hosts != 1;
 
     is_compat $hosts[0], 'streaming_delta', $PG_VERSION_91 or exit 1;
+
 
     @rs = @{ query_ver( $hosts[0], %queries ) };
 
@@ -1967,7 +2082,7 @@ Perfdata contains the hit ratio per database. Template databases and
 databases that does not allow connections wont be checked, nor the
 databases which has never been accessed.
 
-Critical and Warning thresholds accept a percentage.
+Critical and Warning thresholds are optionnal. They only accept a percentage.
 =cut
 sub check_hit_ratio {
     my @rs;
@@ -1986,6 +2101,19 @@ sub check_hit_ratio {
         AND (blks_read+blks_hit) > 0
         ORDER BY datname, cachehitratio};
 
+    # warning and critical must be %.
+    if ( defined $args{'warning'} and defined $args{'critical'} ) {
+        pod2usage(
+            -message => "FATAL: critical and warning thresholds only accept percentages.",
+            -exitval => 127
+        ) unless $args{'warning'} =~ m/^([0-9.]+)%$/
+            and $args{'critical'} =~ m/^([0-9.]+)%$/;
+
+        $args{'warning'}  = substr $args{'warning'}, 0, -1;
+        $args{'critical'} = substr $args{'critical'}, 0, -1;
+    }
+
+
     @hosts = @{ parse_hosts %args };
 
     pod2usage(
@@ -1993,31 +2121,40 @@ sub check_hit_ratio {
         -exitval => 127
     ) if @hosts != 1;
 
+
     @rs = @{ query( $hosts[0], $sql ) };
 
-DB_LOOP:    foreach my $db (@rs) {
-        $min_hit_ratio = $db->[1] if ( $db->[1] < $min_hit_ratio );
+    DB_LOOP: foreach my $db (@rs) {
+        my $perfdata_value = "$db->[0]=$db->[1]%";
 
-        push @perfdata,
-            "$db->[0]=$db->[1]%;$args{'warning'};$args{'critical'}";
+        $perfdata_value .= ";$args{'warning'};$args{'critical'}"
+            if defined $args{'critical'};
 
-        if ( $db->[1] < $args{'critical'} ) {
-            push @msg_crit =>
-                "$db->[0]: $db->[1]";
-            next DB_LOOP;
-        }
-        if ( $db->[1] < $args{'warning'} ) {
-            push @msg_warn =>
-                "$db->[0]: $db->[1]";
-            next DB_LOOP;
+        $min_hit_ratio = $db->[1] if $db->[1] < $min_hit_ratio ;
+
+        push @perfdata, $perfdata_value;
+
+        if ( defined $args{'critical'} ) {
+            if ( $db->[1] < $args{'critical'} ) {
+                push @msg_crit =>
+                    "$db->[0]: $db->[1]";
+                next DB_LOOP;
+            }
+
+            if ( defined $args{'warning'} and $db->[1] < $args{'warning'} ) {
+                push @msg_warn =>
+                    "$db->[0]: $db->[1]";
+            }
         }
     }
 
-    return critical( $me, [ @msg_crit, @msg_warn ], \@perfdata )
-        if $min_hit_ratio < $args{'critical'};
+    if ( defined $args{'critical'} ) {
+        return critical( $me, [ @msg_crit, @msg_warn ], \@perfdata )
+            if $min_hit_ratio < $args{'critical'};
 
-    return warning( $me, \@msg_warn, \@perfdata )
-        if $min_hit_ratio < $args{'warning'};
+        return warning( $me, \@msg_warn, \@perfdata )
+            if $min_hit_ratio < $args{'warning'};
+    }
 
     return ok( $me, [ scalar(@rs) . " database(s) checked" ], \@perfdata );
 }
@@ -2032,17 +2169,26 @@ Critical and Warning thresholds only accept an interval (eg. 1h30m25s).
 =cut
 sub check_backup_label_age {
     my $rs;
+    my $c_limit;
+    my $w_limit;
     my @perfdata;
     my @hosts;
     my %args    = %{ $_[0] };
     my $me      = 'POSTGRES_BACKUP_LABEL_AGE';
-    my $c_limit = get_time( $args{'critical'} );
-    my $w_limit = get_time( $args{'warning'} );
     my $sql     = q{SELECT max(s.r) AS value FROM (
             SELECT CAST(extract(epoch FROM current_timestamp - (pg_stat_file(file)).modification) AS integer) AS r
             FROM pg_ls_dir('.') AS ls(file)
             WHERE file='backup_label' UNION SELECT 0
         ) AS s};
+
+    # warning and critical are mandatory.
+    pod2usage(
+        -message => "FATAL: you must specify critical and warning thresholds.",
+        -exitval => 127
+    ) unless defined $args{'warning'} and defined $args{'critical'} ;
+
+    $c_limit = get_time( $args{'critical'} );
+    $w_limit = get_time( $args{'warning'} );
 
     @hosts = @{ parse_hosts %args };
 
@@ -2085,9 +2231,9 @@ sub check_longest_query {
     my @msg;
     my @hosts;
     my $qr_exclude;
+    my $c_limit;
+    my $w_limit;
     my %args          = %{ $_[0] };
-    my $c_limit       = get_time( $args{'critical'} );
-    my $w_limit       = get_time( $args{'warning'} );
     my $me            = 'POSTGRES_LONGEST_QUERY';
     my $longest_query = 0;
     my $nb_query      = 0;
@@ -2120,12 +2266,24 @@ sub check_longest_query {
             ) AS s ON (d.datname=s.datname)}
     );
 
+    # warning and critical are mandatory.
+    pod2usage(
+        -message => "FATAL: you must specify critical and warning thresholds.",
+        -exitval => 127
+    ) unless defined $args{'warning'} and defined $args{'critical'} ;
+
+
+    $c_limit = get_time( $args{'critical'} );
+    $w_limit = get_time( $args{'warning'} );
+
+
     @hosts = @{ parse_hosts %args };
 
     pod2usage(
         -message => 'FATAL: you must give one host with service "longest_query".',
         -exitval => 127
     ) if @hosts != 1;
+
 
     $qr_exclude = qr/$args{'exclude'}/ if $args{'exclude'};
 
@@ -2217,10 +2375,11 @@ Perform the given user query.
 
 The query is specified with the --query parameter. The first column will be
 used to perform the test for the status, if warning and critical are provided.
-The warning and critical arguments can be treated as integer (default), size
-or time depending to the --type argument. Warning and critical will be raised if
-they are greater than the first column, or less if the --reverse option is
-used.
+
+The warning and critical arguments are optionnal. They can be treated as integer
+(default), size or time depending to the --type argument. Warning and critical
+will be raised if they are greater than the first column, or less if the
+--reverse option is used.
 
 All others columns will be used to generate the perfdata. The query has to
 display them in the perfdata format, with unit if needed (eg. "size=35B").
@@ -2246,13 +2405,6 @@ sub check_custom_query {
 
     # FIXME: add warn/crit threshold in perfdata
 
-    @hosts = @{ parse_hosts %args };
-
-    pod2usage(
-        -message => 'FATAL: you must give one host with service "custom_query".',
-        -exitval => 127
-    ) if @hosts != 1;
-
     # query must be given
     pod2usage(
         -message => 'FATAL: you must set parameter "--query" with "custom_query" service.',
@@ -2267,6 +2419,14 @@ sub check_custom_query {
         ( defined $args{'type'} and $args{'warning'} and $args{'critical'} );
 
 
+    @hosts = @{ parse_hosts %args };
+
+    pod2usage(
+        -message => 'FATAL: you must give one host with service "custom_query".',
+        -exitval => 127
+    ) if @hosts != 1;
+
+
     # Handle warning and critical type
     if ( $type eq 'size' ) {
         $w_limit = get_size( $args{'warning'} );
@@ -2277,6 +2437,11 @@ sub check_custom_query {
         $c_limit = get_time( $args{'critical'} );
     }
     else {
+        pod2usage(
+            -message => 'FATAL: given critical and/or warning are not numeric. Please, set "--type" parameter if needed.',
+            -exitval => 127
+        ) if $args{'warning'} !~ m/^[0-9.]+$/
+            or $args{'critical'} !~ m/^[0-9.]+$/;
         $w_limit = $args{'warning'};
         $c_limit = $args{'critical'};
     }
@@ -2338,7 +2503,7 @@ sub check_custom_query {
 
 Check the most important settings.
 
-If warning and critical tresholds are given, they will be ignored.
+Warning and critical tresholds are ignored.
 
 Specific parameters are :
 --work_mem, --maintenance_work_mem, --shared_buffers,-- wal_buffers,
@@ -2432,12 +2597,19 @@ sub check_bloat {
     my $BLOCK_SIZE    = "(SELECT current_setting('block_size')::numeric)";
     my $USE_INHERITED = "AND s.inherited=false";
 
+    # warning and critical are mandatory.
+    pod2usage(
+        -message => "FATAL: you must specify critical and warning thresholds.",
+        -exitval => 127
+    ) unless defined $args{'warning'} and defined $args{'critical'} ;
+
     @hosts = @{ parse_hosts %args };
 
     pod2usage(
         -message => 'FATAL: you must give one host with service "bloat".',
         -exitval => 127
     ) if @hosts != 1;
+
 
     set_pgversion($hosts[0]);
 
