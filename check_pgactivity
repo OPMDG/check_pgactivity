@@ -243,6 +243,7 @@ my %args = (
     'no_check_fsync'        => 0,
     'no_check_enable'       => 0,
     'no_check_track_counts' => 0,
+    'ignore-wal-size'       => 0,
     'list'                  => 0,
     'help'                  => 0,
     'debug'                 => 0
@@ -1600,6 +1601,7 @@ sub check_archive_folder {
     my $me             = 'POSTGRES_ARCHIVES';
     my $seg_per_wal    = 255; # increased later for pg > 9.2
     my %args           = %{ $_[0] };
+    my $check_size     = not $args{'ignore-wal-size'};
     my %wal_versions   = (
         '80' => 53340,
         '81' => 53341,
@@ -1670,16 +1672,16 @@ sub check_archive_folder {
     $seg = hex(substr($filelist_sorted[0][0], 16, 8));
 
     # check ALL archives are here.
-    for (my $i = 0; $i <= $#filelist_sorted ; $i++) {
+    for ( my $i = 0; $i <= $#filelist_sorted ; $i++ ) {
         dprint ("Checking WAL $filelist_sorted[$i][0]\n");
         my $curr = sprintf('%08X%08X%08X', $timeline, $wal + int(($seg + $i)/$seg_per_wal), ($seg + $i)%$seg_per_wal );
 
-        if ($curr ne $filelist_sorted[$i][0]) {
+        if ( $curr ne $filelist_sorted[$i][0] ) {
             push @msg => "Wrong sequence or file missing @ '$curr'";
             last;
         }
 
-        if ($filelist_sorted[$i][2] != 16777216) {
+        if ( $check_size and $filelist_sorted[$i][2] != 16777216 ) {
             push @msg => "'$curr' is not 16MB";
             last;
         }
@@ -2812,6 +2814,7 @@ GetOptions(
         'no_check_fsync!',
         'no_check_enable!',
         'no_check_track_counts!',
+        'ignore-wal-size!',
         'list!',
         'version|V!',
         'help|?!',
@@ -2862,6 +2865,13 @@ pod2usage(
     or defined $args{'wal_buffers'} or defined $args{'checkpoint_segments'} or defined $args{'effective_cache_size'}
     or $args{'no_check_autovacuum'} == 1 or $args{'no_check_fsync'} == 1 or $args{'no_check_enable'} ==1
     or $args{'no_check_track_counts'} == 1) and ( $args{'service'} ne 'configuration' ) );
+
+
+# Check "archive_folder" specific arg --ignore-wal-size
+pod2usage(
+    -message => 'FATAL: "ignore-wal-size" is only allowed with "archive_folder" service.',
+    -exitval => 127
+) if defined $args{'ignore-wal-size'} and $args{'service'} ne 'archive_folder';
 
 
 exit $services{ $args{'service'} }{'sub'}->( \%args );
