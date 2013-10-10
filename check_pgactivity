@@ -102,6 +102,10 @@ my %services = (
         'sub'  => \&check_locks,
         'desc' => 'Check the number of locks on the hosts.'
     },
+    'oldest_2pc' => {
+        'sub'  => \&check_oldest_2pc,
+        'desc' => 'Check the oldest two phase commit transaction.'
+    },
     'longest_query' => {
         'sub'  => \&check_longest_query,
         'desc' => 'Check the longest running query.'
@@ -2240,9 +2244,118 @@ sub check_backup_label_age {
 }
 
 
+=item B<oldest_2pc> (all)
+
+Check the oldest two phase commit transaction (aka. prepared transaction) in
+the cluster.
+
+Perfdata contains the max/avg/min age time and the number of prepared
+transaction per databases.
+
+Critical and Warning thresholds only accept an interval.
+=cut
+
+sub check_oldest_2pc {
+    my @rs;
+    my @perfdata;
+    my @msg;
+    my @hosts;
+    my $c_limit;
+    my $w_limit;
+    my $me          = 'POSTGRES_LONGEST_2PC';
+    my $oldest_2pc = 0;
+    my $nb_2pc      = 0;
+    my %stats       = ();
+    my $query         = q{SELECT transaction, gid,
+            coalesce(extract('epoch' FROM
+                    date_trunc('second', current_timestamp-prepared)
+                ), -1),
+            owner, d.datname
+        FROM pg_database AS d
+        LEFT JOIN pg_prepared_xacts AS x
+            ON d.datname=x.database};
+
+
+    # warning and critical are mandatory.
+    pod2usage(
+        -message => "FATAL: you must specify critical and warning thresholds.",
+        -exitval => 127
+    ) unless defined $args{'warning'} and defined $args{'critical'} ;
+
+
+    $c_limit = get_time( $args{'critical'} );
+    $w_limit = get_time( $args{'warning'} );
+
+
+    @hosts = @{ parse_hosts %args };
+
+    pod2usage(
+        -message => 'FATAL: you must give one host with service "oldest_2pc".',
+        -exitval => 127
+    ) if @hosts != 1;
+
+    is_compat $hosts[0], 'database_size', $PG_VERSION_81 or exit 1;
+
+
+    @rs = @{ query( $hosts[0], $query ) };
+
+    REC_LOOP: foreach my $r (@rs) {
+
+        $stats{$r->[4]} = {
+            'num' => 0,
+            'max' => -1,
+            'avg' => 0,
+        } unless exists $stats{$r->[4]};
+
+        $oldest_2pc = $r->[2] if $r->[2] > $oldest_2pc;
+
+        $stats{$r->[4]}{'num'}++ if $r->[0];
+        $stats{$r->[4]}{'max'} = $r->[2] if $stats{$r->[4]}{'max'} < $r->[2];
+        $stats{$r->[4]}{'avg'} = (
+            $stats{$r->[4]}{'avg'} * ($stats{$r->[4]}{'num'} -1) + $r->[2])
+            / $stats{$r->[4]}{'num'} if $stats{$r->[4]}{'num'};
+    }
+
+    DB_LOOP: foreach my $db (sort keys %stats) {
+
+        $nb_2pc += $stats{$db}{'num'};
+
+        unless($stats{$db}{'max'} > -1) {
+            $stats{$db}{'max'} = 'NaN';
+            $stats{$db}{'avg'} = 'NaN';
+        }
+
+        push @perfdata, (
+            "'$db max'=$stats{$db}{'max'}s;$w_limit;$c_limit",
+            "'$db avg'=$stats{$db}{'avg'}s;$w_limit;$c_limit",
+            "'$db # prep. xact'=$stats{$db}{'num'}"
+        );
+
+        if ( $stats{$db}{'max'} > $c_limit ) {
+            push @msg => "oldest 2pc on $db: ". to_interval($stats{$db}{'max'});
+            next DB_LOOP;
+        }
+
+        if ( $stats{$db}{'max'} > $w_limit ) {
+            push @msg => "oldest 2pc on $db: ". to_interval($stats{$db}{'max'});
+        }
+    }
+
+    unshift @msg => "$nb_2pc prepared transaction(s)";
+
+    return critical( $me, \@msg, \@perfdata )
+        if $oldest_2pc > $c_limit;
+
+    return warning( $me, \@msg, \@perfdata )
+        if $oldest_2pc > $w_limit;
+
+    return ok( $me, \@msg, \@perfdata );
+}
+
+
 =item B<longest_query> (all)
 
-Check the longest running query n the cluster. this service supports argument
+Check the longest running query in the cluster. this service supports argument
 C<--exclude REGEX> to exclude queries matching the given regexp from the check.
 
 Perfdata contains the max/avg/min running time and the number of query per
