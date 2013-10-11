@@ -2618,7 +2618,7 @@ sub check_oldest_2pc {
 
 Check the longest running query in the cluster. This service supports argument
 C<--exclude REGEX> to exclude queries matching the given regexp from the check.
-you can give multiple C<--exclude REGEX>.
+You can give multiple C<--exclude REGEX>.
 
 Perfdata contains the max/avg/min running time and the number of query per
 databases.
@@ -2981,14 +2981,19 @@ Warning and critical thresholds accept either a raw number, a percentage or a
 size (eg. 125M). If a percentage is given, the threshold will be applied on
 each table or index.
 
+This service supports argument C<--exclude REGEX> to exclude relation matching
+the given regexp from the check. The regexps apply on
+"schema_name.relation_name". You can give multiple C<--exclude REGEX>.
+
 Perfdata will give the number or tables and indexes concerned by warning and
 critical threshold, and max bloat (both size and percentage) and average bloat (both
 size and percentage) for tables and indexes (not filtered by thresholds).
 =cut
 sub check_bloat {
-    my @perfdata;
     my $w_limit;
     my $c_limit;
+    my @perfdata;
+    my @exclude_re;
     my @hosts;
     my @all_db;
     my %args          = %{ $_[0] };
@@ -3019,6 +3024,9 @@ sub check_bloat {
     $BLOCK_SIZE = "(SELECT 8192)" if $hosts[0]->{'version_num'} == $PG_VERSION_74;
     $USE_INHERITED = "" if $hosts[0]->{'version_num'} < $PG_VERSION_90;
 
+
+    push @exclude_re => qr/$_/ foreach @{ $args{'exclude'} };
+
     @all_db = @{ get_all_dbname( $hosts[0] ) };
 
     # This query is based on check_postgres,
@@ -3027,7 +3035,7 @@ sub check_bloat {
     # Heavily refactored and fixed by Julien Rouhaud <julien.rouhaud@dalibo.com>
     my $sql = qq{
         SELECT DISTINCT current_database(), relkind, schemaname, relname,
-          (CASE WHEN relpages <= otta THEN 0 ELSE bs*(relpages-otta)::bigint+bs*((toastpages)-(toasttuples/4))::bigint END) * 100 
+          (CASE WHEN relpages <= otta THEN 0 ELSE bs*(relpages-otta)::bigint+bs*((toastpages)-(toasttuples/4))::bigint END) * 100
             / (bs*(relpages+toastpages)::bigint) AS realbloat,
           CASE WHEN relpages <= otta THEN 0 ELSE bs*(relpages-otta)::bigint+bs*((toastpages)-(toasttuples/4))::bigint END AS wastedbytes,
           bs*(relpages+toastpages)::bigint AS totalbytes
@@ -3102,8 +3110,8 @@ sub check_bloat {
         order by 4 desc
     };
 
-# Iterate over all db
-ALLDB_LOOP: foreach my $db (@all_db) {
+    # Iterate over all db
+    ALLDB_LOOP: foreach my $db (sort @all_db) {
         my @rc = @{ query( $hosts[0], $sql, $db ) };
         # Var to handle max,avg and count for size and percentage, per relkind
         my $nb_ind = 0;
@@ -3121,6 +3129,11 @@ ALLDB_LOOP: foreach my $db (@all_db) {
         my $sum_tab_percent = 0;
         my $avg_tab_percent = 0;
         BLOAT_LOOP:    foreach my $bloat (@rc) {
+
+            foreach my $exclude_re (@exclude_re) {
+                next BLOAT_LOOP if "$bloat->[2].$bloat->[3]" =~ m/$exclude_re/;
+            }
+
             # We need to calculate threshold on each object, has the value can be given in percetage
             $w_limit = get_size( $args{'warning'}, $bloat->[6] );
             $c_limit = get_size( $args{'critical'}, $bloat->[6] );
@@ -3133,52 +3146,62 @@ ALLDB_LOOP: foreach my $db (@all_db) {
 
             if ( $bloat->[1] eq "i" ){
                 $nb_ind++;
-                $max_ind_size = $bloat->[5] if ( $bloat->[5] > $max_ind_size);
-                $sum_ind_size += $bloat->[5];
-                $max_ind_percent = $bloat->[4] if ( $bloat->[4] > $max_ind_percent);
+                $max_ind_size     = $bloat->[5] if $bloat->[5] > $max_ind_size;
+                $sum_ind_size    += $bloat->[5];
+                $max_ind_percent  = $bloat->[4] if $bloat->[4] > $max_ind_percent;
                 $sum_ind_percent += $bloat->[4];
             } else {
                 $nb_tab++;
-                $max_tab_size = $bloat->[5] if ( $bloat->[5] > $max_tab_size);
-                $sum_tab_size += $bloat->[5];
-                $max_tab_percent = $bloat->[4] if ( $bloat->[4] > $max_tab_percent);
+                $max_tab_size     = $bloat->[5] if $bloat->[5] > $max_tab_size;
+                $sum_tab_size    += $bloat->[5];
+                $max_tab_percent  = $bloat->[4] if $bloat->[4] > $max_tab_percent;
                 $sum_tab_percent += $bloat->[4];
             }
         }
         # Display "NaN" values to make sure grapher will break the line.
         if ( $nb_ind == 0 ){
-                $max_ind_size = "NaN";
-                $sum_ind_size = "NaN";
-                $avg_ind_size = "NaN";
+                $max_ind_size    = "NaN";
+                $sum_ind_size    = "NaN";
+                $avg_ind_size    = "NaN";
                 $max_ind_percent = "NaN";
                 $sum_ind_percent = "NaN";
                 $avg_ind_percent = "NaN";
         } else{
-                $avg_ind_size = ( $sum_ind_size / $nb_ind );
-                $avg_ind_percent = ( $sum_ind_percent / $nb_ind )
+                $avg_ind_size    = int ( $sum_ind_size    / $nb_ind );
+                $avg_ind_percent = int ( $sum_ind_percent / $nb_ind );
         }
         if ( $nb_tab == 0 ){
-                $max_tab_size = "NaN";
-                $sum_tab_size = "NaN";
-                $avg_tab_size = "NaN";
+                $max_tab_size    = "NaN";
+                $sum_tab_size    = "NaN";
+                $avg_tab_size    = "NaN";
                 $max_tab_percent = "NaN";
                 $sum_tab_percent = "NaN";
                 $avg_tab_percent = "NaN";
         } else{
-                $avg_tab_size = ( $sum_tab_size / $nb_tab );
-                $avg_tab_percent = ( $sum_tab_percent / $nb_tab )
+                $avg_tab_size    = int ( $sum_tab_size    / $nb_tab );
+                $avg_tab_percent = int ( $sum_tab_percent / $nb_tab );
         }
         # Construct perfdata
-        my $perf = "${db}_i_max_s=${max_ind_size}B ${db}_i_avg_s=${avg_ind_size}B"
-            . " ${db}_i_max_p=${max_ind_percent}% ${db}_i_avg_p=${avg_ind_percent}%"
-            . " ${db}_t_max_s=${max_tab_size}B ${db}_t_avg_s=${avg_tab_size}B"
-            . " ${db}_t_max_p=${max_tab_percent}% ${db}_t_avg_p=${avg_tab_percent}%";
+        my $perf = sprintf '%s_i_max_s=%sB %1$s_i_avg_s=%sB'
+            . ' %1$s_i_max_p=%.2f%% %1$s_i_avg_p=%.2f%%'
+            . ' %1$s_t_max_s=%sB %1$s_t_avg_s=%sB'
+            . ' %1$s_t_max_p=%.2f%% %1$s_t_avg_p=%.2f%%',
+                $db, $max_ind_size, $avg_ind_size, $max_ind_percent,
+                $avg_ind_percent, $max_tab_size, $avg_tab_size,
+                $max_tab_percent, $avg_tab_percent;
+
         push @perfdata => $perf;
     }
 
-    return critical( $me, [ $c_t_count . " table" . ( $c_t_count > 1 ? "s" : "" ) . " " . $c_i_count . " index" . ( $c_i_count > 1 ? "es" : "" ) ], [ "t_count=$c_t_count i_count=$c_i_count", @perfdata ] ) if ( ( $c_t_count + $c_i_count ) > 0 );
-    return warning( $me, [ $w_t_count . " table" . ( $w_t_count > 1 ? "s" : "" ) . " " . $w_i_count . " index" . ( $w_i_count > 1 ? "es" : "" ) ], [ "t_count=$w_t_count i_count=$w_i_count", @perfdata ] ) if ( ( $w_t_count + $w_i_count ) > 0 );
-    return ok( $me, [ "Database bloat ok" ], \@perfdata );
+    return critical $me,
+        [ "$c_t_count table(s) $c_i_count index(es) bloated" ],
+        [ "t_count=$c_t_count i_count=$c_i_count", @perfdata ]
+            if ( $c_t_count + $c_i_count ) > 0;
+    return warning $me,
+        [ "$w_t_count table(s) $w_i_count index(es) bloated"  ],
+        [ "t_count=$w_t_count i_count=$w_i_count", @perfdata ]
+            if ( $w_t_count + $w_i_count ) > 0;
+    return ok $me, [ "Database bloat ok" ], \@perfdata;
 }
 
 # End of SERVICE section in pod doc
