@@ -76,6 +76,10 @@ my %services = (
         'sub'  => \&check_backends,
         'desc' => 'Number of connections, compared to max_connections.'
     },
+    'backends_status' => {
+        'sub'  => \&check_backends_status,
+        'desc' => 'FIXME.'
+    },
     'database_size' => {
         'sub'  => \&check_database_size,
         'desc' => 'Variation of database sizes.',
@@ -932,6 +936,213 @@ sub check_backends {
         if $num_backends >= $args{'warning'};
 
     return ok( $me, \@msg, \@perfdata );
+}
+
+
+=item B<backends_status> (8.2+)
+
+Check and report the status of the backends. Depending to your PostgreSQL
+version, status are: idle, idle in transaction, idle in transaction (aborted)
+(>=9.0 only), fastpath function call, active and waiting for lock.
+
+Critical and Warning thresholds are optionnal. They accept a list of
+'status_label=value' separated by comma. Available labels are idle, idle_xact,
+aborted_xact, fastpath, active and waiting. Values are raw numbers and empty
+list are forbidden. Here is an example:
+
+    -w 'waiting=5,idle_xact=10' -c 'waiting=20,idle_xact=30'
+
+Perfdata contains the number of backends for each status and the oldest one for
+each of them for 9.2+.
+
+=cut
+
+sub check_backends_status {
+    my @rs;
+    my @hosts;
+    my @perfdata;
+    my @msg_warn;
+    my @msg_crit;
+    my %warn;
+    my %crit;
+    my $me      = 'POSTGRES_DB_SIZE';
+    my %queries = (
+        # doesn't support "idle in transaction (aborted)" and xact age
+        $PG_VERSION_82 => q{
+            SELECT status, sum(count), NULL
+            FROM (
+                SELECT * FROM ( VALUES
+                    ( 'idle'                  , 0 ),
+                    ( 'idle in transaction'   , 0 ),
+                    ( 'fastpath function call', 0 ),
+                    ( 'waiting for lock'      , 0 ),
+                    ( 'active'                , 0 )
+                ) AS ref
+                UNION ALL SELECT CASE
+                            WHEN current_query = '<IDLE>'
+                                THEN 'idle'
+                            WHEN current_query = '<IDLE> in transaction'
+                                THEN 'idle in transaction'
+                            WHEN current_query = '<FASTPATH> function call'
+                                THEN 'fastpath function call'
+                            WHEN waiting = 't'
+                                THEN 'waiting for lock'
+                            ELSE 'active'
+                        END AS status, count(*)
+                    FROM pg_stat_activity
+                    GROUP BY 1
+            ) AS a( status, count )
+            GROUP BY 1 },
+        # doesn't support "idle in transaction (aborted)"
+        $PG_VERSION_83 => q{
+            SELECT status, sum(count), max(age)
+            FROM (
+                SELECT * FROM ( VALUES
+                    ( 'idle'                  , 0, 0 ),
+                    ( 'idle in transaction'   , 0, 0 ),
+                    ( 'fastpath function call', 0, 0 ),
+                    ( 'waiting for lock'      , 0, 0 ),
+                    ( 'active'                , 0, 0 )
+                ) AS ref
+                UNION ALL SELECT CASE
+                            WHEN current_query = '<IDLE>'
+                                THEN 'idle'
+                            WHEN current_query = '<IDLE> in transaction'
+                                THEN 'idle in transaction'
+                            WHEN current_query = '<FASTPATH> function call'
+                                THEN 'fastpath function call'
+                            WHEN waiting = 't'
+                                THEN 'waiting for lock'
+                            ELSE 'active'
+                        END AS status, count(*),
+                        max(extract('epoch' FROM
+                            date_trunc('second', current_timestamp-xact_start)
+                        ))
+                    FROM pg_stat_activity
+                    GROUP BY 1
+            ) AS a(status, count, age)
+            GROUP BY 1 },
+        # support everything
+        $PG_VERSION_90 => q{
+            SELECT status, sum(count), max(age)
+            FROM (
+                SELECT * FROM ( VALUES
+                    ( 'idle'                         , 0, 0 ),
+                    ( 'idle in transaction'          , 0, 0 ),
+                    ( 'idle in transaction (aborted)', 0, 0 ),
+                    ( 'fastpath function call'       , 0, 0 ),
+                    ( 'waiting for lock'             , 0, 0 ),
+                    ( 'active'                       , 0, 0 )
+                ) AS ref
+                UNION ALL SELECT CASE
+                            WHEN current_query = '<IDLE>'
+                                THEN 'idle'
+                            WHEN current_query = '<IDLE> in transaction'
+                                THEN 'idle in transaction'
+                            WHEN current_query = '<IDLE> in transaction (aborted)'
+                                THEN 'idle in transaction (aborted)'
+                            WHEN current_query = '<FASTPATH> function call'
+                                THEN 'fastpath function call'
+                            WHEN waiting = 't'
+                                THEN 'waiting for lock'
+                            ELSE 'active'
+                        END AS status, count(*), max(extract('epoch' FROM
+                            date_trunc('second', current_timestamp-xact_start)
+                        ))
+                    FROM pg_stat_activity
+                    GROUP BY 1
+            ) AS a(status, count, age)
+            GROUP BY 1 },
+        # pg_stat_activity schema change
+        $PG_VERSION_92 => q{
+            SELECT status, sum(count), max(age)
+            FROM (
+                SELECT * FROM ( VALUES
+                    ( 'idle'                         , 0, 0 ),
+                    ( 'idle in transaction'          , 0, 0 ),
+                    ( 'idle in transaction (aborted)', 0, 0 ),
+                    ( 'fastpath function call'       , 0, 0 ),
+                    ( 'waiting for lock'             , 0, 0 ),
+                    ( 'active'                       , 0, 0 )
+                ) AS ref
+                UNION ALL SELECT state, count(*), max(extract('epoch' FROM
+                            date_trunc('second', current_timestamp-xact_start)
+                        ))
+                    FROM pg_stat_activity
+                    GROUP BY 1
+            ) AS a(status, count, age)
+            GROUP BY 1 }
+    );
+
+    @hosts = @{ parse_hosts %args };
+
+    pod2usage(
+        -message => 'FATAL: you must give one host with service "backends_status".',
+        -exitval => 127
+    ) if @hosts != 1;
+
+    is_compat $hosts[0], 'backends_status', $PG_VERSION_82 or exit 1;
+
+
+    if ( defined $args{'warning'} ) {
+        my $threshods_re
+            = qr/(idle|idle_xact|aborted_xact|fastpath|active|waiting)\s*=\s*(\d+)/i;
+
+        # warning and critical must be raw
+        pod2usage(
+            -message => "FATAL: critical and warning thresholds only accept a list of 'label=value' separated by comma.\n"
+                ."Available labels are idle, idle_xact, aborted_xact, fastpath, active and waiting.\n"
+                ."Values are raw numbers. Empty list are forbidden. Example:\n"
+                ."    -c 'idle_xact=10,waiting=5'",
+            -exitval => 127
+        ) unless $args{'warning'} =~ m/^$threshods_re(\s*,\s*$threshods_re)*$/
+            and $args{'critical'} =~ m/^$threshods_re(\s*,\s*$threshods_re)*$/ ;
+
+        while ( $args{'warning'} =~ /$threshods_re/g ) {
+            my ($threshold, $value) = ($1, $2);
+            $warn{$threshold} = $value if $1 and $2;
+        }
+
+        while ( $args{'critical'} =~ /$threshods_re/g ) {
+            my ($threshold, $value) = ($1, $2);
+            $crit{$threshold} = $value if $1 and $2;
+        }
+    }
+
+    @rs = @{ query_ver( $hosts[0], %queries ) };
+
+    STATUS_LOOP: foreach my $r (@rs) {
+        push @perfdata => "'$r->[0]'=$r->[1]";
+        push @perfdata => "'oldest $r->[0]'=$r->[2]s"
+            if $hosts[0]->{'version_num'} >= $PG_VERSION_83;
+
+        push @{ $r }, 'idle'         if $r->[0] eq 'idle';
+        push @{ $r }, 'active'       if $r->[0] eq 'active';
+        push @{ $r }, 'idle_xact'    if $r->[0] eq 'idle in transaction';
+        push @{ $r }, 'idle_xact'    if $r->[0] eq 'idle in transaction';
+        push @{ $r }, 'aborted_xact' if $r->[0] =~ m/\(aborted\)$/;
+        push @{ $r }, 'waiting'      if $r->[0] eq 'waiting for lock';
+        push @{ $r }, 'fastpath'     if $r->[0] eq 'fastpath function call';
+
+        # Criticals
+        if ( exists $crit{$r->[3]} and $r->[1] >= $crit{$r->[3]} ) {
+            push @msg_crit => "$r->[1] $r->[0]";
+            next STATUS_LOOP;
+        }
+
+        # Warning
+        if ( exists $warn{$r->[3]} and $r->[1] >= $warn{$r->[3]} ) {
+            push @msg_warn => "$r->[1] $r->[0]";
+            next STATUS_LOOP;
+        }
+    }
+
+    return critical( $me, [ @msg_crit, @msg_warn ], \@perfdata )
+        if scalar @msg_crit > 0;
+
+    return warning( $me, \@msg_warn, \@perfdata ) if scalar @msg_warn > 0;
+
+    return ok( $me, [ scalar(@rs) . " backend connected" ], \@perfdata );
 }
 
 =item B<database_size> (8.1+)
