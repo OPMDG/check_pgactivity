@@ -1091,9 +1091,7 @@ sub check_backends_status {
         # warning and critical must be raw
         pod2usage(
             -message => "FATAL: critical and warning thresholds only accept a list of 'label=value' separated by comma.\n"
-                ."Available labels are idle, idle_xact, aborted_xact, fastpath, active and waiting.\n"
-                ."Values are raw numbers. Empty list are forbidden. Example:\n"
-                ."    -c 'idle_xact=10,waiting=5'",
+                ."See documentation for more information."
             -exitval => 127
         ) unless $args{'warning'} =~ m/^$threshods_re(\s*,\s*$threshods_re)*$/
             and $args{'critical'} =~ m/^$threshods_re(\s*,\s*$threshods_re)*$/ ;
