@@ -234,7 +234,7 @@ my %args = (
     'dbservice'             => undef,
     'warning'               => undef,
     'critical'              => undef,
-    'exclude'               => '',
+    'exclude'               => [],
     'psql'                  => '/usr/bin/psql',
     'path'                  => undef,
     'status-file'           => dirname(__FILE__) . '/check_pgactivity.data',
@@ -2616,8 +2616,9 @@ sub check_oldest_2pc {
 
 =item B<longest_query> (all)
 
-Check the longest running query in the cluster. this service supports argument
+Check the longest running query in the cluster. This service supports argument
 C<--exclude REGEX> to exclude queries matching the given regexp from the check.
+you can give multiple C<--exclude REGEX>.
 
 Perfdata contains the max/avg/min running time and the number of query per
 databases.
@@ -2630,7 +2631,7 @@ sub check_longest_query {
     my @perfdata;
     my @msg;
     my @hosts;
-    my $qr_exclude;
+    my @exclude_re;
     my $c_limit;
     my $w_limit;
     my %args          = %{ $_[0] };
@@ -2685,12 +2686,14 @@ sub check_longest_query {
     ) if @hosts != 1;
 
 
-    $qr_exclude = qr/$args{'exclude'}/ if $args{'exclude'};
+    push @exclude_re => qr/$_/ foreach @{ $args{'exclude'} };
 
     @rs = @{ query_ver( $hosts[0], %queries ) };
 
     REC_LOOP: foreach my $r (@rs) {
-        next REC_LOOP if $qr_exclude and $r->[2] =~ $qr_exclude;
+        foreach my $exclude_re (@exclude_re) {
+            next REC_LOOP if $r->[2] =~ /$exclude_re/;
+        }
 
         $stats{$r->[0]} = {
             'num' => 0,
