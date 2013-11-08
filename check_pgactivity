@@ -110,6 +110,10 @@ my %services = (
         'sub'  => \&check_oldest_2pc,
         'desc' => 'Check the oldest two phase commit transaction.'
     },
+    'oldest_idlexact' => {
+        'sub'  => \&check_oldest_idlexact,
+        'desc' => 'Check the oldest idle transaction.'
+    },
     'longest_query' => {
         'sub'  => \&check_longest_query,
         'desc' => 'Check the longest running query.'
@@ -2505,12 +2509,12 @@ sub check_backup_label_age {
 }
 
 
-=item B<oldest_2pc> (all)
+=item B<oldest_2pc> (8.1+)
 
 Check the oldest two phase commit transaction (aka. prepared transaction) in
 the cluster.
 
-Perfdata contains the max/avg/min age time and the number of prepared
+Perfdata contains the max/avg age time and the number of prepared
 transaction per databases.
 
 Critical and Warning thresholds only accept an interval.
@@ -2523,7 +2527,7 @@ sub check_oldest_2pc {
     my @hosts;
     my $c_limit;
     my $w_limit;
-    my $me          = 'POSTGRES_LONGEST_2PC';
+    my $me          = 'POSTGRES_OLDEST_2PC';
     my $oldest_2pc = 0;
     my $nb_2pc      = 0;
     my %stats       = ();
@@ -2544,8 +2548,8 @@ sub check_oldest_2pc {
     ) unless defined $args{'warning'} and defined $args{'critical'} ;
 
 
-    $c_limit = get_time( $args{'critical'} );
-    $w_limit = get_time( $args{'warning'} );
+    $c_limit = get_time $args{'critical'};
+    $w_limit = get_time $args{'warning'};
 
 
     @hosts = @{ parse_hosts %args };
@@ -2555,7 +2559,7 @@ sub check_oldest_2pc {
         -exitval => 127
     ) if @hosts != 1;
 
-    is_compat $hosts[0], 'database_size', $PG_VERSION_81 or exit 1;
+    is_compat $hosts[0], 'postgres_oldest_2pc', $PG_VERSION_81 or exit 1;
 
 
     @rs = @{ query( $hosts[0], $query ) };
@@ -2609,6 +2613,118 @@ sub check_oldest_2pc {
 
     return warning( $me, \@msg, \@perfdata )
         if $oldest_2pc > $w_limit;
+
+    return ok( $me, \@msg, \@perfdata );
+}
+
+=item B<oldest_xact> (8.3+)
+
+Check the oldest idle transaction.
+
+Perfdata contains the max/avg age time and the number of idle
+transaction per databases.
+
+Critical and Warning thresholds only accept an interval.
+=cut
+
+sub check_oldest_idlexact {
+    my @rs;
+    my @perfdata;
+    my @msg;
+    my @hosts;
+    my $c_limit;
+    my $w_limit;
+    my $me          = 'POSTGRES_OLDEST_IDLEXACT';
+    my $oldest_idle = 0;
+    my $nb_idle     = 0;
+    my %stats       = ( );
+    my %queries     = (
+        $PG_VERSION_83 => q{SELECT datname,
+            coalesce(extract('epoch' FROM
+                    date_trunc('second', current_timestamp-xact_start)
+                ), -1)
+            FROM pg_stat_activity AS a
+            WHERE current_query = '<IDLE> in transaction'},
+        $PG_VERSION_92 => q{SELECT datname,
+            coalesce(extract('epoch' FROM
+                    date_trunc('second', current_timestamp-xact_start)
+                ), -1)
+            FROM pg_stat_activity AS a
+            WHERE state='idle in transaction'}
+    );
+
+    # warning and critical are mandatory.
+    pod2usage(
+        -message => "FATAL: you must specify critical and warning thresholds.",
+        -exitval => 127
+    ) unless defined $args{'warning'} and defined $args{'critical'} ;
+
+
+    $c_limit = get_time $args{'critical'};
+    $w_limit = get_time $args{'warning'};
+
+
+    @hosts = @{ parse_hosts %args };
+
+    pod2usage(
+        -message => 'FATAL: you must give one host with service "oldest_idlexact".',
+        -exitval => 127
+    ) if @hosts != 1;
+
+    is_compat $hosts[0], 'oldest_idlexact', $PG_VERSION_83 or exit 1;
+
+
+    @rs = @{ query_ver( $hosts[0], %queries ) };
+
+    REC_LOOP: foreach my $r (@rs) {
+
+        $stats{$r->[0]} = {
+            'num' => 0,
+            'max' => -1,
+            'avg' => 0,
+        } unless exists $stats{$r->[0]};
+
+        $oldest_idle = $r->[1] if $r->[1] > $oldest_idle;
+
+        $stats{$r->[0]}{'num'}++;
+        $stats{$r->[0]}{'max'} = $r->[1] if $stats{$r->[0]}{'max'} < $r->[1];
+        $stats{$r->[0]}{'avg'} = (
+            $stats{$r->[0]}{'avg'} * ($stats{$r->[0]}{'num'} -1) + $r->[1])
+            / $stats{$r->[0]}{'num'} if $stats{$r->[0]}{'num'};
+    }
+
+    DB_LOOP: foreach my $db (sort keys %stats) {
+
+        $nb_idle += $stats{$db}{'num'};
+
+        unless($stats{$db}{'max'} > -1) {
+            $stats{$db}{'max'} = 'NaN';
+            $stats{$db}{'avg'} = 'NaN';
+        }
+
+        push @perfdata, (
+            "'$db max'=$stats{$db}{'max'}s;$w_limit;$c_limit",
+            "'$db avg'=$stats{$db}{'avg'}s;$w_limit;$c_limit",
+            "'$db # idle xact'=$stats{$db}{'num'}"
+        );
+
+        if ( $stats{$db}{'max'} > $c_limit ) {
+            push @msg => "oldest idle xact on $db: ". to_interval($stats{$db}{'max'});
+            next DB_LOOP;
+        }
+
+        if ( $stats{$db}{'max'} > $w_limit ) {
+            push @msg => "oldest idle xact on $db: ". to_interval($stats{$db}{'max'});
+        }
+    }
+
+    unshift @msg => "$nb_idle idle transaction(s)";
+
+    return critical( $me, \@msg, \@perfdata )
+        if $oldest_idle > $c_limit;
+
+    return warning( $me, \@msg, \@perfdata )
+        if $oldest_idle > $w_limit;
 
     return ok( $me, \@msg, \@perfdata );
 }
