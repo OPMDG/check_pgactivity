@@ -239,7 +239,7 @@ my %args = (
     'warning'               => undef,
     'critical'              => undef,
     'exclude'               => [],
-    'psql'                  => '/usr/bin/psql',
+    'psql'                  => undef,
     'path'                  => undef,
     'status-file'           => dirname(__FILE__) . '/check_pgactivity.data',
     'query'                 => undef,
@@ -3423,6 +3423,17 @@ pod2usage(
     -message => 'FATAL: "slave" is only allowed with "streaming_delta" service.',
     -exitval => 127
 ) if scalar @{ $args{'slave'} }  and $args{'service'} ne 'streaming_delta';
+
+
+# Set psql absolute path
+unless ($args{'psql'}) {
+    if ( $ENV{PGBINDIR} ) {
+        $args{'psql'} = "$ENV{PGBINDIR}/psql";
+    }
+    else {
+        $args{'psql'} = '/usr/bin/psql';
+    }
+}
 
 
 exit $services{ $args{'service'} }{'sub'}->( \%args );
