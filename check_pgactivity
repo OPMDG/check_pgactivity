@@ -912,7 +912,7 @@ sub check_backends {
     @hosts = @{ parse_hosts %args };
 
     pod2usage(
-        -message => 'FATAL: you must give one host with service "backends".',
+        -message => 'FATAL: you must give only one host with service "backends".',
         -exitval => 127
     ) if @hosts != 1;
 
@@ -1081,7 +1081,7 @@ sub check_backends_status {
     @hosts = @{ parse_hosts %args };
 
     pod2usage(
-        -message => 'FATAL: you must give one host with service "backends_status".',
+        -message => 'FATAL: you must give only one host with service "backends_status".',
         -exitval => 127
     ) if @hosts != 1;
 
@@ -1181,7 +1181,7 @@ sub check_database_size {
     @hosts = @{ parse_hosts %args };
 
     pod2usage(
-        -message => 'FATAL: you must give one host with service "database_size".',
+        -message => 'FATAL: you must give only one host with service "database_size".',
         -exitval => 127
     ) if @hosts != 1;
 
@@ -1345,7 +1345,7 @@ sub check_wal_files {
     @hosts = @{ parse_hosts %args };
 
     pod2usage(
-        -message => 'FATAL: you must give one host with service "wal_files".',
+        -message => 'FATAL: you must give only one host with service "wal_files".',
         -exitval => 127
     ) if @hosts != 1;
 
@@ -1409,7 +1409,7 @@ sub check_ready_archives {
     @hosts = @{ parse_hosts %args };
 
     pod2usage(
-        -message => 'FATAL: you must give one host with service "ready_archives".',
+        -message => 'FATAL: you must give only one host with service "ready_archives".',
         -exitval => 127
     ) if @hosts != 1;
 
@@ -1465,7 +1465,7 @@ sub check_last_maintenance {
     @hosts = @{ parse_hosts %args };
 
     pod2usage(
-        -message => "FATAL: you must give one host with service \"last_$type\".",
+        -message => "FATAL: you must give only one host with service \"last_$type\".",
         -exitval => 127
     ) if @hosts != 1;
 
@@ -1629,7 +1629,7 @@ sub check_locks {
     @hosts = @{ parse_hosts %args };
 
     pod2usage(
-        -message => 'FATAL: you must give one host with service "locks".',
+        -message => 'FATAL: you must give only one host with service "locks".',
         -exitval => 127
     ) if @hosts != 1;
 
@@ -1730,7 +1730,7 @@ sub check_bgwriter {
     @hosts = @{ parse_hosts %args };
 
     pod2usage(
-        -message => 'FATAL: you must give one host with service "bgwriter".',
+        -message => 'FATAL: you must give only one host with service "bgwriter".',
         -exitval => 127
     ) if @hosts != 1;
 
@@ -2005,7 +2005,7 @@ sub check_minor_version {
     @hosts = @{ parse_hosts %args };
 
     pod2usage(
-        -message => 'FATAL: you must give one host with service "bgwriter".',
+        -message => 'FATAL: you must give only one host with service "minor_version".',
         -exitval => 127
     ) if @hosts != 1;
 
@@ -2412,7 +2412,7 @@ sub check_hit_ratio {
     @hosts = @{ parse_hosts %args };
 
     pod2usage(
-        -message => 'FATAL: you must give one host with service "hit_ratio".',
+        -message => 'FATAL: you must give only one host with service "hit_ratio".',
         -exitval => 127
     ) if @hosts != 1;
 
@@ -2488,7 +2488,7 @@ sub check_backup_label_age {
     @hosts = @{ parse_hosts %args };
 
     pod2usage(
-        -message => 'FATAL: you must give one host with service "backup_label_age".',
+        -message => 'FATAL: you must give only one host with service "backup_label_age".',
         -exitval => 127
     ) if @hosts != 1;
 
@@ -2555,7 +2555,7 @@ sub check_oldest_2pc {
     @hosts = @{ parse_hosts %args };
 
     pod2usage(
-        -message => 'FATAL: you must give one host with service "oldest_2pc".',
+        -message => 'FATAL: you must give only one host with service "oldest_2pc".',
         -exitval => 127
     ) if @hosts != 1;
 
@@ -2667,7 +2667,7 @@ sub check_oldest_idlexact {
     @hosts = @{ parse_hosts %args };
 
     pod2usage(
-        -message => 'FATAL: you must give one host with service "oldest_idlexact".',
+        -message => 'FATAL: you must give only one host with service "oldest_idlexact".',
         -exitval => 127
     ) if @hosts != 1;
 
@@ -2797,7 +2797,7 @@ sub check_longest_query {
     @hosts = @{ parse_hosts %args };
 
     pod2usage(
-        -message => 'FATAL: you must give one host with service "longest_query".',
+        -message => 'FATAL: you must give only one host with service "longest_query".',
         -exitval => 127
     ) if @hosts != 1;
 
@@ -2879,7 +2879,7 @@ sub check_connection {
     @hosts = @{ parse_hosts %args };
 
     pod2usage(
-        -message => 'FATAL: you must give one host with service "connection".',
+        -message => 'FATAL: you must give only one host with service "connection".',
         -exitval => 127
     ) if @hosts != 1;
 
@@ -2941,7 +2941,7 @@ sub check_custom_query {
     @hosts = @{ parse_hosts %args };
 
     pod2usage(
-        -message => 'FATAL: you must give one host with service "custom_query".',
+        -message => 'FATAL: you must give only one host with service "custom_query".',
         -exitval => 127
     ) if @hosts != 1;
 
@@ -3070,7 +3070,7 @@ sub check_configuration {
     @hosts = @{ parse_hosts %args };
 
     pod2usage(
-        -message => 'FATAL: you must give one host with service "configuration".',
+        -message => 'FATAL: you must give only one host with service "configuration".',
         -exitval => 127
     ) if @hosts != 1;
 
@@ -3130,7 +3130,7 @@ sub check_bloat {
     @hosts = @{ parse_hosts %args };
 
     pod2usage(
-        -message => 'FATAL: you must give one host with service "bloat".',
+        -message => 'FATAL: you must give only one host with service "bloat".',
         -exitval => 127
     ) if @hosts != 1;
 
