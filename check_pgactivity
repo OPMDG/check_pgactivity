@@ -1,6 +1,8 @@
 #!/usr/bin/perl
-# This program is open source, licensed under the simplified BSD license.
+# This program is open source, licensed under the PostgreSQL License.
 # For license terms, see the LICENSE file.
+#
+# Copyright (C) 2012-2013: Open PostgreSQL Monitoring Development Group
 
 =head1 check_pgactivity
 
@@ -3460,14 +3462,12 @@ Execute service "streaming_delta" between hosts "service=pg92" and "host=slave u
 
 =head1 LICENSING
 
-This program is open source, licensed under the simplified BSD license. For
-license terms, see the LICENSE provided with the sources.
+This program is open source, licensed under the PostgreSQL license.
+For license terms, see the LICENSE provided with the sources.
 
 =head1 AUTHORS
 
-Author: Jehan-Guillaume de Rorthais
-Copyright: (C) 2012 Jehan-Guillaume de Rorthais - All rights reserved.
+Author: Open PostgreSQL Monitoring Development Group
+Copyright: (C) 2012-2013 Open PostgreSQL Development Group
 
-Dalibo's team. http://www.dalibo.org
-  
 =cut
