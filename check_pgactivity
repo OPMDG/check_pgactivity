@@ -2067,7 +2067,7 @@ sub check_minor_version {
     if ( $hosts[0]{'version_num'} < $latest_versions{$major_version}[0] ) {
         push @msg => "Latest PostgreSQL is ".
             $latest_versions{$major_version}[1].
-            "running version is ". $hosts[0]{'version'};
+            " running version is ". $hosts[0]{'version'};
         return critical( $me, \@msg, \@perfdata )
     }
 
