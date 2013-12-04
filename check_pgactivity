@@ -163,6 +163,10 @@ my %services = (
     'bloat' => {
         'sub'  => \&check_bloat,
         'desc' => 'Check table and index bloat.'
+    },
+    'max_freeze_age' => {
+        'sub'  => \&check_max_freeze_age,
+        'desc' => 'Check oldest database in transaction age.'
     }
 );
 
@@ -3320,6 +3324,122 @@ sub check_bloat {
         [ "t_count=$w_t_count i_count=$w_i_count", @perfdata ]
             if ( $w_t_count + $w_i_count ) > 0;
     return ok $me, [ "Database bloat ok" ], \@perfdata;
+}
+
+=item B<max_freeze_age> (all)
+
+Checks oldest database in transaction age.
+
+Critical and Warning thresholds are optionnal. They accept either a raw
+number or percentage for PostgreSQL 8.2 and more. If percentage is
+given, the thresholds are computed based on the
+"autovacumm_freeze_min_age" parameter.
+
+Perfdatas return the age of each database.
+=cut
+sub check_max_freeze_age {
+    my @rs;
+    my @perfdata;
+    my @msg;
+    my @msg_crit;
+    my @msg_warn;
+    my @hosts;
+    my @exclude_re;
+    my $c_limit;
+    my $w_limit;
+    my $oldestdb;
+    my $oldestage = -1;
+    my %args          = %{ $_[0] };
+    my $me            = 'POSTGRES_MAX_FREEZE_AGE';
+    my %queries       = (
+       $PG_VERSION_74 => q{SELECT datname, age(datfrozenxid)
+            FROM pg_database
+            WHERE datname <> 'template0'
+       },
+        $PG_VERSION_82 => q{SELECT datname, age(datfrozenxid),
+                current_setting('autovacuum_freeze_max_age')
+            FROM pg_database
+            WHERE datname <> 'template0'
+        }
+    );
+
+    # warning and critical must be raw or %.
+    if ( defined $args{'warning'} and defined $args{'critical'} ) {
+        # warning and critical must be raw
+        pod2usage(
+            -message => "FATAL: critical and warning thresholds only accept raw numbers or % (for 8.2+).",
+            -exitval => 127
+        ) unless $args{'warning'}  =~ m/^([0-9]+)%?$/
+            and  $args{'critical'} =~ m/^([0-9]+)%?$/;
+
+        $w_limit = $args{'warning'};
+        $c_limit = $args{'critical'};
+    }
+
+    @hosts = @{ parse_hosts %args };
+
+    pod2usage(
+        -message => 'FATAL: you must give only one host with service "max_freeze_age".',
+        -exitval => 127
+    ) if @hosts != 1;
+
+    set_pgversion($hosts[0]);
+
+    pod2usage(
+        -message => "FATAL: only raw thresholds are compatible with PostgreSQL 8.1 and bellow.",
+        -exitval => 127
+    ) if $hosts[0]->{'version_num'} < $PG_VERSION_82
+        and ($args{'warning'} =~ m/%\s*$/ or $args{'critical'} =~ m/%\s*$/);
+
+    push @exclude_re => qr/$_/ foreach @{ $args{'exclude'} };
+
+    @rs = @{ query_ver( $hosts[0], %queries ) };
+
+    if ( scalar @rs ) {
+        $c_limit = int($1 * $rs[0][2]/100) if $args{'critical'} =~ /^([0-9.]+)%$/;
+        $w_limit  = int($1 * $rs[0][2]/100) if $args{'warning'}  =~ /^([0-9.]+)%$/;
+    }
+
+    REC_LOOP: foreach my $r (@rs) {
+        my $perfdata_value;
+
+        foreach my $exclude_re (@exclude_re) {
+            next REC_LOOP if $r->[0] =~ /$exclude_re/;
+        }
+
+        if ($oldestage < $r->[1]) {
+            $oldestdb = $r->[0];
+            $oldestage = $r->[1];
+        }
+
+        $perfdata_value = "'$r->[0]'=$r->[1]";
+
+        $perfdata_value .= ";$w_limit;$c_limit"
+            if defined $c_limit;
+
+        push @perfdata => $perfdata_value;
+
+        if ( defined $c_limit ) {
+            if ( $r->[1] > $c_limit ) {
+                push @msg_crit => "$r->[0]";
+                next REC_LOOP;
+            }
+
+            push @msg_warn => "$r->[0]"
+                if defined $w_limit and $r->[1] > $w_limit;
+        }
+    }
+
+    return critical( $me, [
+        'Critical: '. join(',', @msg_crit)
+        . (scalar @msg_warn? 'Warning: '. join(',', @msg_warn):'')
+    ], \@perfdata ) if scalar @msg_crit;
+
+    return warning( $me,
+        [ 'Warning: '. join(',', @msg_warn) ], \@perfdata
+    ) if scalar @msg_warn;
+
+    return ok( $me, [ "oldest database is $oldestdb with age of $oldestage" ], \@perfdata );
 }
 
 # End of SERVICE section in pod doc
