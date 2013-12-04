@@ -3395,7 +3395,7 @@ sub check_max_freeze_age {
 
     @rs = @{ query_ver( $hosts[0], %queries ) };
 
-    if ( scalar @rs ) {
+    if ( scalar @rs and defined $args{'critical'} ) {
         $c_limit = int($1 * $rs[0][2]/100) if $args{'critical'} =~ /^([0-9.]+)%$/;
         $w_limit  = int($1 * $rs[0][2]/100) if $args{'warning'}  =~ /^([0-9.]+)%$/;
     }
