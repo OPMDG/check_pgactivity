@@ -667,6 +667,7 @@ sub query($$;$) {
     delete $ENV{PGHOST};
     delete $ENV{PGPORT};
     delete $ENV{PGUSER};
+    delete $ENV{PGOPTIONS};
 
     if (defined $db) {
         $ENV{PGDATABASE} = $db;
@@ -679,6 +680,7 @@ sub query($$;$) {
     $ENV{PGHOST}     = $host->{'host'}      if defined $host->{'host'};
     $ENV{PGPORT}     = $host->{'port'}      if defined $host->{'port'};
     $ENV{PGUSER}     = $host->{'user'}      if defined $host->{'user'};
+    $ENV{PGOPTIONS}  = '-c client_min_messages=error';
 
     dprint ("Query: $query\n");
     dprint ("Env. service: $ENV{PGSERVICE} \n") if defined $host->{'dbservice'};
