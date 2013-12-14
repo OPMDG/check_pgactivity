@@ -2231,10 +2231,13 @@ Check the data delta between a cluster and its standbys in streaming replication
 
 Optionnal argument "--slave" allows to specify some slaves that MUST be
 connected. This argument can be used as many time as you need to check multiple
-slaves connections. The given value must be "APPLICATION_NAME IP". The
-following example will check for the presence of two slaves:
+slaves connections, or you can specify multiple slaves connections at one time,
+using comma separated values. Both methods can be used in a single call. The
+given value must be of the form "APPLICATION_NAME IP".
+Any of those two following examples will check for the presence of two slaves:
 
   --slave 'slave1 192.168.1.11' --slave 'slave2 192.168.1.12'
+  --slave 'slave1 192.168.1.11','slave2 192.168.1.12'
 
 Perfdata returns the data delta in bytes between the master and all standbys
 found and the number of slave connected.
@@ -2242,7 +2245,7 @@ found and the number of slave connected.
 Critical and Warning thresholds can takes one or two values separated by a
 comma. If only one value given, it applies on both flushed and replayed data.
 If two values given, the first one applies on flushed data, the second one on
-replayed ones. These threshold only accept a size (eg. 2.5G).
+replayed ones. These thresholds only accept a size (eg. 2.5G).
 
 =cut
 
@@ -2270,7 +2273,6 @@ sub check_streaming_delta {
             sent_location, write_location, flush_location, replay_location
             FROM pg_stat_replication}
     );
-
     # FIXME this service should check for given slaves in opts!
 
     # warning and critical are mandatory.
@@ -2288,11 +2290,9 @@ sub check_streaming_delta {
     ) if @hosts != 1;
 
     is_compat $hosts[0], 'streaming_delta', $PG_VERSION_91 or exit 1;
-
     if ( scalar @{ $args{'slave'} } ) {
-        $slaves{$_} = 0 foreach ( @{ $args{'slave'} } );
+        $slaves{$_} = 0 foreach ( split ( /,/, join ( ',', @{ $args{'slave'} } ) ) );
     }
-
 
     @rs = @{ query_ver( $hosts[0], %queries ) };
 
