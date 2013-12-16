@@ -167,6 +167,14 @@ my %services = (
     'max_freeze_age' => {
         'sub'  => \&check_max_freeze_age,
         'desc' => 'Check oldest database in transaction age.'
+    },
+    'is_master' => {
+        'sub'  => \&check_is_master,
+        'desc' => 'Check if cluster is in production.'
+    },
+    'is_hot_standby' => {
+        'sub'  => \&check_is_hot_standby,
+        'desc' => 'Check if cluster is a hot standby.'
     }
 );
 
@@ -3443,6 +3451,76 @@ sub check_max_freeze_age {
 
     return ok( $me, [ "oldest database is $oldestdb with age of $oldestage" ], \@perfdata );
 }
+
+=item B<is_master> (all)
+
+Checks if the cluster accepts read and/or write queries. This state is reported
+as "in production" by pg_controldata.
+
+This service ignores critical and warning arguments.
+
+No perfdata are returned.
+=cut
+
+sub check_is_master {
+    my @rs;
+    my @hosts;
+    my %args          = %{ $_[0] };
+    my $me            = 'POSTGRES_IS_MASTER';
+    #For PostgreSQL 9.0+, the "pg_is_in_recovery()" function is used, for previous
+    #versions the ability to connect is enough.
+    my %queries       = (
+       $PG_VERSION_74 => q{SELECT false
+       },
+        $PG_VERSION_90 => q{SELECT pg_is_in_recovery()
+        }
+    );
+
+    @hosts = @{ parse_hosts %args };
+
+    pod2usage(
+        -message => 'FATAL: you must give only one host with service "is_master".',
+        -exitval => 127
+    ) if @hosts != 1;
+
+    @rs = @{ query_ver( $hosts[0], %queries )->[0] };
+
+    return critical( $me, [ "Cluster is not master" ] ) if ( $rs[0] eq "t" );
+    return ok( $me, [ "Cluster is master" ] );
+}
+
+=item B<is_hot_standby> (9.0+)
+
+Checks if the cluster is in recovery and accepts read only queries.
+
+This service ignores critical and warning arguments.
+
+No perfdata are returned.
+=cut
+
+sub check_is_hot_standby {
+    my @rs;
+    my @hosts;
+    my %args          = %{ $_[0] };
+    my $me            = 'POSTGRES_IS_HOT_STANDBY';
+    my %queries       = (
+        $PG_VERSION_90 => q{SELECT pg_is_in_recovery()}
+    );
+
+    @hosts = @{ parse_hosts %args };
+
+    pod2usage(
+        -message => 'FATAL: you must give only one host with service "is_hot_standby".',
+        -exitval => 127
+    ) if @hosts != 1;
+
+    is_compat $hosts[0], 'is_hot_standby', $PG_VERSION_90 or exit 1;
+    @rs = @{ query_ver( $hosts[0], %queries )->[0] };
+
+    return critical( $me, [ "Cluster is not hot standby" ] ) if ( $rs[0] eq "f" );
+    return ok( $me, [ "Cluster is hot standby" ] );
+}
+
 
 # End of SERVICE section in pod doc
 =pod
