@@ -3153,7 +3153,7 @@ sub check_bloat {
 
     set_pgversion($hosts[0]);
 
-    $BLOCK_SIZE = "(SELECT 8192)" if $hosts[0]->{'version_num'} == $PG_VERSION_74;
+    $BLOCK_SIZE = "(SELECT 8192)" if $hosts[0]->{'version_num'} < $PG_VERSION_80;
     $USE_INHERITED = "" if $hosts[0]->{'version_num'} < $PG_VERSION_90;
 
 
