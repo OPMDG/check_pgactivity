@@ -3373,6 +3373,13 @@ sub check_max_freeze_age {
         }
     );
 
+    @hosts = @{ parse_hosts %args };
+
+    pod2usage(
+        -message => 'FATAL: you must give only one host with service "max_freeze_age".',
+        -exitval => 127
+    ) if @hosts != 1;
+
     # warning and critical must be raw or %.
     if ( defined $args{'warning'} and defined $args{'critical'} ) {
         # warning and critical must be raw
@@ -3384,22 +3391,15 @@ sub check_max_freeze_age {
 
         $w_limit = $args{'warning'};
         $c_limit = $args{'critical'};
+
+        set_pgversion($hosts[0]);
+
+        pod2usage(
+            -message => "FATAL: only raw thresholds are compatible with PostgreSQL 8.1 and below.",
+            -exitval => 127
+        ) if $hosts[0]->{'version_num'} < $PG_VERSION_82
+            and ($args{'warning'} =~ m/%\s*$/ or $args{'critical'} =~ m/%\s*$/);
     }
-
-    @hosts = @{ parse_hosts %args };
-
-    pod2usage(
-        -message => 'FATAL: you must give only one host with service "max_freeze_age".',
-        -exitval => 127
-    ) if @hosts != 1;
-
-    set_pgversion($hosts[0]);
-
-    pod2usage(
-        -message => "FATAL: only raw thresholds are compatible with PostgreSQL 8.1 and bellow.",
-        -exitval => 127
-    ) if $hosts[0]->{'version_num'} < $PG_VERSION_82
-        and ($args{'warning'} =~ m/%\s*$/ or $args{'critical'} =~ m/%\s*$/);
 
     push @exclude_re => qr/$_/ foreach @{ $args{'exclude'} };
 
