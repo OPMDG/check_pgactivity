@@ -2150,7 +2150,7 @@ sub check_hot_standby_delta {
         -exitval => 127
     ) if @hosts < 2;
 
-    is_compat $hosts[0], 'hot_standby_delta', $PG_VERSION_90, $PG_VERSION_90 or exit 1;
+    is_compat $hosts[0], 'hot_standby_delta', $PG_VERSION_90 or exit 1;
 
 
     # fetch LSNs
