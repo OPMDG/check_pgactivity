@@ -216,7 +216,7 @@ The critical threshold.
 
 =item B<-P>, B<--psql> FILE
 
-Path to the C<psql> executable (default: "/usr/bin/psql").
+Path to the C<psql> executable (default: "psql").
 
 =item B<--status-file> PATH
 
@@ -3633,7 +3633,7 @@ unless ($args{'psql'}) {
         $args{'psql'} = "$ENV{PGBINDIR}/psql";
     }
     else {
-        $args{'psql'} = '/usr/bin/psql';
+        $args{'psql'} = 'psql';
     }
 }
 
