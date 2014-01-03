@@ -985,8 +985,9 @@ sub check_backends_status {
     my @msg_crit;
     my %warn;
     my %crit;
-    my $me      = 'POSTGRES_BACKENDS_STATUS';
-    my %queries = (
+    my $num_backends = 0;
+    my $me           = 'POSTGRES_BACKENDS_STATUS';
+    my %queries      = (
         # doesn't support "idle in transaction (aborted)" and xact age
         $PG_VERSION_82 => q{
             SELECT status, sum(count), NULL
@@ -1134,6 +1135,8 @@ sub check_backends_status {
         push @perfdata => "'oldest $r->[0]'=$r->[2]s"
             if $hosts[0]->{'version_num'} >= $PG_VERSION_83;
 
+        $num_backends += $r->[1];
+
         push @{ $r }, 'idle'         if $r->[0] eq 'idle';
         push @{ $r }, 'active'       if $r->[0] eq 'active';
         push @{ $r }, 'idle_xact'    if $r->[0] eq 'idle in transaction';
@@ -1160,7 +1163,7 @@ sub check_backends_status {
 
     return warning( $me, \@msg_warn, \@perfdata ) if scalar @msg_warn > 0;
 
-    return ok( $me, [ scalar(@rs) . " backend connected" ], \@perfdata );
+    return ok( $me, [ "$num_backends backend connected" ], \@perfdata );
 }
 
 =item B<database_size> (8.1+)
