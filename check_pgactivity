@@ -1140,7 +1140,6 @@ sub check_backends_status {
         push @{ $r }, 'idle'         if $r->[0] eq 'idle';
         push @{ $r }, 'active'       if $r->[0] eq 'active';
         push @{ $r }, 'idle_xact'    if $r->[0] eq 'idle in transaction';
-        push @{ $r }, 'idle_xact'    if $r->[0] eq 'idle in transaction';
         push @{ $r }, 'aborted_xact' if $r->[0] =~ m/\(aborted\)$/;
         push @{ $r }, 'waiting'      if $r->[0] eq 'waiting for lock';
         push @{ $r }, 'fastpath'     if $r->[0] eq 'fastpath function call';
