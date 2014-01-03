@@ -80,7 +80,7 @@ my %services = (
     },
     'backends_status' => {
         'sub'  => \&check_backends_status,
-        'desc' => 'FIXME.'
+        'desc' => 'Number of connections in relation to their status.'
     },
     'database_size' => {
         'sub'  => \&check_database_size,
@@ -985,7 +985,7 @@ sub check_backends_status {
     my @msg_crit;
     my %warn;
     my %crit;
-    my $me      = 'POSTGRES_DB_SIZE';
+    my $me      = 'POSTGRES_BACKENDS_STATUS';
     my %queries = (
         # doesn't support "idle in transaction (aborted)" and xact age
         $PG_VERSION_82 => q{
