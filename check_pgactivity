@@ -430,6 +430,14 @@ one unit per give value. If not set, the last unit is in seconds. Eg.: "1h 55m
 =cut
 
 # Takes an interval (with units) as parameter and returns a duration in second.
+sub is_time($){
+    my $str_time = lc( shift() );
+    return 1 if ( $str_time
+        =~ /^(\s*([0-9]\s*[smhd]?\s*))+$/
+    );
+    return 0;
+}
+
 sub get_time($) {
     my $str_time = lc( shift() );
     my $ts       = 0;
@@ -437,8 +445,7 @@ sub get_time($) {
 
     die(      "Malformed interval: «$str_time»!\n"
             . "Authorized unit are: dD, hH, mM, sS\n" )
-        unless $str_time
-            =~ /^\s*([0-9]{1,2}\s*[smhd]\s*)*[0-9]{1,2}\s*[smhd]?\s*$/;
+        unless is_time($str_time);
 
     # no bad units should exists after this line!
 
@@ -1476,6 +1483,11 @@ sub check_last_maintenance {
         -exitval => 127
     ) unless defined $args{'warning'} and defined $args{'critical'} ;
 
+    pod2usage(
+        -message => "FATAL: critical and warning thresholds only acccepts interval.",
+        -exitval => 127
+    ) unless ( is_time( $args{'warning'} ) and is_time( $args{'critical'} ) );
+
     $c_limit = get_time $args{'critical'};
     $w_limit = get_time $args{'warning'};
 
@@ -1912,6 +1924,11 @@ sub check_archive_folder {
         -message => "FATAL: you must specify critical and warning thresholds.",
         -exitval => 127
     ) unless defined $args{'warning'} and defined $args{'critical'} ;
+
+    pod2usage(
+        -message => "FATAL: critical and warning thresholds only acccepts interval.",
+        -exitval => 127
+    ) unless ( is_time( $args{'warning'} ) and is_time( $args{'critical'} ) );
 
 
     opendir( $dh, $args{'path'} )
@@ -2500,6 +2517,11 @@ sub check_backup_label_age {
         -exitval => 127
     ) unless defined $args{'warning'} and defined $args{'critical'} ;
 
+    pod2usage(
+        -message => "FATAL: critical and warning thresholds only acccepts interval.",
+        -exitval => 127
+    ) unless ( is_time( $args{'warning'} ) and is_time( $args{'critical'} ) );
+
     $c_limit = get_time( $args{'critical'} );
     $w_limit = get_time( $args{'warning'} );
 
@@ -2564,6 +2586,11 @@ sub check_oldest_2pc {
         -message => "FATAL: you must specify critical and warning thresholds.",
         -exitval => 127
     ) unless defined $args{'warning'} and defined $args{'critical'} ;
+
+    pod2usage(
+        -message => "FATAL: critical and warning thresholds only acccepts interval.",
+        -exitval => 127
+    ) unless ( is_time( $args{'warning'} ) and is_time( $args{'critical'} ) );
 
 
     $c_limit = get_time $args{'critical'};
@@ -2676,6 +2703,11 @@ sub check_oldest_idlexact {
         -message => "FATAL: you must specify critical and warning thresholds.",
         -exitval => 127
     ) unless defined $args{'warning'} and defined $args{'critical'} ;
+
+    pod2usage(
+        -message => "FATAL: critical and warning thresholds only acccepts interval.",
+        -exitval => 127
+    ) unless ( is_time( $args{'warning'} ) and is_time( $args{'critical'} ) );
 
 
     $c_limit = get_time $args{'critical'};
@@ -2806,6 +2838,11 @@ sub check_longest_query {
         -message => "FATAL: you must specify critical and warning thresholds.",
         -exitval => 127
     ) unless defined $args{'warning'} and defined $args{'critical'} ;
+
+    pod2usage(
+        -message => "FATAL: critical and warning thresholds only acccepts interval.",
+        -exitval => 127
+    ) unless ( is_time( $args{'warning'} ) and is_time( $args{'critical'} ) );
 
 
     $c_limit = get_time( $args{'critical'} );
@@ -2970,6 +3007,11 @@ sub check_custom_query {
         $c_limit = get_size( $args{'critical'} );
     }
     elsif ( $type eq 'time' ) {
+        pod2usage(
+                -message => "FATAL: critical and warning thresholds only acccepts interval with --type time.",
+                -exitval => 127
+                ) unless ( is_time( $args{'warning'} ) and is_time( $args{'critical'} ) );
+
         $w_limit = get_time( $args{'warning'} );
         $c_limit = get_time( $args{'critical'} );
     }
