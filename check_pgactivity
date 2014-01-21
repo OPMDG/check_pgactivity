@@ -1453,11 +1453,14 @@ sub check_last_maintenance {
     my @msg;
     my @hosts;
     my @all_db;
+    my %counts;
+    my %new_counts;
     my $type    = $_[0];
     my %args    = %{ $_[1] };
     my $me      = 'POSTGRES_LAST_' . uc($type);
-    my $query   = qq{
-         SELECT coalesce(min(
+    my %queries = (
+        $PG_VERSION_82 => qq{
+            SELECT coalesce(min(
                 extract(epoch FROM current_timestamp -
                     CASE last_auto${type} > last_${type}
                         WHEN 't' THEN last_auto${type}
@@ -1466,7 +1469,21 @@ sub check_last_maintenance {
                 )::float
             ), 'NaN'::float)
             FROM pg_stat_user_tables
-    };
+        },
+        $PG_VERSION_91 => qq{
+            SELECT coalesce(min(
+                    extract(epoch FROM current_timestamp -
+                        CASE last_auto${type} > last_${type}
+                            WHEN 't' THEN last_auto${type}
+                            ELSE last_${type}
+                        END
+                    )::float
+                ), 'NaN'::float),
+                coalesce(sum(${type}_count), 0) AS ${type}_count,
+                coalesce(sum(auto${type}_count), 0) AS auto${type}_count
+            FROM pg_stat_user_tables
+        }
+    );
 
     # warning and critical are mandatory.
     pod2usage(
@@ -1495,20 +1512,43 @@ sub check_last_maintenance {
 
     @all_db = @{ get_all_dbname( $hosts[0] ) };
 
-LOOP_DB: foreach my $db (@all_db) {
-        my $rs = @{ query( $hosts[0], $query, $db )->[0] }[0];
-        push @perfdata => "$db=${rs}s;$w_limit;$c_limit";
+    %counts = %{ load( $hosts[0], "${type}_counts", $args{'status-file'} ) || {} }
+        if $hosts[0]->{'version_num'} >= $PG_VERSION_91;
 
-        if ( $rs =~ /^-inf/i or $rs >= $c_limit ) {
-            push @msg_crit => "$db: " . to_interval($rs);
+LOOP_DB: foreach my $db (@all_db) {
+        my $perfdata;
+        my $rs = query_ver( $hosts[0], %queries, $db )->[0];
+        $db =~ s/=//g;
+
+        $perfdata = "$db=$rs->[0]s;$w_limit;$c_limit";
+
+        if ($hosts[0]->{'version_num'} >= $PG_VERSION_91 ) {
+            $new_counts{$db} = [$rs->[1], $rs->[2]];
+
+            if ( defined $counts{$db} ) {
+                my $delta      = $rs->[1] - $counts{$db}[0];
+                my $delta_auto = $rs->[2] - $counts{$db}[1];
+
+                $perfdata .= " '$db $type'=$delta"
+                    ." '$db auto$type'=$delta_auto";
+            }
+        }
+
+        push @perfdata => $perfdata;
+
+        if ( $rs->[0] =~ /^-inf/i or $rs->[0] >= $c_limit ) {
+            push @msg_crit => "$db: " . to_interval($rs->[0]);
             next LOOP_DB;
         }
 
-        if ( $rs >= $w_limit ) {
-            push @msg_warn => "$db: " . to_interval($rs);
+        if ( $rs->[0] >= $w_limit ) {
+            push @msg_warn => "$db: " . to_interval($rs->[0]);
             next LOOP_DB;
         }
     }
+
+    save $hosts[0], "${type}_counts", \%new_counts, $args{'status-file'}
+        if $hosts[0]->{'version_num'} >= $PG_VERSION_91;
 
     return critical( $me, [ @msg_crit, @msg_warn ], \@perfdata )
         if scalar @msg_crit > 0;
@@ -1523,9 +1563,14 @@ LOOP_DB: foreach my $db (@all_db) {
 Check on each databases that the oldest analyze (from autovacuum or not) is not
 older than the given threshold.
 
-Perfdata returns oldest analyze per database in seconds.
+This service uses the status file (see --status-file parameter) with
+PostgreSQL 9.1+.
 
-Critical and Warning thresholds only accept an interval (eg. 1h30m25s).
+Perfdata returns oldest analyze per database in seconds. With PostgreSQL
+9.1+, it returns the number of [auto]analyses per database as well.
+
+Critical and Warning thresholds only accept an interval (eg. 1h30m25s)
+and apply on the oldest analyse maintenance.
 =cut
 
 sub check_last_analyze {
@@ -1537,9 +1582,14 @@ sub check_last_analyze {
 Check on each databases that the oldest vacuum (from autovacuum or not) is not
 older than the given threshold.
 
-Perfdata returns oldest vacuum per database in seconds.
+This service uses the status file (see --status-file parameter) with
+PostgreSQL 9.1+.
 
-Critical and Warning thresholds only accept an interval (eg. 1h30m25s).
+Perfdata returns oldest vacuum per database in seconds. With PostgreSQL
+9.1+, it returns the number of [auto]vacuums per database as well.
+
+Critical and Warning thresholds only accept an interval (eg. 1h30m25s)
+and apply on the oldest vacuum.
 
 =cut
 
