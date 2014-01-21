@@ -1167,7 +1167,9 @@ sub check_backends_status {
 
 Check the variation of database sizes.
 
-Perfdata contains the size of each database.
+This service uses the status file (see --status-file parameter).
+
+Perfdata contains the size difference for each database since last call.
 
 Critical and Warning thresholds accept either a raw number, a percentage or a
 size (eg. 2.5G).
@@ -1567,7 +1569,8 @@ This service uses the status file (see --status-file parameter) with
 PostgreSQL 9.1+.
 
 Perfdata returns oldest analyze per database in seconds. With PostgreSQL
-9.1+, it returns the number of [auto]analyses per database as well.
+9.1+, it returns the number of [auto]analyses per database since last
+call as well.
 
 Critical and Warning thresholds only accept an interval (eg. 1h30m25s)
 and apply on the oldest analyse maintenance.
@@ -1586,7 +1589,8 @@ This service uses the status file (see --status-file parameter) with
 PostgreSQL 9.1+.
 
 Perfdata returns oldest vacuum per database in seconds. With PostgreSQL
-9.1+, it returns the number of [auto]vacuums per database as well.
+9.1+, it returns the number of [auto]vacuums per database since last
+call as well.
 
 Critical and Warning thresholds only accept an interval (eg. 1h30m25s)
 and apply on the oldest vacuum.
@@ -1738,7 +1742,10 @@ sub check_locks {
 
 Check the percentage of pages written by backends since last check.
 
-Perfdata contains pg_stat_bgwriter counters.
+This service uses the status file (see --status-file parameter).
+
+Perfdata contains differentials of pg_stat_bgwriter counters since last
+call.
 
 Critical and Warning thresholds are optionnal. If set, they only accept a
 percentage.
