@@ -280,7 +280,13 @@ my $orig_name = $0;
 $0 = $PROGRAM;
 
 # Die on kill -1, -2, -3 or -15
-$SIG{'HUP'} = $SIG{'INT'} = $SIG{'QUIT'} = $SIG{'TERM'} = 'terminate';
+$SIG{'HUP'} = $SIG{'INT'} = $SIG{'QUIT'} = $SIG{'TERM'} = \&terminate;
+
+# handle SIG
+sub terminate() {
+    my ($signal) = @_;
+    die ("SIG $signal caught");
+}
 
 # print the version and exit
 sub version() {
