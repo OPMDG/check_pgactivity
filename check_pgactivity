@@ -1289,8 +1289,8 @@ sub check_wal_files {
                 current_setting('checkpoint_segments')::float4 *
                 ( 2 + current_setting('checkpoint_completion_target')::float4 )
                ) AS max_wal1,
-               1 + current_setting('wal_keep_segments')::float4 + 
-                  current_setting('checkpoint_segments')::float4 AS max_wal2     
+               1 + current_setting('wal_keep_segments')::float4 +
+                  current_setting('checkpoint_segments')::float4 AS max_wal2
               FROM pg_ls_dir('pg_xlog') as file
               WHERE file ~ '^[0-9A-F]{24}$'
               WINDOW w AS (
