@@ -43,7 +43,7 @@ setlocale( LC_ALL, 'C' );
 
 $| = 1;
 
-$VERSION = '1.3';
+$VERSION = '1.4';
 $PROGRAM = 'check_pgactivity';
 
 my $PG_VERSION_MIN = 70400;
@@ -174,6 +174,10 @@ my %services = (
     'is_hot_standby' => {
         'sub'  => \&check_is_hot_standby,
         'desc' => 'Check if cluster is a hot standby.'
+    },
+    'pga_version' => {
+        'sub'  => \&check_pga_version,
+        'desc' => 'Check the version of this check_pgactivity script.'
     }
 );
 
@@ -3606,6 +3610,44 @@ sub check_is_hot_standby {
     return ok( $me, [ "Cluster is hot standby" ] );
 }
 
+=item B<pga_version>
+
+Checks if this script is running the given version of check_pgactivity.
+You must provide the expected version using either C<--warning> OR
+C<--critical>.
+
+No perfdata are returned.
+=cut
+
+sub check_pga_version {
+    my @rs;
+    my @hosts;
+    my %args = %{ $_[0] };
+    my $me   = 'PGACTIVITY_VERSION';
+
+    pod2usage(
+        -message => 'FATAL: you must provide a warning or a critical threshold for service pga_version!',
+        -exitval => 127
+    ) if (defined $args{'critical'} and defined $args{'warning'})
+        or (not defined $args{'critical'} and not defined $args{'warning'});
+
+    pod2usage(
+        -message => "FATAL: given threshold does not look like a check_pgactivity version!",
+        -exitval => 127
+    ) if ( defined $args{'critical'} and $args{'critical'} !~ m/^\d\.\d+$/ )
+        or (defined $args{'warning'} and $args{'warning'} !~ m/^\d\.\d+$/ );
+
+    return critical( $me,
+        [ "check_pgactivity version $VERSION (should be $args{'critical'}!)" ]
+    ) if defined $args{'critical'} and $VERSION != $args{'critical'};
+
+    return warning( $me,
+        [ "check_pgactivity version $VERSION (should be $args{'warning'}!)" ]
+    ) if defined $args{'warning'} and $VERSION != $args{'warning'};
+
+    return ok( $me, [ "check_pgactivity version $VERSION" ] );
+}
+
 
 # End of SERVICE section in pod doc
 =pod
@@ -3673,12 +3715,14 @@ pod2usage(
 ) unless exists $services{ $args{'service'} };
 
 
-# Both critical and warning must be given is optionnal
+# Both critical and warning must be given is optionnal,
+# but for pga_version which use only one of them.
 pod2usage(
     -message => 'FATAL: you must provide both warning and critical thresholds.',
     -exitval => 127
-) if ( ( defined $args{'critical'} and !defined $args{'warning'} ) or ( !defined $args{'critical'} and defined $args{'warning'} ) );
-
+) if $args{'service'} ne 'pga_version' and (
+    ( defined $args{'critical'} and not defined $args{'warning'} )
+    or ( not defined $args{'critical'} and defined $args{'warning'} ));
 
 # query, type and reverse are only allowed with "custom_query" service
 pod2usage(
