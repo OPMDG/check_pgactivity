@@ -37,12 +37,13 @@ use Storable qw(store retrieve);
 use Pod::Usage;
 use File::Basename;
 use File::Temp qw(tempfile);
+use Scalar::Util qw(looks_like_number);
 
 setlocale( LC_ALL, 'C' );
 
 $| = 1;
 
-$VERSION = '1.2';
+$VERSION = '1.3';
 $PROGRAM = 'check_pgactivity';
 
 my $PG_VERSION_MIN = 70400;
@@ -3050,7 +3051,7 @@ sub check_custom_query {
         $w_limit = get_time( $args{'warning'} );
         $c_limit = get_time( $args{'critical'} );
     }
-    else {
+    elsif (defined $args{'warning'} ) {
         pod2usage(
             -message => 'FATAL: given critical and/or warning are not numeric. Please, set "--type" parameter if needed.',
             -exitval => 127
@@ -3062,8 +3063,13 @@ sub check_custom_query {
 
     @rs = @{ query( $hosts[0], $sql ) };
 
+    pod2usage(
+        -message => 'FATAL: First column of your query is not numeric!',
+        -exitval => 127
+    ) unless looks_like_number($rs[0][0]);
+
     DB_LOOP: foreach my $rec ( @rs ) {
-        $bounded = $rec->[0] if !defined $bounded;
+        $bounded = $rec->[0] unless $bounded;
 
         $bounded = $rec->[0] if ( !$reverse and $rec->[0] > $bounded )
             or ( $reverse and $rec->[0] < $bounded );
