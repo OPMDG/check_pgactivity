@@ -32,11 +32,11 @@ use File::Basename 'dirname';
 use Getopt::Long qw(:config bundling no_ignore_case_always);
 use List::Util qw(max);
 use POSIX qw(locale_h sys_wait_h);
-use IPC::Open3;
 use Data::Dumper;
 use Storable qw(store retrieve);
 use Pod::Usage;
 use File::Basename;
+use File::Temp qw(tempfile);
 
 setlocale( LC_ALL, 'C' );
 
@@ -665,18 +665,13 @@ sub parse_hosts(\%) {
 sub query($$;$) {
     my $host  = shift;
     my $query = shift;
-    my $db    = shift || $host->{'db'};
-    my $rnum  = 0;
+    my $db    = shift;
     my @res   = ();
-    my @psqlopts = (
-        $args{'psql'},
-        '-qXAtf', '-',
-        '-R', chr(30), # ASCII RS  (record separator)
-        '-F', chr(3)   # ASCII ETX (end of text)
-    );
-    my $res;
-    my @err;
-    my $pid;
+    my $res   = '';
+    my $RS    = chr(30); # ASCII RS  (record separator)
+    my $FS    = chr(3);  # ASCII ETX (end of text)
+    my $tmpfile;
+    my $psqlcmd;
     my $rc;
 
     local $/ = undef;
@@ -688,13 +683,7 @@ sub query($$;$) {
     delete $ENV{PGUSER};
     delete $ENV{PGOPTIONS};
 
-    if (defined $db) {
-        $ENV{PGDATABASE} = $db;
-    }
-    elsif (defined $host->{'db'}) {
-        $ENV{PGDATABASE} = $host->{'db'};
-    }
-
+    $ENV{PGDATABASE} = $host->{'db'}        if defined $host->{'db'};
     $ENV{PGSERVICE}  = $host->{'dbservice'} if defined $host->{'dbservice'};
     $ENV{PGHOST}     = $host->{'host'}      if defined $host->{'host'};
     $ENV{PGPORT}     = $host->{'port'}      if defined $host->{'port'};
@@ -708,32 +697,24 @@ sub query($$;$) {
     dprint ("Env. user   : $ENV{PGUSER}    \n") if defined $host->{'user'};
     dprint ("Env. db     : $ENV{PGDATABASE}\n") if defined $host->{'db'};
 
-    $pid = open3( *PSQLIN, *PSQLOUT, *PSQLERR, @psqlopts);
-    binmode PSQLOUT;
+    $tmpfile = File::Temp->new( TEMPLATE => 'check_pga-XXXXXXXX' );
+    # Always add a comma to make sure psql doesn't wait for the rest of
+    # the query string.
+    print $tmpfile "$query;";
 
-    print PSQLIN $query;
-
-    close PSQLIN;
-
-    waitpid( $pid, 0 );
-
-    $rc = $? >> 8;
-
-    @err = <PSQLERR>;
+    $psqlcmd  = qq{ $args{'psql'} --set "ON_ERROR_STOP=1" }
+              . qq{ -qXAtf $tmpfile -R $RS -F $FS };
+    $psqlcmd .= qq{ dbname='$db' } if defined $db;
+    $res      = qx{ $psqlcmd 2>&1 };
+    $rc       = $?;
 
     dprint("Query rc: $rc\n");
-    dprint( sprintf( "  # stderr: %u\n", scalar(@err) ) );
+    dprint( sprintf( "  stderr (%u): «%s»\n", length $res, $res ) )
+        if $rc;
 
-    unless ( $rc == 0 and scalar(@err) == 0 ) {
-        exit unknown('CHECK_PGACTIVITY',
-            [ "Query fail !\n" . join(" ", @err) ]
-        );
-    }
-
-    close PSQLERR;
-
-    $res = <PSQLOUT>;
-    close PSQLOUT;
+    exit unknown('CHECK_PGACTIVITY',
+        [ "Query fail !\n" . $res ]
+    ) unless $rc == 0;
 
     if (defined $res) {
         chop $res;
