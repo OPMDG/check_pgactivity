@@ -2056,17 +2056,30 @@ Check if the cluster is running the latest minor version of PostgreSQL.
 Latest version of PostgreSQL can be fetch from PostgreSQL official
 website if check_pgactivity can access it or given as a parameter.
 
-To fetch the latest version online, you can optionnaly set the path to
+Without C<--critical> or C<--warning> parameters, this service attempt
+to fetch the latest version online. You can optionnaly set the path to
 your prefered program using the parameter "--path" (eg.
  --path '/usr/bin/wget'). Supported programs are: GET, wget, curl,
- fetch, lynx, links, links2.
+fetch, lynx, links, links2.
+
+The online version, rise a critical alert if the minor version is not
+the latest.
 
 If you do not want to (or can not) query the PostgreSQL website, you
 must provide the expected version using either C<--warning> OR
-C<--critical>.
+C<--critical>. The given format must be one or more MINOR version
+seperated by anything but a '.'. Eg. the following parameters are all
+equivalent:
 
-With online version, rise a critical alert if the minor version is not
-the latest.
+  --critical "9.3.2 9.2.6 9.1.11 9.0.15 8.4.19"
+  --critical "9.3.2, 9.2.6, 9.1.11, 9.0.15, 8.4.19"
+  --critical 9.3.2,9.2.6,9.1.11,9.0.15,8.4.19
+  --critical 9.3.2/9.2.6/9.1.11/9.0.15/8.4.19
+
+Anything other than a 3 numbered dot-separated version will be ignored.
+if the running PostgreSQL major version is not found, the service rises an
+unknown status.
+
 Using the offline version rises either a critical or a warning depending
 on which one has been set.
 
@@ -2137,7 +2150,7 @@ sub check_minor_version {
             unless $rss;
 
         $latest_versions{"$1.$2"} = [$1 * 10000 + $2 * 100 + $3, "$1.$2.$3"]
-            while $rss =~ /<title>(\d+)\.(\d+)\.(\d+)/g;
+            while $rss =~ m/<title>(\d+)\.(\d+)\.(\d+)/g;
     }
     else {
         pod2usage(
@@ -2149,12 +2162,9 @@ sub check_minor_version {
             $args{'critical'}
             : $args{'warning'};
 
-        pod2usage(
-            -message => "FATAL: given version does not look like a PostgreSQL minor version!",
-            -exitval => 127
-        ) unless $given_version =~ m/^(\d+)\.(\d+)\.(\d+)$/;
-
-        $latest_versions{"$1.$2"} = [$1 * 10000 + $2 * 100 + $3, "$1.$2.$3"];
+        while ( $given_version =~ m/(\d+)\.(\d+)\.(\d+)/g ) {
+            $latest_versions{"$1.$2"} = [$1 * 10000 + $2 * 100 + $3, "$1.$2.$3"];
+        }
     }
 
     $hosts[0]{'version'} =~ '^(\d+\.\d+).*$';
