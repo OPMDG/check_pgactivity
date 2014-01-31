@@ -904,9 +904,13 @@ sub check_backends {
     my %args         = %{ $_[0] };
     my $me           = 'POSTGRES_BACKENDS';
     my $num_backends = 0;
-    my $sql          = q{SELECT datname, numbackends,
-        current_setting('max_connections')
-        FROM pg_stat_database};
+    my $sql          = q{
+        SELECT s.datname, s.numbackends,
+            current_setting('max_connections')
+        FROM pg_stat_database AS s
+            JOIN pg_database d ON d.oid=s.datid
+        WHERE d.datallowconn
+    };
 
     # warning and critical are mandatory.
     pod2usage(
@@ -1004,67 +1008,75 @@ sub check_backends_status {
         # doesn't support "idle in transaction (aborted)" and xact age
         $PG_VERSION_82 => q{
             SELECT CASE
-                    WHEN current_query = '<IDLE>'
+                    WHEN s.current_query = '<IDLE>'
                         THEN 'idle'
-                    WHEN current_query = '<IDLE> in transaction'
+                    WHEN s.current_query = '<IDLE> in transaction'
                         THEN 'idle in transaction'
-                    WHEN current_query = '<FASTPATH> function call'
+                    WHEN s.current_query = '<FASTPATH> function call'
                         THEN 'fastpath function call'
-                    WHEN waiting = 't'
+                    WHEN s.waiting = 't'
                         THEN 'waiting for lock'
                     ELSE 'active'
                 END AS status,
-                NULL, current_query, current_setting('max_connections')
-            FROM pg_stat_activity
+                NULL, s.current_query, current_setting('max_connections')
+            FROM pg_stat_activity AS s
+                JOIN pg_database d ON d.oid=s.datid
+            WHERE d.datallowconn
         },
         # doesn't support "idle in transaction (aborted)"
         $PG_VERSION_83 => q{
             SELECT CASE
-                    WHEN current_query = '<IDLE>'
+                    WHEN s.current_query = '<IDLE>'
                         THEN 'idle'
-                    WHEN current_query = '<IDLE> in transaction'
+                    WHEN s.current_query = '<IDLE> in transaction'
                         THEN 'idle in transaction'
-                    WHEN current_query = '<FASTPATH> function call'
+                    WHEN s.current_query = '<FASTPATH> function call'
                         THEN 'fastpath function call'
-                    WHEN waiting = 't'
+                    WHEN s.waiting = 't'
                         THEN 'waiting for lock'
                     ELSE 'active'
                 END AS status,
                 extract('epoch' FROM
-                    date_trunc('milliseconds', current_timestamp-xact_start)
+                    date_trunc('milliseconds', current_timestamp-s.xact_start)
                 ),
-                current_query, current_setting('max_connections')
-            FROM pg_stat_activity
+                s.current_query, current_setting('max_connections')
+            FROM pg_stat_activity AS s
+                JOIN pg_database d ON d.oid=s.datid
+            WHERE d.datallowconn
         },
         # support everything
         $PG_VERSION_90 => q{
             SELECT CASE
-                    WHEN current_query = '<IDLE>'
+                    WHEN s.current_query = '<IDLE>'
                         THEN 'idle'
-                    WHEN current_query = '<IDLE> in transaction'
+                    WHEN s.current_query = '<IDLE> in transaction'
                         THEN 'idle in transaction'
-                    WHEN current_query = '<IDLE> in transaction (aborted)'
+                    WHEN s.current_query = '<IDLE> in transaction (aborted)'
                         THEN 'idle in transaction (aborted)'
-                    WHEN current_query = '<FASTPATH> function call'
+                    WHEN s.current_query = '<FASTPATH> function call'
                         THEN 'fastpath function call'
-                    WHEN waiting = 't'
+                    WHEN s.waiting = 't'
                         THEN 'waiting for lock'
                     ELSE 'active'
                 END,
                 extract('epoch' FROM
-                    date_trunc('milliseconds', current_timestamp-xact_start)
+                    date_trunc('milliseconds', current_timestamp-s.xact_start)
                 ),
-                current_query, current_setting('max_connections')
-            FROM pg_stat_activity
+                s.current_query, current_setting('max_connections')
+            FROM pg_stat_activity AS s
+                JOIN pg_database d ON d.oid=s.datid
+            WHERE d.datallowconn
         },
         # pg_stat_activity schema change
         $PG_VERSION_92 => q{
-            SELECT state,
+            SELECT s.state,
                 extract('epoch' FROM
-                    date_trunc('milliseconds', current_timestamp-xact_start)
+                    date_trunc('milliseconds', current_timestamp-s.xact_start)
                 ),
-                query, current_setting('max_connections')
-            FROM pg_stat_activity
+                s.query, current_setting('max_connections')
+            FROM pg_stat_activity AS s
+                JOIN pg_database d ON d.oid=s.datid
+            WHERE d.datallowconn
         }
     );
 
@@ -2659,7 +2671,9 @@ sub check_oldest_2pc {
             owner, d.datname
         FROM pg_database AS d
         LEFT JOIN pg_prepared_xacts AS x
-            ON d.datname=x.database};
+            ON d.datname=x.database
+        WHERE d.datallowconn
+    };
 
 
     # warning and critical are mandatory.
@@ -2898,8 +2912,9 @@ sub check_longest_query {
                     ) AS elapsed
                 FROM pg_stat_activity
                 WHERE current_query <> '<IDLE>'
-            ) AS s ON (d.datname=s.datname)},
-
+            ) AS s ON (d.datname=s.datname)
+            WHERE d.datallowconn
+        },
         $PG_VERSION_92 => q{SELECT d.datname,
                 COALESCE(elapsed, 0),
                 COALESCE(query, '')
@@ -2911,7 +2926,9 @@ sub check_longest_query {
                     ) AS elapsed
                 FROM pg_stat_activity
                 WHERE state = 'active'
-            ) AS s ON (d.datname=s.datname)}
+            ) AS s ON (d.datname=s.datname)
+            WHERE d.datallowconn
+        }
     );
 
     # warning and critical are mandatory.
