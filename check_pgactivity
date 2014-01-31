@@ -28,16 +28,14 @@ use strict;
 use warnings;
 
 use POSIX;
-use File::Basename 'dirname';
-use Getopt::Long qw(:config bundling no_ignore_case_always);
-use List::Util qw(max);
-use POSIX qw(locale_h sys_wait_h);
 use Data::Dumper;
-use Storable qw(store retrieve);
-use Pod::Usage;
 use File::Basename;
 use File::Temp qw(tempfile);
+use Getopt::Long qw(:config bundling no_ignore_case_always);
+use List::Util qw(max);
+use Pod::Usage;
 use Scalar::Util qw(looks_like_number);
+use Storable qw(store retrieve);
 
 setlocale( LC_ALL, 'C' );
 
