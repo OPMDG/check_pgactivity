@@ -3685,7 +3685,7 @@ sub check_pga_version {
 
     return warning( $me,
         [ "check_pgactivity version $VERSION (should be $args{'warning'}!)" ]
-    ) if defined $args{'critical'} and $VERSION != $args{'warning'};
+    ) if defined $args{'warning'} and $VERSION != $args{'warning'};
 
     return ok( $me, [ "check_pgactivity version $VERSION" ] );
 }
