@@ -768,14 +768,13 @@ sub get_all_dbname($) {
     my @dbs;
 
     push @dbs => $_->[0] foreach (
-        @{  query(
-                shift, q{
-            SELECT datname
-            FROM pg_database
-            WHERE NOT datistemplate
-                AND datname <> 'postgres'
-        }
-            )
+        @{  query( shift, q{
+                SELECT datname
+                FROM pg_database
+                WHERE NOT datistemplate
+                    AND datname <> 'postgres'
+                ORDER BY 1
+            })
         }
     );
 
