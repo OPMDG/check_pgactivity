@@ -30,7 +30,8 @@ use warnings;
 use POSIX;
 use Data::Dumper;
 use File::Basename;
-use File::Temp qw(tempfile);
+use File::Spec;
+use File::Temp;
 use Getopt::Long qw(:config bundling no_ignore_case_always);
 use List::Util qw(max);
 use Pod::Usage;
@@ -41,7 +42,7 @@ setlocale( LC_ALL, 'C' );
 
 $| = 1;
 
-$VERSION = '1.5';
+$VERSION = '1.6';
 $PROGRAM = 'check_pgactivity';
 
 my $PG_VERSION_MIN = 70400;
@@ -215,6 +216,11 @@ The warning threshold.
 
 The critical threshold.
 
+=item B<--tmpdir> DIRECTORY
+
+Path to a directory where the script can create temporary files. The
+script rely on system default temporary directory if possible.
+
 =item B<-P>, B<--psql> FILE
 
 Path to the C<psql> executable (default: "psql").
@@ -254,6 +260,7 @@ my %args = (
     'warning'               => undef,
     'critical'              => undef,
     'exclude'               => [],
+    'tmpdir'                => File::Spec->tmpdir(),
     'psql'                  => undef,
     'path'                  => undef,
     'status-file'           => dirname(__FILE__) . '/check_pgactivity.data',
@@ -700,7 +707,10 @@ sub query($$;$) {
     dprint ("Env. user   : $ENV{PGUSER}    \n") if defined $host->{'user'};
     dprint ("Env. db     : $ENV{PGDATABASE}\n") if defined $host->{'db'};
 
-    $tmpfile = File::Temp->new( TEMPLATE => 'check_pga-XXXXXXXX' );
+    $tmpfile = File::Temp->new(
+        TEMPLATE => 'check_pga-XXXXXXXX',
+        DIR      => $args{'tmpdir'}
+    );
     # Always add a comma to make sure psql doesn't wait for the rest of
     # the query string.
     print $tmpfile "$query;";
@@ -3724,6 +3734,7 @@ GetOptions(
         'warning|w=s',
         'critical|c=s',
         'exclude=s',
+        'tmpdir=s',
         'psql|P=s',
         'path=s',
         'status-file=s',
@@ -3770,6 +3781,12 @@ pod2usage(
     -exitval => 127
 ) unless exists $services{ $args{'service'} };
 
+
+# Check we have write permission to the tempdir
+pod2usage(
+    -message => 'FATAL: temp directory given or found not writable.',
+    -exitval => 127
+) if not -d $args{'tmpdir'} or not -x $args{'tmpdir'};
 
 # Both critical and warning must be given is optionnal,
 # but for pga_version and minor_version which use only one of them.
