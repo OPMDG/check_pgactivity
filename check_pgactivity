@@ -3265,9 +3265,11 @@ DB_LOOP:    foreach my $setting (@rc) {
 
 Check the table and index bloat.
 
-Warning and critical thresholds accept either a raw number, a percentage or a
-size (eg. 125M). If a percentage is given, the threshold will be applied on
-each table or index.
+Warning and critical thresholds accept a comma separated list of either
+raw number, percentage or size (eg. 125M). If a percentage is given, the
+threshold will be applied on each table or index. If multiple threshold values
+are passed, the biggest one for each object will be used.
+The thresholds stand for bloat size, not object size.
 
 This service supports argument C<--exclude REGEX> to exclude relation matching
 the given regexp from the check. The regexps apply on
@@ -3328,7 +3330,7 @@ sub check_bloat {
           CASE WHEN relpages <= otta THEN 0 ELSE bs*(relpages-otta)::bigint+bs*((toastpages)-(toasttuples/4))::bigint END AS wastedbytes,
           bs*(relpages+toastpages)::bigint AS totalbytes
         FROM (
-          SELECT ref.relkind, tbl.oid as o1,ind.oid as o2,
+          SELECT ref.relkind, tbl.oid AS o1,ind.oid AS o2,
             CASE WHEN ref.relkind = 'r' THEN tbl.nspname ELSE ni.nspname END AS schemaname,
             CASE WHEN ref.relkind = 'r' THEN tbl.relname ELSE ind.relname END AS relname,
             CASE WHEN ref.relkind = 'r' THEN tbl.reltuples ELSE ind.reltuples END AS reltuples,
@@ -3373,7 +3375,7 @@ sub check_bloat {
                   AND s.attname=att.attname,
                   (
                     SELECT
-                      $BLOCK_SIZE as bs,
+                      $BLOCK_SIZE AS bs,
                         CASE WHEN SUBSTRING(SPLIT_PART(v, ' ', 2) FROM '#"[0-9]+#"%' for '#')::integer > 7
                           THEN 27 ELSE 23 END AS hdr,
                       CASE WHEN v ~ 'mingw32' OR v ~ '64-bit' THEN 8 ELSE 4 END AS ma
@@ -3387,7 +3389,7 @@ sub check_bloat {
               LEFT JOIN pg_class t ON cc.reltoastrelid = t.oid
               WHERE cc.relkind = 'r' -- only tables, will therefore exlclude toast tables
         ) AS tbl
-          CROSS JOIN (SELECT 'r' as relkind UNION SELECT 'i') as ref
+          CROSS JOIN (SELECT 'r' as relkind UNION SELECT 'i') AS ref
           LEFT JOIN pg_index i ON indrelid = tbl.oid
           LEFT JOIN pg_class ind ON ind.oid = i.indexrelid AND ref.relkind = ind.relkind AND ind.relkind = 'i'
           LEFT JOIN pg_namespace ni ON ind.relnamespace = ni.oid
@@ -3395,7 +3397,7 @@ sub check_bloat {
         WHERE NOT (ref.relkind = 'i' AND ind.oid IS NULL) -- handle tables without index
         ) AS sql
         WHERE ROUND(CASE WHEN otta=0 OR relpages=0 OR relpages=otta THEN 0.0 ELSE relpages/otta::numeric END,1) > 1.0
-        order by 4 desc
+        ORDER BY 6 DESC
     };
 
     # Iterate over all db
@@ -3422,9 +3424,19 @@ sub check_bloat {
                 next BLOAT_LOOP if "$bloat->[2].$bloat->[3]" =~ m/$exclude_re/;
             }
 
-            # We need to calculate threshold on each object, has the value can be given in percetage
-            $w_limit = get_size( $args{'warning'}, $bloat->[6] );
-            $c_limit = get_size( $args{'critical'}, $bloat->[6] );
+            $w_limit = 0;
+            $c_limit = 0;
+            # We need to calculate effective thresholds on each object,
+            # as the value can be given in percentage
+            # The biggest calculated size will be used.
+            foreach my $cur_warning (split /,/, $args{'warning'}) {
+                my $size = get_size( $cur_warning, $bloat->[6] );
+                $w_limit = $size if $size > $w_limit;
+            }
+            foreach my $cur_critical (split /,/, $args{'critical'}) {
+                my $size = get_size( $cur_critical, $bloat->[6] );
+                $c_limit = $size if $size > $c_limit;
+            }
 
             $w_t_count++ if ($bloat->[1] eq 'r' and $bloat->[5] > $w_limit );
             $w_i_count++ if ($bloat->[1] eq 'i' and $bloat->[5] > $w_limit );
