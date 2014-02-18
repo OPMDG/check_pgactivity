@@ -2413,7 +2413,7 @@ sub check_streaming_delta {
     @hosts = @{ parse_hosts %args };
 
     pod2usage(
-        -message => 'FATAL: you must give two or more hosts with service "streaming_delta".',
+        -message => 'FATAL: you must give only one host with service "streaming_delta".',
         -exitval => 127
     ) if @hosts != 1;
 
@@ -2463,10 +2463,11 @@ sub check_streaming_delta {
         $host->[6] =~ m{^([0-9A-F]+)/([0-9A-F]+)$};
         $replay_delta = $master_location - (hex('ff000000') * hex($1)) - hex($2);
 
-        $name = "application_name=$host->[0] host=$host->[1] pid=$host->[2]";
+        $name = "$host->[0]\@$host->[1]";
 
         push @perfdata => "'flushed delta $name'=${flush_delta}B ".
-            "'replay delta $name'=${replay_delta}B";
+            "'replay delta $name'=${replay_delta}B ".
+            "'pid $name'=$host->[2]";
 
         $num_clusters++;
 
