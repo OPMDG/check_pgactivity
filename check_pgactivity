@@ -10,7 +10,7 @@ check_pgactivity - PostgreSQL plugins for Nagios
 
 =head1 SYNOPSIS
 
-  check_pgactivity {-w|--warning THRESHOLD} {-c|--critical THRESHOLD} [-s|--service SERVICE ] [-h|--host HOST] [-U|--username ROLE] [-p|--port PORT] [-d|--dbname DATABASE] [-S|--dbservice SERVICE_NAME] [-P|--psql PATH] [--debug] [--status-file FILE] [--path PATH]
+  check_pgactivity {-w|--warning THRESHOLD} {-c|--critical THRESHOLD} [-s|--service SERVICE ] [-h|--host HOST] [-U|--username ROLE] [-p|--port PORT] [-d|--dbname DATABASE] [-S|--dbservice SERVICE_NAME] [-P|--psql PATH] [--debug] [--status-file FILE] [--path PATH] [-t|--timemout TIMEOUT]
   check_pgactivity [--list]
   check_pgactivity [--help]
 
@@ -230,6 +230,12 @@ Path to the C<psql> executable (default: "psql").
 PATH to the file where service status information will be kept between two
 call. Default to check_pgactivity.data in the same directory of the script.
 
+=item B<-t>, B<--timeout> TIMEOUT
+
+Timeout to use (default: "30s"). It can be specified as raw (in second) or as
+an interval. This timeout will be used as statement_timeout for psql and URL
+timeout for minor_version service.
+
 =item B<--list>
 
 List available services.
@@ -282,7 +288,8 @@ my %args = (
     'slave'                 => [],
     'list'                  => 0,
     'help'                  => 0,
-    'debug'                 => 0
+    'debug'                 => 0,
+    'timeout'               => '30s',
 );
 
 # Set name of the program without path*
@@ -698,7 +705,7 @@ sub query($$;$) {
     $ENV{PGHOST}     = $host->{'host'}      if defined $host->{'host'};
     $ENV{PGPORT}     = $host->{'port'}      if defined $host->{'port'};
     $ENV{PGUSER}     = $host->{'user'}      if defined $host->{'user'};
-    $ENV{PGOPTIONS}  = '-c client_min_messages=error';
+    $ENV{PGOPTIONS}  = '-c client_min_messages=error -c statement_timeout=' . get_time($args{'timeout'}) * 1000;
 
     dprint ("Query: $query\n");
     dprint ("Env. service: $ENV{PGSERVICE} \n") if defined $host->{'dbservice'};
@@ -2115,7 +2122,7 @@ sub check_minor_version {
     my $major_version;
     my %args    = %{ $_[0] };
     my $me      = 'POSTGRES_MINOR_VERSION';
-    my $timeout = 30;
+    my $timeout = get_time($args{'timeout'});
     my $url     = 'http://www.postgresql.org/versions.rss';
 
     @hosts = @{ parse_hosts %args };
@@ -3770,7 +3777,8 @@ GetOptions(
         'list!',
         'version|V!',
         'help|?!',
-        'debug!'
+        'debug!',
+        'timeout|t=s'
 ) or pod2usage( -exitval => 127 );
 
 list_services() if $args{'list'};
