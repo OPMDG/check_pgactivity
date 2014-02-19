@@ -2201,7 +2201,7 @@ sub check_minor_version {
         return unknown( $me, \@msg );
     }
 
-    push @perfdata => "version=". $hosts[0]{'version_num'};
+    push @perfdata => "version=". $hosts[0]{'version_num'} . "PGNUMVER";
 
     if ( $hosts[0]{'version_num'} != $latest_versions{$major_version}[0] ) {
         push @msg => "PostgreSQL version ". $hosts[0]{'version'}
