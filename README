@@ -1,0 +1,7 @@
+Open PostgreSQL Monitoring
+==========================
+
+This directory contains the source code of check_pgactivity, part of Open
+PostgreSQL Monitoring.
+
+Copyright and license information can be found in the file LICENSE.
