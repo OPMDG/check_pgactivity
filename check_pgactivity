@@ -1112,7 +1112,7 @@ sub check_backends_status {
         # warning and critical must be raw
         pod2usage(
             -message => "FATAL: critical and warning thresholds only accept a list of 'label=value' separated by comma.\n"
-                ."See documentation for more information."
+                . "See documentation for more information.",
             -exitval => 127
         ) unless $args{'warning'} =~ m/^$threshods_re(\s*,\s*$threshods_re)*$/
             and $args{'critical'} =~ m/^$threshods_re(\s*,\s*$threshods_re)*$/ ;
