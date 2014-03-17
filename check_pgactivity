@@ -992,7 +992,7 @@ list are forbidden. Here is an example:
     -w 'waiting=5,idle_xact=10' -c 'waiting=20,idle_xact=30'
 
 Perfdata contains the number of backends for each status and the oldest one for
-each of them for 9.2+.
+each of them for 8.2+.
 
 Note that the number of backend reported as Nagios message B<includes>
 excluded backend.
