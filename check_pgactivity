@@ -724,7 +724,7 @@ sub query($$;$) {
 
     $psqlcmd  = qq{ $args{'psql'} --set "ON_ERROR_STOP=1" }
               . qq{ -qXAtf $tmpfile -R $RS -F $FS };
-    $psqlcmd .= qq{ dbname='$db' } if defined $db;
+    $psqlcmd .= qq{ --dbname='$db' } if defined $db;
     $res      = qx{ $psqlcmd 2>&1 };
     $rc       = $?;
 
