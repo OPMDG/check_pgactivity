@@ -177,6 +177,10 @@ my %services = (
     'pga_version' => {
         'sub'  => \&check_pga_version,
         'desc' => 'Check the version of this check_pgactivity script.'
+    },
+    'is_replay_paused' => {
+        'sub'  => \&check_is_replay_paused,
+        'desc' => 'Check if the replication is paused.'
     }
 );
 
@@ -3733,6 +3737,80 @@ sub check_pga_version {
     ) if defined $args{'warning'} and $VERSION != $args{'warning'};
 
     return ok( $me, [ "check_pgactivity version $VERSION" ] );
+}
+
+=item B<is_replay_paused> (9.1+)
+
+Checks if the replication is paused. The service will return UNKNOWN if called
+on a master server.
+
+Thresholds are optionnals. They must be specified in interval. However, OK will
+always be returned if the standby is not paused, even if replication delta
+time hits the thresholds.
+
+Perfdata returned are :
+  * paused status (0 no, 1 yes,NaN if master)
+  * lag time (in second)
+
+=cut
+
+sub check_is_replay_paused {
+    my @perfdata;
+    my @rs;
+    my $w_limit = -1;
+    my $c_limit = -1;
+    my @hosts;
+    my %args            = %{ $_[0] };
+    my $me              = 'POSTGRES_REPLICATION_PAUSED';
+    my %queries         = (
+        IS_SLAVE => "SELECT pg_is_in_recovery()::int",
+        LAG    => "SELECT
+            pg_is_xlog_replay_paused()::int,
+            extract('epoch' FROM now()-pg_last_xact_replay_timestamp())::int
+            "
+    );
+
+    if ( defined $args{'warning'} and defined $args{'critical'} ) {
+        # warning and critical must be interval if provided.
+        pod2usage(
+            -message => "FATAL: critical and warning thresholds only accept interval.",
+            -exitval => 127
+        ) unless ( is_time( $args{'warning'} ) and  is_time( $args{'critical'} ) );
+
+        $c_limit = get_time $args{'critical'};
+        $w_limit = get_time $args{'warning'};
+    }
+
+    @hosts = @{ parse_hosts %args };
+
+    pod2usage(
+        -message => 'FATAL: you must give only one host with service "backends".',
+        -exitval => 127
+    ) if @hosts != 1;
+
+    is_compat $hosts[0], "is_replay_paused", $PG_VERSION_91 or exit 1;
+
+    # Check if the server is a (hot) standby
+    @rs = @{ query( $hosts[0], $queries{'IS_SLAVE'} )->[0] };
+
+    return unknown ( $me, [ "Server is not standby." ], [ "is_paused=NaN","lag_time=NaNs" ] ) if not $rs[0];
+
+    @rs = @{ query( $hosts[0], $queries{'LAG'} )->[0] };
+
+    push @perfdata, "is_paused=". $rs[0];
+    push @perfdata, "lag_time=". $rs[1] . "s";
+
+    # Always return ok if replay is not paused
+    return ok( $me, [ ' replay is not paused' ], \@perfdata ) if not $rs[0];
+
+    # Do we have thresholds ?
+    if ( $c_limit != -1 ) {
+        return critical( $me, [' replay lag time: ' . to_interval( $rs[1] ) ], \@perfdata ) if $rs[1] > $c_limit;
+        return warning( $me, [' replay lag time: ' . to_interval( $rs[1] ) ], \@perfdata ) if $rs[1] > $w_limit;
+    }
+
+    return ok( $me, [ ' replay is paused.' ], \@perfdata );
+
 }
 
 
