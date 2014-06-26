@@ -3744,31 +3744,46 @@ sub check_pga_version {
 Checks if the replication is paused. The service will return UNKNOWN if called
 on a master server.
 
-Thresholds are optionnals. They must be specified in interval. However, OK will
-always be returned if the standby is not paused, even if replication delta
-time hits the thresholds.
+Thresholds are optionnals. They must be specified as interval. OK will always be returned if
+the standby is not paused, even if replication delta time hits the thresholds.
+
+Critical or warning are raised if last reported replayed timestamp is greater than given
+threshold AND some data received from the master are not applied yet. OK will always be
+returned if the standby is paused, already replayed everything from master and until some
+writes activity happen on the master.
 
 Perfdata returned are :
-  * paused status (0 no, 1 yes,NaN if master)
+  * paused status (0 no, 1 yes, NaN if master)
   * lag time (in second)
+  * data delta with master (0 no, 1 yes)
 
 =cut
 
 sub check_is_replay_paused {
     my @perfdata;
     my @rs;
+    my @hosts;
     my $w_limit = -1;
     my $c_limit = -1;
-    my @hosts;
-    my %args            = %{ $_[0] };
-    my $me              = 'POSTGRES_REPLICATION_PAUSED';
-    my %queries         = (
-        IS_SLAVE => "SELECT pg_is_in_recovery()::int",
-        LAG    => "SELECT
-            pg_is_xlog_replay_paused()::int,
-            extract('epoch' FROM now()-pg_last_xact_replay_timestamp())::int
-            "
-    );
+    my %args    = %{ $_[0] };
+    my $me      = 'POSTGRES_REPLICATION_PAUSED';
+    my $query   = ( q{
+        SELECT pg_is_in_recovery()::int AS is_in_recovery,
+        CASE pg_is_in_recovery()
+            WHEN 't' THEN pg_is_xlog_replay_paused()::int
+            ELSE 0::int
+        END AS is_paused,
+        CASE pg_is_in_recovery()
+            WHEN 't' THEN extract('epoch' FROM now()-pg_last_xact_replay_timestamp())::int
+            ELSE NULL::int
+        END AS lag,
+        CASE
+            WHEN pg_is_in_recovery() AND pg_last_xlog_replay_location() <> pg_last_xlog_receive_location()
+                THEN 1::int
+            WHEN pg_is_in_recovery() THEN 0::int
+            ELSE NULL
+        END AS delta
+    });
 
     if ( defined $args{'warning'} and defined $args{'critical'} ) {
         # warning and critical must be interval if provided.
@@ -3784,29 +3799,30 @@ sub check_is_replay_paused {
     @hosts = @{ parse_hosts %args };
 
     pod2usage(
-        -message => 'FATAL: you must give only one host with service "backends".',
+        -message => 'FATAL: you must give only one host with service "is_replay_paused".',
         -exitval => 127
     ) if @hosts != 1;
 
     is_compat $hosts[0], "is_replay_paused", $PG_VERSION_91 or exit 1;
 
     # Check if the server is a (hot) standby
-    @rs = @{ query( $hosts[0], $queries{'IS_SLAVE'} )->[0] };
+    @rs = @{ query( $hosts[0], $query )->[0] };
 
     return unknown ( $me, [ "Server is not standby." ], [ "is_paused=NaN","lag_time=NaNs" ] ) if not $rs[0];
 
-    @rs = @{ query( $hosts[0], $queries{'LAG'} )->[0] };
-
-    push @perfdata, "is_paused=". $rs[0];
-    push @perfdata, "lag_time=". $rs[1] . "s";
+    push @perfdata, "is_paused=". $rs[1];
+    push @perfdata, "lag_time=". $rs[2] . "s";
+    push @perfdata, "data_delta=". $rs[3];
 
     # Always return ok if replay is not paused
-    return ok( $me, [ ' replay is not paused' ], \@perfdata ) if not $rs[0];
+    return ok( $me, [ ' replay is not paused' ], \@perfdata ) if not $rs[1];
 
     # Do we have thresholds ?
     if ( $c_limit != -1 ) {
-        return critical( $me, [' replay lag time: ' . to_interval( $rs[1] ) ], \@perfdata ) if $rs[1] > $c_limit;
-        return warning( $me, [' replay lag time: ' . to_interval( $rs[1] ) ], \@perfdata ) if $rs[1] > $w_limit;
+        return critical( $me, [' replay lag time: ' . to_interval( $rs[2] ) ], \@perfdata )
+            if $rs[3] and $rs[2] > $c_limit;
+        return warning( $me, [' replay lag time: ' . to_interval( $rs[2] ) ], \@perfdata )
+            if $rs[3] and $rs[2] > $w_limit;
     }
 
     return ok( $me, [ ' replay is paused.' ], \@perfdata );
