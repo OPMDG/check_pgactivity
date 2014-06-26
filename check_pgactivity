@@ -3808,11 +3808,14 @@ sub check_is_replay_paused {
     # Check if the server is a (hot) standby
     @rs = @{ query( $hosts[0], $query )->[0] };
 
-    return unknown ( $me, [ "Server is not standby." ], [ "is_paused=NaN","lag_time=NaNs" ] ) if not $rs[0];
+    return unknown ( $me,
+        [ "Server is not standby." ],
+        [ "is_paused=NaN", "lag_time=NaNs", "has_data_delta=NaNs" ]
+    ) if not $rs[0];
 
     push @perfdata, "is_paused=". $rs[1];
     push @perfdata, "lag_time=". $rs[2] . "s";
-    push @perfdata, "data_delta=". $rs[3];
+    push @perfdata, "has_data_delta=". $rs[3];
 
     # Always return ok if replay is not paused
     return ok( $me, [ ' replay is not paused' ], \@perfdata ) if not $rs[1];
