@@ -42,7 +42,7 @@ setlocale( LC_ALL, 'C' );
 
 $| = 1;
 
-$VERSION = '1.9';
+$VERSION = '1.10';
 $PROGRAM = 'check_pgactivity';
 
 my $PG_VERSION_MIN = 70400;
@@ -161,6 +161,10 @@ my %services = (
     'bloat' => {
         'sub'  => \&check_bloat,
         'desc' => 'Check table and index bloat.'
+    },
+    'btree_bloat' => {
+        'sub'  => \&check_btree_bloat,
+        'desc' => 'Check B-tree index bloat.'
     },
     'max_freeze_age' => {
         'sub'  => \&check_max_freeze_age,
@@ -397,6 +401,29 @@ sub load($$$) {
     return $all->{$hostkey}{$name};
 }
 
+# Returns formated size string with units.
+# Takes a size in bytes as parameter.
+sub to_size($) {
+    my $val  = shift;
+    my @units = qw{B kB MB GB TB PB EB};
+    my $size = '';
+    my $mod = '';
+    my $i;
+
+    return $val if $val =~ /^(-?inf)|(NaN$)/i;
+
+    $val = int($val);
+
+    for ( $i=0; $i < 6 and $val > 1024; $i++ ) {
+        $mod = $val%1024;
+        $val = int( $val/1024 );
+    }
+
+    $mod = ".$mod" if $mod;
+
+    return "${val}${mod}$units[$i]";
+}
+
 # Returns formated time string with units.
 # Takes a duration in seconds as parameter.
 sub to_interval($) {
@@ -454,7 +481,7 @@ one unit per give value. If not set, the last unit is in seconds. Eg.: "1h 55m
 
 =cut
 
-# Takes an interval (with units) as parameter and returns a duration in second.
+
 sub is_time($){
     my $str_time = lc( shift() );
     return 1 if ( $str_time
@@ -462,6 +489,8 @@ sub is_time($){
     );
     return 0;
 }
+
+# Takes an interval (with units) as parameter and returns a duration in second.
 
 sub get_time($) {
     my $str_time = lc( shift() );
@@ -820,7 +849,16 @@ sub set_pgversion($) {
     }
 
     if ( $host->{'version'} =~ /^(\d+)\.(\d+)(.(\d+))?/ ) {
-        $host->{'version_num'} = int($1) * 10000 + int($2) * 100 + int($4);
+        $host->{'version_num'} = int($1) * 10000 + int($2) * 100;
+
+        # alpha/beta version have no minor version number
+        $host->{'version_num'} += int($4) if defined $4;
+
+        dprint(sprintf ("host %s is version %s/%s\n",
+            $host->{'name'},
+            $host->{'version'},
+            $host->{'version_num'})
+        );
 
         return;
     }
@@ -858,28 +896,29 @@ sub dprint {
     }
 }
 
-sub unknown($;$$) {
+sub unknown($;$$$) {
     return output( 3, $_[0], $_[1], $_[2], $_[3] );
 }
 
-sub critical($;$$) {
+sub critical($;$$$) {
     return output( 2, $_[0], $_[1], $_[2], $_[3] );
 }
 
-sub warning($;$$) {
+sub warning($;$$$) {
     return output( 1, $_[0], $_[1], $_[2], $_[3] );
 }
 
-sub ok($;$$) {
+sub ok($;$$$) {
     return output( 0, $_[0], $_[1], $_[2], $_[3] );
 }
 
-sub output ($$;$$) {
+sub output ($$;$$$) {
     my $rc  = shift;
     my $ret = shift;
     my $state;
     my @msg;
     my @perfdata;
+    my @longmsg;
 
     $ret .= " OK"       if $rc == 0;
     $ret .= " WARNING"  if $rc == 1;
@@ -888,9 +927,11 @@ sub output ($$;$$) {
 
     @msg      = @{ $_[0] } if defined $_[0];
     @perfdata = @{ $_[1] } if defined $_[1];
+    @longmsg  = @{ $_[2] } if defined $_[2];
 
     $ret .= ": ".  join( ', ', @msg )     if @msg;
     $ret .= " | ". join( ' ', @perfdata ) if @perfdata;
+    $ret .= "\n". join( ' ', @longmsg ) if @longmsg;
 
     print $ret;
 
@@ -3772,7 +3813,7 @@ sub check_is_replay_paused {
     my $c_limit = -1;
     my %args    = %{ $_[0] };
     my $me      = 'POSTGRES_REPLICATION_PAUSED';
-    my $query   = ( q{
+    my $query   = q{
         SELECT pg_is_in_recovery()::int AS is_in_recovery,
         CASE pg_is_in_recovery()
             WHEN 't' THEN pg_is_xlog_replay_paused()::int
@@ -3788,7 +3829,7 @@ sub check_is_replay_paused {
             WHEN pg_is_in_recovery() THEN 0::int
             ELSE NULL
         END AS delta
-    });
+    };
 
     if ( defined $args{'warning'} and defined $args{'critical'} ) {
         # warning and critical must be interval if provided.
@@ -3810,7 +3851,6 @@ sub check_is_replay_paused {
 
     is_compat $hosts[0], "is_replay_paused", $PG_VERSION_91 or exit 1;
 
-    # Check if the server is a (hot) standby
     @rs = @{ query( $hosts[0], $query )->[0] };
 
     return unknown ( $me,
@@ -3837,6 +3877,241 @@ sub check_is_replay_paused {
 
 }
 
+
+
+=item B<btree_bloat>
+
+Estimate bloat on B-tree indexes.
+
+Warning and critical thresholds accept a comma separated list of either
+raw number(for a size), size (eg. 125M) or percentage. The thresholds stand for
+bloat size, not object size. If a percentage is given, the threshold will apply
+to the bloat size compared to the total index size. If multiple threshold
+values are passed, check_pgactivity will choose the one resulting in the biggest
+bloat size allowed.
+
+This service supports argument C<--exclude REGEX> to exclude relation matching
+the given regexp from the check. The regexps apply on
+"schema_name.relation_name". You can give multiple C<--exclude REGEX>.
+
+With PostgreSQL <8.1, this service requires superuser privileges. With 8.1+,
+with a non-superuser role, only index on table the role is granted to access are
+checked.
+
+Perfdata will give the number of indexes concerned by warning and critical
+threshold per database.
+
+=cut
+
+sub check_btree_bloat {
+    my @perfdata;
+    my @longmsg;
+    my @exclude_re;
+    my @rs;
+    my @hosts;
+    my @all_db;
+    my $total_index; # num of index checked, without excluded ones
+    my $w_count = 0;
+    my $c_count = 0;
+    my %args    = %{ $_[0] };
+    my $me      = 'POSTGRES_BTREE_BLOAT';
+    my %queries = (
+        $PG_VERSION_74 =>  q{
+            SELECT current_database(), nspname AS schemaname, c.relname AS tablename, indexname, bs*(sub.relpages)::bigint AS real_size,
+              bs*otta::bigint as estimated_size,
+              bs*(sub.relpages-otta)::bigint                                     AS bloat_size,
+              bs*(sub.relpages-otta)::bigint * 100 / (bs*(sub.relpages)::bigint) AS bloat_ratio
+            FROM (
+              SELECT bs, nspname, table_oid, indexname, relpages, coalesce(
+                  ceil((reltuples*(4+nulldatahdrwidth))/(bs-pagehdr::float)) + 1, 0 
+                ) AS otta, is_na
+              FROM (
+                SELECT maxalign, bs, nspname, relname AS indexname, reltuples, relpages, relam, table_oid,
+                  ( index_tuple_hdr_bm +
+                      maxalign - CASE 
+                        WHEN index_tuple_hdr_bm%maxalign = 0 THEN maxalign
+                        ELSE index_tuple_hdr_bm%maxalign
+                      END
+                    + nulldatawidth + maxalign - CASE 
+                        WHEN nulldatawidth = 0 THEN 0
+                        WHEN nulldatawidth::integer%maxalign = 0 THEN maxalign
+                        ELSE nulldatawidth::integer%maxalign
+                      END
+                  )::numeric AS nulldatahdrwidth, pagehdr, is_na
+                FROM (
+                  SELECT
+                    i.nspname, i.relname, i.reltuples, i.relpages, i.relam, s.starelid, a.attrelid AS table_oid,
+                    CASE cluster_version.v > 7
+                        WHEN true THEN current_setting('block_size')::numeric
+                        ELSE 8192::numeric
+                    END AS bs,
+                    CASE
+                      WHEN version() ~ 'mingw32' OR version() ~ '64-bit|x86_64|ppc64|ia64|amd64' THEN 8
+                      ELSE 4
+                    END AS maxalign,
+                    CASE WHEN cluster_version.v > 7
+                      THEN 24
+                      ELSE 20
+                    END AS pagehdr,
+                    CASE WHEN max(coalesce(s.stanullfrac,0)) = 0
+                      THEN 2
+                      ELSE  2 + (( 32 + 8 - 1 ) / 8)
+                    END AS index_tuple_hdr_bm,
+                    sum( (1-coalesce(s.stanullfrac, 0)) * coalesce(s.stawidth, 1024) ) AS nulldatawidth,
+                    sum(CASE a.atttypid = 'pg_catalog.name'::regtype WHEN true THEN 1 ELSE 0 END) > 0 AS is_na
+                  FROM pg_attribute AS a
+                    JOIN pg_statistic AS s ON s.starelid=a.attrelid AND s.staattnum = a.attnum
+                    JOIN (
+                      SELECT nspname, relname, reltuples, relpages, indrelid, relam,
+                        string_to_array(pg_catalog.textin(pg_catalog.int2vectorout(indkey)), ' ')::smallint[] AS attnum
+                      FROM pg_index
+                        JOIN pg_class ON pg_class.oid=pg_index.indexrelid
+                        JOIN pg_namespace ON pg_namespace.oid = pg_class.relnamespace
+                    ) AS i ON i.indrelid = a.attrelid AND a.attnum = ANY (i.attnum),
+                    ( SELECT substring(current_setting('server_version') FROM '#"[0-9]+#"%' FOR '#')::integer ) AS cluster_version(v)
+                  WHERE a.attnum > 0
+                  GROUP BY 1, 2, 3, 4, 5, 6, 7, 8, 9, cluster_version.v
+                ) AS s1
+              ) AS s2
+                JOIN pg_am am ON s2.relam = am.oid WHERE am.amname = 'btree'
+            ) as sub
+            JOIN pg_class c ON c.oid=sub.table_oid
+            WHERE NOT is_na},
+        $PG_VERSION_81 =>  q{
+            SELECT current_database(), nspname AS schemaname, c.relname AS tablename, indexname, bs*(sub.relpages)::bigint AS real_size,
+              bs*otta::bigint as estimated_size,
+              bs*(sub.relpages-otta)::bigint                                     AS bloat_size,
+              bs*(sub.relpages-otta)::bigint * 100 / (bs*(sub.relpages)::bigint) AS bloat_ratio
+            FROM (
+              SELECT bs, nspname, table_oid, indexname, relpages, coalesce(
+                  ceil((reltuples*(4+nulldatahdrwidth))/(bs-pagehdr::float)) + 1, 0
+                ) AS otta, is_na
+              FROM (
+                SELECT maxalign, bs, nspname, relname AS indexname, reltuples, relpages, relam, table_oid,
+                  ( index_tuple_hdr_bm +
+                      maxalign - CASE -- Add padding to the index tuple header to align on MAXALIGN
+                        WHEN index_tuple_hdr_bm%maxalign = 0 THEN maxalign
+                        ELSE index_tuple_hdr_bm%maxalign
+                      END
+                    + nulldatawidth + maxalign - CASE -- Add padding to the data to align on MAXALIGN
+                        WHEN nulldatawidth = 0 THEN 0
+                        WHEN nulldatawidth::integer%maxalign = 0 THEN maxalign
+                        ELSE nulldatawidth::integer%maxalign
+                      END
+                  )::numeric AS nulldatahdrwidth, pagehdr, is_na
+                FROM (
+                  SELECT
+                    i.nspname, i.relname, i.reltuples, i.relpages, i.relam, a.attrelid AS table_oid,
+                    CASE cluster_version.v > 7
+                        WHEN true THEN current_setting('block_size')::numeric
+                        ELSE 8192::numeric
+                    END AS bs,
+                    CASE
+                      WHEN version() ~ 'mingw32' OR version() ~ '64-bit|x86_64|ppc64|ia64|amd64' THEN 8
+                      ELSE 4
+                    END AS maxalign,
+                    CASE WHEN cluster_version.v > 7
+                      THEN 24
+                      ELSE 20
+                    END AS pagehdr,
+                    CASE WHEN max(coalesce(s.null_frac,0)) = 0
+                      THEN 2
+                      ELSE  2 + (( 32 + 8 - 1 ) / 8)
+                    END AS index_tuple_hdr_bm,
+                    sum( (1-coalesce(s.null_frac, 0)) * coalesce(s.avg_width, 1024) ) AS nulldatawidth,
+                    bool_or(a.atttypid = 'pg_catalog.name'::regtype) AS is_na
+                  FROM pg_attribute AS a
+                    JOIN pg_stats AS s ON (quote_ident(s.schemaname) || '.' || quote_ident(s.tablename))::regclass=a.attrelid AND s.attname = a.attname
+                    JOIN (
+                      SELECT nspname, relname, reltuples, relpages, indrelid, relam,
+                        string_to_array(pg_catalog.textin(pg_catalog.int2vectorout(indkey)), ' ')::smallint[] AS attnum
+                      FROM pg_index
+                        JOIN pg_class ON pg_class.oid=pg_index.indexrelid
+                        JOIN pg_namespace ON pg_namespace.oid = pg_class.relnamespace
+                    ) AS i ON i.indrelid = a.attrelid AND a.attnum = ANY (i.attnum),
+                    ( SELECT substring(current_setting('server_version') FROM '#"[0-9]+#"%' FOR '#')::integer ) AS cluster_version(v)
+                  WHERE a.attnum > 0
+                  GROUP BY 1, 2, 3, 4, 5, 6, 7, 8, 9, cluster_version.v
+                ) AS s1
+              ) AS s2
+                JOIN pg_am am ON s2.relam = am.oid WHERE am.amname = 'btree'
+            ) as sub
+            JOIN pg_class c ON c.oid=sub.table_oid
+            WHERE NOT is_na}
+    );
+
+    @hosts = @{ parse_hosts %args };
+
+    pod2usage(
+        -message => 'FATAL: you must give only one host with service "btree_bloat".',
+        -exitval => 127
+    ) if @hosts != 1;
+
+    push @exclude_re => qr/$_/ foreach @{ $args{'exclude'} };
+
+    @all_db = @{ get_all_dbname( $hosts[0] ) };
+
+    # Iterate over all db
+    ALLDB_LOOP: foreach my $db (sort @all_db) {
+        my @rc = @{ query_ver( $hosts[0], %queries, $db ) };
+        # Var to handle max,avg and count for size and percentage, per relkind
+        my $nb_ind      = 0;
+        my $idx_bloated = 0;
+        BLOAT_LOOP: foreach my $bloat (@rc) {
+
+            foreach my $exclude_re (@exclude_re) {
+                next BLOAT_LOOP if "$bloat->[1].$bloat->[3]" =~ m/$exclude_re/;
+            }
+
+            if ( defined $args{'warning'} ) {
+                my $w_limit = 0;
+                my $c_limit = 0;
+                # We need to compute effective thresholds on each object,
+                # as the value can be given in percentage
+                # The biggest calculated size will be used.
+                foreach my $cur_warning (split /,/, $args{'warning'}) {
+                    my $size = get_size( $cur_warning, $bloat->[4] );
+                    $w_limit = $size if $size > $w_limit;
+                }
+                foreach my $cur_critical (split /,/, $args{'critical'}) {
+                    my $size = get_size( $cur_critical, $bloat->[4] );
+                    $c_limit = $size if $size > $c_limit;
+                }
+
+                if ( $bloat->[6] > $w_limit ) {
+                    $idx_bloated++;
+                    $w_count++;
+                    $c_count++ if $bloat->[6] > $c_limit;
+
+                    push @longmsg => sprintf "%s.%s.%s %s/%s (%.2f%%);",
+                        $bloat->[0], $bloat->[1], $bloat->[3],
+                        to_size($bloat->[6]), to_size($bloat->[4]), $bloat->[7];
+                }
+            }
+
+            $nb_ind++;
+        }
+
+        $total_index += $nb_ind;
+
+        # Construct perfdata
+        my $perf = sprintf "'idx bloated in %s'=%s",
+                $db, $idx_bloated;
+
+        push @perfdata => $perf;
+    }
+
+    # we use the warning count for the **total** number of bloated index
+    return critical $me,
+        [ "$w_count/$total_index index(es) bloated" ],
+        [ @perfdata ], [ @longmsg ]
+            if $c_count > 0;
+    return warning $me,
+        [ "$w_count/$total_index index(es) bloated" ],
+        [ @perfdata ], [ @longmsg ]
+            if $w_count > 0;
+    return ok $me, [ "Btree bloat ok" ], \@perfdata;
+}
 
 # End of SERVICE section in pod doc
 =pod
