@@ -615,7 +615,7 @@ sub parse_hosts(\%) {
         push
             @hosts,
             {   'dbservice' => $_,
-                'name'      => "service=$_",
+                'name'      => "service:$_",
                 'pgversion' => undef
             }
         foreach split /,/, $args{'dbservice'};
@@ -660,7 +660,7 @@ sub parse_hosts(\%) {
                 }
             );
 
-            $hosts[-1]{'name'} = sprintf('host=%s port=%d db=%s',
+            $hosts[-1]{'name'} = sprintf('host:%s port:%d db:%s',
                 $hosts[-1]{'host'}, $hosts[-1]{'port'}, $hosts[-1]{'db'}
             );
         }
