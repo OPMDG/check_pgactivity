@@ -3777,15 +3777,12 @@ sub check_btree_bloat {
           FROM (
             SELECT i.nspname, i.tblname, i.idxname, i.reltuples, i.relpages,
               i.relam, a.attrelid AS table_oid,
-              CASE cluster_version.v > 7
-                WHEN true THEN current_setting('block_size')::numeric
-                ELSE 8192::numeric
-              END AS bs,
+              current_setting('block_size')::numeric AS bs,
               CASE WHEN version()~'mingw32'
                 OR version()~'64-bit|x86_64|ppc64|ia64|amd64'
                 THEN 8 ELSE 4
               END AS ma,
-              CASE WHEN cluster_version.v > 7 THEN 24 ELSE 20 END AS pagehdr,
+              24 AS pagehdr,
               CASE WHEN max(coalesce(s.null_frac,0)) = 0
                 THEN 2 ELSE 6
               END AS tuple_hdr_bm,
@@ -3811,10 +3808,9 @@ sub check_btree_bloat {
             ) AS i ON i.indrelid = a.attrelid AND a.attnum = ANY (i.attnum)
             JOIN pg_type AS t ON a.atttypid = t.oid
             JOIN pg_stats AS s ON s.schemaname = i.nspname
-              AND s.tablename = i.tblname AND s.attname = a.attname,
-            ( SELECT substring(current_setting('server_version') FROM '#"[0-9]+#"%' FOR '#')::integer ) AS cluster_version(v)
+              AND s.tablename = i.tblname AND s.attname = a.attname
             WHERE a.attnum > 0
-            GROUP BY 1, 2, 3, 4, 5, 6, 7, 8, 9, cluster_version.v
+            GROUP BY 1, 2, 3, 4, 5, 6, 7, 8, 9
           ) AS s1
         ) AS s2
         JOIN pg_am am ON s2.relam = am.oid WHERE am.amname = 'btree'
@@ -3845,15 +3841,12 @@ sub check_btree_bloat {
           FROM (
             SELECT i.nspname, i.tblname, i.idxname, i.reltuples, i.relpages,
               i.relam, a.attrelid AS table_oid,
-              CASE cluster_version.v > 7
-                WHEN true THEN current_setting('block_size')::numeric
-                ELSE 8192::numeric
-              END AS bs,
+              current_setting('block_size')::numeric AS bs,
               CASE WHEN version()~'mingw32'
                 OR version()~'64-bit|x86_64|ppc64|ia64|amd64'
                 THEN 8 ELSE 4
               END AS ma,
-              CASE WHEN cluster_version.v > 7 THEN 24 ELSE 20 END AS pagehdr,
+              24 AS pagehdr,
               CASE WHEN max(coalesce(s.null_frac,0)) = 0
                 THEN 2 ELSE 6
               END AS tuple_hdr_bm,
@@ -3882,10 +3875,9 @@ sub check_btree_bloat {
             ) AS i ON i.indrelid = a.attrelid AND a.attnum = ANY (i.attnum)
             JOIN pg_type AS t ON a.atttypid = t.oid
             JOIN pg_stats AS s ON s.schemaname = i.nspname
-              AND s.tablename = i.tblname AND s.attname = a.attname,
-            ( SELECT substring(current_setting('server_version') FROM '#"[0-9]+#"%' FOR '#')::integer ) AS cluster_version(v)
+              AND s.tablename = i.tblname AND s.attname = a.attname
             WHERE a.attnum > 0
-            GROUP BY 1, 2, 3, 4, 5, 6, 7, 8, 9, cluster_version.v
+            GROUP BY 1, 2, 3, 4, 5, 6, 7, 8, 9
           ) AS s1
         ) AS s2
         JOIN pg_am am ON s2.relam = am.oid WHERE am.amname = 'btree'
