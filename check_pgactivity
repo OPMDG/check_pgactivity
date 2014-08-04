@@ -3685,6 +3685,7 @@ sub check_btree_bloat {
     my %args    = %{ $_[0] };
     my $me      = 'POSTGRES_BTREE_BLOAT';
     my %queries = (
+      # text types header is 4
       $PG_VERSION_74 =>  q{
       SELECT current_database(), nspname AS schemaname, tblname, idxname,
         bs*(sub.relpages)::bigint AS real_size,
@@ -3752,6 +3753,7 @@ sub check_btree_bloat {
       ) AS sub
       WHERE NOT is_na
       ORDER BY 2,3,4},
+      # new column pg_index.indisvalid
       $PG_VERSION_82 =>  q{
       SELECT current_database(), nspname AS schemaname, tblname, idxname,
         bs*(sub.relpages)::bigint AS real_size,
@@ -3819,6 +3821,7 @@ sub check_btree_bloat {
       ) AS sub
       WHERE NOT is_na
       ORDER BY 2,3,4},
+      # text types header is 1 or 4
       $PG_VERSION_83 =>  q{
       SELECT current_database(), nspname AS schemaname, tblname, idxname,
         bs*(sub.relpages)::bigint AS real_size,
@@ -4008,6 +4011,7 @@ sub check_table_bloat {
     my %args      = %{ $_[0] };
     my $me        = 'POSTGRES_TABLE_BLOAT';
     my %queries   = (
+        # text types header is 4, page header is 20 and block size 8192
         $PG_VERSION_74 =>  q{
           SELECT current_database(), schemaname, tblname, bs*tblpages AS real_size,
             (tblpages-est_num_pages)*bs AS bloat_size,
@@ -4036,9 +4040,17 @@ sub check_table_bloat {
                   20 AS page_hdr,
                   23 + CASE WHEN MAX(coalesce(null_frac,0)) > 0 THEN ( 7 + count(*) ) / 8 ELSE 0::int END
                       + CASE WHEN tbl.relhasoids THEN 4 ELSE 0 END AS tpl_hdr_size,
-                  sum( (1-coalesce(null_frac,0)) * coalesce(avg_width, 1024) ) AS tpl_data_size,
+                  sum( (1-coalesce(s.null_frac, 0))
+                    * coalesce(
+                      CASE
+                        WHEN t.typlen = -1 THEN s.avg_width + 4
+                        WHEN t.typlen = -2 THEN s.avg_width + 1
+                        ELSE t.typlen
+                      END
+                    , 1024)) AS tpl_data_size,
                   max( CASE WHEN att.atttypid = 'pg_catalog.name'::regtype THEN 1 ELSE 0 END ) > 0 AS is_na
                 FROM pg_attribute att
+                  JOIN pg_type AS t ON att.atttypid = t.oid
                   JOIN pg_class tbl ON att.attrelid = tbl.oid
                   JOIN pg_namespace ns ON ns.oid = tbl.relnamespace
                   JOIN pg_stats s ON s.schemaname=ns.nspname
@@ -4052,6 +4064,7 @@ sub check_table_bloat {
             ) as s2
           ) AS s3
           WHERE NOT is_na},
+        # variable block size, page header is 24
         $PG_VERSION_80 =>  q{
           SELECT current_database(), schemaname, tblname, bs*tblpages AS real_size,
             (tblpages-est_num_pages)*bs AS bloat_size,
@@ -4060,9 +4073,8 @@ sub check_table_bloat {
               ELSE 0
             END AS bloat_ratio
           FROM (
-            SELECT
-              ceil( reltuples / ( (bs-page_hdr)/tpl_size ) ) + ceil( toasttuples / 4 ) AS est_num_pages, tblpages,
-              bs, tblid, schemaname, tblname, heappages, toastpages, is_na
+            SELECT ceil(reltuples/((bs-page_hdr)/tpl_size)) + ceil(toasttuples/4) AS est_num_pages,
+              tblpages, bs, tblid, schemaname, tblname, heappages, toastpages, is_na
             FROM (
               SELECT
                 ( 4 + tpl_hdr_size + tpl_data_size + (2*ma)
@@ -4080,33 +4092,40 @@ sub check_table_bloat {
                   24 AS page_hdr,
                   23 + CASE WHEN MAX(coalesce(null_frac,0)) > 0 THEN ( 7 + count(*) ) / 8 ELSE 0::int END
                     + CASE WHEN tbl.relhasoids THEN 4 ELSE 0 END AS tpl_hdr_size,
-                  sum( (1-coalesce(null_frac,0)) * coalesce(avg_width, 1024) ) AS tpl_data_size,
+                  sum( (1-coalesce(s.null_frac, 0))
+                    * coalesce(
+                      CASE
+                        WHEN t.typlen = -1 THEN s.avg_width + 4
+                        WHEN t.typlen = -2 THEN s.avg_width + 1
+                        ELSE t.typlen
+                      END
+                    , 1024)) AS tpl_data_size,
                   bool_or(att.atttypid = 'pg_catalog.name'::regtype) AS is_na
-                FROM pg_attribute att
-                  JOIN pg_class tbl ON att.attrelid = tbl.oid
-                  JOIN pg_namespace ns ON ns.oid = tbl.relnamespace
-                  JOIN pg_stats s ON s.schemaname=ns.nspname
-                    AND s.tablename = tbl.relname
-                    AND s.attname=att.attname
-                  LEFT JOIN pg_class toast ON tbl.reltoastrelid = toast.oid,
-                  ( SELECT substring(current_setting('server_version') FROM '#"[0-9]+#"%' FOR '#')::integer ) AS cluster_version(v)
+                FROM pg_attribute AS att
+                  JOIN pg_type AS t ON att.atttypid = t.oid
+                  JOIN pg_class AS tbl ON att.attrelid = tbl.oid
+                  JOIN pg_namespace AS ns ON ns.oid = tbl.relnamespace
+                  JOIN pg_stats AS s ON s.schemaname=ns.nspname
+                    AND s.tablename = tbl.relname AND s.attname=att.attname
+                  LEFT JOIN pg_class AS toast ON tbl.reltoastrelid = toast.oid
                 WHERE att.attnum > 0 AND NOT att.attisdropped
                 GROUP BY 1,2,3,4,5,6,7,8,9,10, tbl.relhasoids
                 ORDER BY 2,3
-              ) as s
-            ) as s2
+              ) AS s
+            ) AS s2
           ) AS s3
           WHERE NOT is_na},
-        $PG_VERSION_90 =>  q{
+        # text types header is 1 or 4
+        $PG_VERSION_83 =>  q{
           SELECT current_database(), schemaname, tblname, bs*tblpages AS real_size,
-            (tblpages - est_num_pages)*bs AS bloat_size,
+            (tblpages-est_num_pages)*bs AS bloat_size,
             CASE WHEN tblpages - est_num_pages > 0
               THEN 100 * (tblpages - est_num_pages)/tblpages::float
               ELSE 0
             END AS bloat_ratio
           FROM (
-            SELECT ceil(reltuples/((bs-page_hdr)/tpl_size)) + ceil( toasttuples / 4 ) AS est_num_pages, tblpages, bs,
-              tblid, schemaname, tblname, heappages, toastpages, is_na
+            SELECT ceil(reltuples/((bs-page_hdr)/tpl_size)) + ceil(toasttuples/4) AS est_num_pages,
+              tblpages, bs, tblid, schemaname, tblname, heappages, toastpages, is_na
             FROM (
               SELECT
                 ( 4 + tpl_hdr_size + tpl_data_size + (2*ma)
@@ -4120,20 +4139,83 @@ sub check_table_bloat {
                   tbl.relpages AS heappages, coalesce(toast.relpages, 0) AS toastpages,
                   coalesce(toast.reltuples, 0) AS toasttuples,
                   current_setting('block_size')::numeric AS bs,
-                  24 AS page_hdr,
                   CASE WHEN version()~'mingw32' OR version()~'64-bit|x86_64|ppc64|ia64|amd64' THEN 8 ELSE 4 END AS ma,
-                  23
-                  + CASE WHEN MAX(coalesce(null_frac,0)) > 0 THEN ( 7 + count(*) ) / 8 ELSE 0::int END
-                  + CASE WHEN tbl.relhasoids THEN 4 ELSE 0 END
-                  AS tpl_hdr_size,
-                  sum( (1-coalesce(null_frac,0)) * coalesce(avg_width, 1024) ) AS tpl_data_size,
+                  24 AS page_hdr,
+                  23 + CASE WHEN MAX(coalesce(null_frac,0)) > 0 THEN ( 7 + count(*) ) / 8 ELSE 0::int END
+                    + CASE WHEN tbl.relhasoids THEN 4 ELSE 0 END AS tpl_hdr_size,
+                  sum( (1-coalesce(s.null_frac, 0))
+                    * coalesce(
+                      CASE
+                        WHEN t.typlen = -1 THEN
+                          CASE WHEN s.avg_width < 127
+                            THEN s.avg_width + 1 ELSE s.avg_width + 4
+                          END
+                        WHEN t.typlen = -2 THEN s.avg_width + 1
+                        ELSE t.typlen
+                      END
+                    , 1024)) AS tpl_data_size,
                   bool_or(att.atttypid = 'pg_catalog.name'::regtype) AS is_na
-                FROM pg_attribute att
-                  JOIN pg_class tbl ON att.attrelid = tbl.oid
-                  JOIN pg_namespace ns ON ns.oid = tbl.relnamespace
-                  JOIN pg_stats s ON s.schemaname=ns.nspname
+                FROM pg_attribute AS att
+                  JOIN pg_type AS t ON att.atttypid = t.oid
+                  JOIN pg_class AS tbl ON att.attrelid = tbl.oid
+                  JOIN pg_namespace AS ns ON ns.oid = tbl.relnamespace
+                  JOIN pg_stats AS s ON s.schemaname=ns.nspname
+                    AND s.tablename = tbl.relname AND s.attname=att.attname
+                  LEFT JOIN pg_class AS toast ON tbl.reltoastrelid = toast.oid
+                WHERE att.attnum > 0 AND NOT att.attisdropped
+                GROUP BY 1,2,3,4,5,6,7,8,9,10, tbl.relhasoids
+                ORDER BY 2,3
+              ) AS s
+            ) AS s2
+          ) AS s3
+          WHERE NOT is_na},
+        # exclude inherited stats
+        $PG_VERSION_90 =>  q{
+          SELECT current_database(), schemaname, tblname, bs*tblpages AS real_size,
+            (tblpages-est_num_pages)*bs AS bloat_size,
+            CASE WHEN tblpages - est_num_pages > 0
+              THEN 100 * (tblpages - est_num_pages)/tblpages::float
+              ELSE 0
+            END AS bloat_ratio
+          FROM (
+            SELECT ceil(reltuples/((bs-page_hdr)/tpl_size)) + ceil(toasttuples/4) AS est_num_pages,
+              tblpages, bs, tblid, schemaname, tblname, heappages, toastpages, is_na
+            FROM (
+              SELECT
+                ( 4 + tpl_hdr_size + tpl_data_size + (2*ma)
+                  - CASE WHEN tpl_hdr_size%ma = 0 THEN ma ELSE tpl_hdr_size%ma END
+                  - CASE WHEN ceil(tpl_data_size)::int%ma = 0 THEN ma ELSE ceil(tpl_data_size)::int%ma END
+                ) AS tpl_size, bs - page_hdr AS size_per_block, (heappages + toastpages) AS tblpages, heappages,
+                toastpages, reltuples, toasttuples, bs, page_hdr, tblid, schemaname, tblname, is_na
+              FROM (
+                SELECT
+                  tbl.oid AS tblid, ns.nspname AS schemaname, tbl.relname AS tblname, tbl.reltuples,
+                  tbl.relpages AS heappages, coalesce(toast.relpages, 0) AS toastpages,
+                  coalesce(toast.reltuples, 0) AS toasttuples,
+                  current_setting('block_size')::numeric AS bs,
+                  CASE WHEN version()~'mingw32' OR version()~'64-bit|x86_64|ppc64|ia64|amd64' THEN 8 ELSE 4 END AS ma,
+                  24 AS page_hdr,
+                  23 + CASE WHEN MAX(coalesce(null_frac,0)) > 0 THEN ( 7 + count(*) ) / 8 ELSE 0::int END
+                    + CASE WHEN tbl.relhasoids THEN 4 ELSE 0 END AS tpl_hdr_size,
+                  sum( (1-coalesce(s.null_frac, 0))
+                    * coalesce(
+                      CASE
+                        WHEN t.typlen = -1 THEN
+                          CASE WHEN s.avg_width < 127
+                            THEN s.avg_width + 1 ELSE s.avg_width + 4
+                          END
+                        WHEN t.typlen = -2 THEN s.avg_width + 1
+                        ELSE t.typlen
+                      END
+                    , 1024)) AS tpl_data_size,
+                  bool_or(att.atttypid = 'pg_catalog.name'::regtype) AS is_na
+                FROM pg_attribute AS att
+                  JOIN pg_type AS t ON att.atttypid = t.oid
+                  JOIN pg_class AS tbl ON att.attrelid = tbl.oid
+                  JOIN pg_namespace AS ns ON ns.oid = tbl.relnamespace
+                  JOIN pg_stats AS s ON s.schemaname=ns.nspname
                     AND s.tablename = tbl.relname AND s.inherited=false AND s.attname=att.attname
-                  LEFT JOIN pg_class toast ON tbl.reltoastrelid = toast.oid
+                  LEFT JOIN pg_class AS toast ON tbl.reltoastrelid = toast.oid
                 WHERE att.attnum > 0 AND NOT att.attisdropped
                 GROUP BY 1,2,3,4,5,6,7,8,9,10, tbl.relhasoids
                 ORDER BY 2,3
