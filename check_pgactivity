@@ -1036,7 +1036,9 @@ sub check_backends {
 
 Check and report the status of the backends. Depending to your PostgreSQL
 version, status are: idle, idle in transaction, idle in transaction (aborted)
-(>=9.0 only), fastpath function call, active and waiting for lock.
+(>=9.0 only), fastpath function call, active, waiting for lock, undefined,
+disabled and insufficient privilege. The last one appears when you are not
+allowed to see the status of other connexions.
 
 This service supports argument C<--exclude REGEX> to exclude queries
 matching the given regexp from the check. You can give multiple
