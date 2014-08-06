@@ -1363,9 +1363,16 @@ percentage. In case of percentage, the limit is computed based on:
 
   100% = 1 + checkpoint_segments * (2 + checkpoint_completion_target)
 
-or for PostgreSQL 8.1 and 8.2:
+For PostgreSQL 8.1 and 8.2:
 
   100% = 1 + checkpoint_segments * 2
+
+If C<wal_keep_segments> is set for 9.0 and above, the limit is the greatest
+between the following formulas :
+
+  100% = 1 + checkpoint_segments * (2 + checkpoint_completion_target)
+  100% = 1 + wal_keep_segments + 2 * checkpoint_segments
+
 =cut
 
 sub check_wal_files {
@@ -1377,77 +1384,75 @@ sub check_wal_files {
     my %args    = %{ $_[0] };
     my $me      = 'POSTGRES_WAL_FILES';
     my %queries = (
-        $PG_VERSION_90 => q{
-            SELECT count(*) AS count, sum(is_recycled::int) AS is_recycled,
-              sum((NOT is_recycled)::int) AS written,
-              CASE WHEN max_wal1 > max_wal2 THEN max_wal1 ELSE max_wal2 END
-                AS max_wal
-            FROM (
-              SELECT file > first_value(file) OVER w AS is_recycled,
-               1 + (
-                current_setting('checkpoint_segments')::float4 *
-                ( 2 + current_setting('checkpoint_completion_target')::float4 )
-               ) AS max_wal1,
-               1 + current_setting('wal_keep_segments')::float4 +
-                  current_setting('checkpoint_segments')::float4 AS max_wal2
-              FROM pg_ls_dir('pg_xlog') as file
-              WHERE file ~ '^[0-9A-F]{24}$'
-              WINDOW w AS (
-                ORDER BY (pg_stat_file('pg_xlog/'||file)).modification
-                DESC
-              )
-            ) AS t
-            GROUP BY 4;},
-        $PG_VERSION_84 => q{
-            SELECT count(*) AS count, sum(is_recycled::int) AS is_recycled,
-              sum((NOT is_recycled)::int) AS written,
-              1 + (
-                current_setting('checkpoint_segments')::float4 *
-                ( 2 + current_setting('checkpoint_completion_target')::float4 )
-              ) AS max_wal
-            FROM (
-              SELECT file > first_value(file) OVER w AS is_recycled
-              FROM pg_ls_dir('pg_xlog') as file
-              WHERE file ~ '^[0-9A-F]{24}$'
-              WINDOW w AS (
-                ORDER BY (pg_stat_file('pg_xlog/'||file)).modification
-                DESC
-              )
-            ) AS t
-            GROUP BY 4},
-        $PG_VERSION_83 => q{
-            SELECT count(*) AS num_file,
-                sum(recycled::int) AS is_recycled,
-                sum((NOT recycled)::int) AS written,
-                1 + (
-                    current_setting('checkpoint_segments')::float4 *
-                    ( 2 + current_setting('checkpoint_completion_target')::float4 )
-                )
-            FROM (
-              SELECT file, file > (
-                SELECT s.f
-                FROM pg_ls_dir('pg_xlog') AS s(f)
-                ORDER BY (pg_stat_file('pg_xlog/'||s.f)).modification DESC
-                LIMIT 1
-              ) AS recycled
-              FROM pg_ls_dir('pg_xlog') AS file
-              WHERE file ~ '^[0-9A-F]{24}$'
-            ) AS t},
-        $PG_VERSION_81 => q{
-            SELECT count(*) AS num_file,
-                sum(recycled::int) AS is_recycled,
-                sum((NOT recycled)::int) AS written,
-                1 + (current_setting('checkpoint_segments')::integer * 2)
-            FROM (
-              SELECT file, file > (
-                SELECT s.f
-                FROM pg_ls_dir('pg_xlog') AS s(f)
-                ORDER BY (pg_stat_file('pg_xlog/'||s.f)).modification DESC
-                LIMIT 1
-              ) AS recycled
-              FROM pg_ls_dir('pg_xlog') AS file
-              WHERE file ~ '^[0-9A-F]{24}$'
-            ) AS t}
+      $PG_VERSION_90 => q{
+         SELECT count(*) AS count, sum(is_recycled::int) AS is_recycled,
+           sum((NOT is_recycled)::int) AS written,
+           greatest(1 + current_setting('checkpoint_segments')::float4 *
+              (2 + current_setting('checkpoint_completion_target')::float4),
+                    1 + current_setting('wal_keep_segments')::float4 +
+              2 * current_setting('checkpoint_segments')::float4
+           ) AS max_wal,
+           current_setting('wal_keep_segments')::integer
+         FROM (
+           SELECT file > first_value(file) OVER w AS is_recycled
+           FROM pg_ls_dir('pg_xlog') as file
+           WHERE file ~ '^[0-9A-F]{24}$'
+           WINDOW w AS (
+             ORDER BY (pg_stat_file('pg_xlog/'||file)).modification
+             DESC
+           )
+         ) AS t
+         GROUP BY 4;},
+      $PG_VERSION_84 => q{
+         SELECT count(*) AS count, sum(is_recycled::int) AS is_recycled,
+           sum((NOT is_recycled)::int) AS written,
+           1 + (
+             current_setting('checkpoint_segments')::float4
+             * ( 2 + current_setting('checkpoint_completion_target')::float4 )
+           ) AS max_wal
+         FROM (
+           SELECT file > first_value(file) OVER w AS is_recycled
+           FROM pg_ls_dir('pg_xlog') as file
+           WHERE file ~ '^[0-9A-F]{24}$'
+           WINDOW w AS (
+             ORDER BY (pg_stat_file('pg_xlog/'||file)).modification
+             DESC
+           )
+         ) AS t
+         GROUP BY 4},
+      $PG_VERSION_83 => q{
+        SELECT count(*) AS num_file,
+          sum(recycled::int) AS is_recycled,
+          sum((NOT recycled)::int) AS written,
+          1 + (
+            current_setting('checkpoint_segments')::float4
+            * ( 2 + current_setting('checkpoint_completion_target')::float4 )
+          )
+        FROM (
+          SELECT file, file > (
+            SELECT s.f
+            FROM pg_ls_dir('pg_xlog') AS s(f)
+            ORDER BY (pg_stat_file('pg_xlog/'||s.f)).modification DESC
+            LIMIT 1
+          ) AS recycled
+          FROM pg_ls_dir('pg_xlog') AS file
+          WHERE file ~ '^[0-9A-F]{24}$'
+        ) AS t},
+      $PG_VERSION_81 => q{
+         SELECT count(*) AS num_file,
+           sum(recycled::int) AS is_recycled,
+           sum((NOT recycled)::int) AS written,
+           1 + (current_setting('checkpoint_segments')::integer * 2)
+         FROM (
+            SELECT file, file > (
+              SELECT s.f
+              FROM pg_ls_dir('pg_xlog') AS s(f)
+              ORDER BY (pg_stat_file('pg_xlog/'||s.f)).modification DESC
+              LIMIT 1
+            ) AS recycled
+            FROM pg_ls_dir('pg_xlog') AS file
+            WHERE file ~ '^[0-9A-F]{24}$'
+         ) AS t}
     );
 
     if ( defined $args{'warning'} ) {
