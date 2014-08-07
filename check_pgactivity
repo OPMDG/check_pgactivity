@@ -1483,7 +1483,29 @@ sub check_wal_files {
 
     push @perfdata => "total_wal=$rs[0]";
     push @perfdata => "recycled_wal=$rs[1]";
-    push @perfdata => "written_wal=$rs[2]";
+
+    # pay attention to the wal_keep_segment in perfdatas
+    if ( $hosts[0]{'version_num'} >= $PG_VERSION_90) {
+        if ($rs[4] > 0) {
+            # cheet with numbers if the keep_segment was just set and the
+            # number of wal doesn't match it yet.
+            if ($rs[4] > $rs[2]) {
+                push @perfdata => "written_wal=1";
+                push @perfdata => "kept_wal=". ($rs[2] - 1);
+            }
+            else {
+                push @perfdata => "written_wal=". ($rs[2] - $rs[4]);
+                push @perfdata => "kept_wal=$rs[4]";
+            }
+        }
+        else {
+            push @perfdata => "written_wal=$rs[2]";
+            push @perfdata => "kept_wal=0";
+        }
+    }
+    else {
+        push @perfdata => "written_wal=$rs[2]";
+    }
 
     push @msg => "$rs[0] WAL files";
 
