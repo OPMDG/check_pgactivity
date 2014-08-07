@@ -1244,7 +1244,8 @@ sub check_backends_status {
 
         push @perfdata => $perf;
         push @perfdata => "'oldest $s'=$status{$s}[1]s"
-            if $hosts[0]->{'version_num'} >= $PG_VERSION_83;
+            if $hosts[0]->{'version_num'} >= $PG_VERSION_83
+                and $s !~ '^(?:disabled|undefined|insufficient)';
 
         # Criticals
         if ( exists $crit{$s} and $status{$s}[0] >= $crit{$s} ) {
