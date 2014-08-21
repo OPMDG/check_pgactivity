@@ -1003,7 +1003,7 @@ sub check_autovacuum {
             ORDER BY query_start ASC
         },
         # field current_query, autovacuum_max_workers
-        $PG_VERSION_81 => q{
+        $PG_VERSION_83 => q{
             SELECT a.current_query,
                 extract(EPOCH FROM now()-a.query_start)::bigint,
                 s.setting
@@ -1012,7 +1012,7 @@ sub check_autovacuum {
             LEFT JOIN (
                 SELECT * FROM pg_stat_activity
                 WHERE current_query LIKE 'autovacuum: %'
-                ) AS a
+                ) AS a ON true
             ORDER BY query_start ASC
         },
         # field query, still autovacuum_max_workers
@@ -1036,6 +1036,8 @@ sub check_autovacuum {
         -message => 'FATAL: you must give only one host with service "autovacuum".',
         -exitval => 127
     ) if @hosts != 1;
+
+    is_compat $hosts[0], 'autovacuum', $PG_VERSION_81 or exit 1;
 
     @rs = @{ query_ver( $hosts[0], %queries ) };
 
