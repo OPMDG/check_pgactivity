@@ -72,6 +72,10 @@ my %services = (
     #    'desc'    => 'a desctiption of the service'
     # }
 
+    'autovacuum' => {
+        'sub'  => \&check_autovacuum,
+        'desc' => 'Check the autovacuum activity.'
+    },
     'backends' => {
         'sub'  => \&check_backends,
         'desc' => 'Number of connections, compared to max_connections.'
@@ -957,6 +961,117 @@ sub output ($$;$$$) {
 Here is the list, descriptions and parameters of available services.
 
 =over
+
+=item B<autovacuum> (8.1+)
+
+Check the autovacuum activity on the cluster.
+
+Perfdata contains the age of oldest autovacuum and the number of worker by kind
+(VACUUM, VACUUM ANALYZE, ANALYZE, VACUUM FREEZE).
+
+Thresholds, if any, are ignored.
+
+=cut
+
+sub check_autovacuum {
+
+    my @rs;
+    my @perfdata;
+    my @msg;
+    my @longmsg;
+    my @hosts;
+    my %args         = %{ $_[0] };
+    my $me           = 'POSTGRES_AUTOVACUUM';
+    my $oldest       = undef;
+    my $numautovac  = 0;
+    my $max_workers = "NaN";
+    my %activity     = (
+        'VACUUM'            => 0,
+        'VACUUM_ANALYZE'    => 0,
+        'ANALYZE'           => 0,
+        'VACUUM_FREEZE'     => 0
+    );
+
+    my %queries      = (
+        # field current_query, not autovacuum_max_workers
+        $PG_VERSION_81 => q{
+            SELECT current_query,
+                extract(EPOCH FROM now()-query_start)::bigint,
+                'NaN'
+            FROM pg_stat_activity
+            WHERE current_query LIKE 'autovacuum: %'
+            ORDER BY query_start ASC
+        },
+        # field current_query, autovacuum_max_workers
+        $PG_VERSION_81 => q{
+            SELECT a.current_query,
+                extract(EPOCH FROM now()-a.query_start)::bigint,
+                s.setting
+            FROM
+                (SELECT current_setting('autovacuum_max_workers') AS setting) AS s
+            LEFT JOIN (
+                SELECT * FROM pg_stat_activity
+                WHERE current_query LIKE 'autovacuum: %'
+                ) AS a
+            ORDER BY query_start ASC
+        },
+        # field query, still autovacuum_max_workers
+        $PG_VERSION_92 => q{
+            SELECT a.query,
+                extract(EPOCH FROM now()-a.query_start)::bigint,
+                s.setting
+            FROM
+                (SELECT current_setting('autovacuum_max_workers') AS setting) AS s
+            LEFT JOIN (
+                SELECT * FROM pg_stat_activity
+                WHERE query LIKE 'autovacuum: %'
+                ) AS a ON true
+            ORDER BY a.query_start ASC
+        }
+    );
+
+    @hosts = @{ parse_hosts %args };
+
+    pod2usage(
+        -message => 'FATAL: you must give only one host with service "autovacuum".',
+        -exitval => 127
+    ) if @hosts != 1;
+
+    @rs = @{ query_ver( $hosts[0], %queries ) };
+
+    REC_LOOP: foreach my $r (@rs) {
+        if ( not defined $oldest ){
+            $max_workers = $r->[2];
+            next REC_LOOP if ( $r->[1] eq "" );
+            $oldest = $r->[1];
+        }
+        $numautovac++;
+        if ( $r->[0] =~ '(to prevent wraparound)$' ) {
+            $activity{'VACUUM_FREEZE'}++;
+        } else {
+            if ( $r->[0] =~ '^autovacuum: VACUUM ANALYZE' ) {
+                $activity{'VACUUM_ANALYZE'}++;
+            } elsif ( $r->[0] =~ 'autovacuum: VACUUM' ) {
+                $activity{'VACUUM'}++;
+            } else {
+                $activity{'ANALYZE'}++;
+            };
+        }
+        $r->[0] =~ s/autovacuum: //;
+        push @longmsg, $r->[0];
+    }
+
+    $oldest = 'NaN' if not defined ( $oldest );
+
+    @perfdata = map { "$_=$activity{$_}" } keys %activity;
+    push @perfdata, "oldest_autovacuum=$oldest" . "s";
+    push @perfdata, "max_workers=$max_workers";
+    push @msg, "Number of autovacuum: $numautovac";
+    push @msg, "Oldest autovacuum: " . to_interval($oldest) if $oldest ne "NaN";
+
+    return ok( $me, \@msg , \@perfdata, \@longmsg );
+
+}
 
 =item B<backends> (all)
 
