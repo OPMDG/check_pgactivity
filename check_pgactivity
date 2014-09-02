@@ -84,6 +84,10 @@ my %services = (
         'sub'  => \&check_backends_status,
         'desc' => 'Number of connections in relation to their status.'
     },
+    'commit_ratio' => {
+        'sub'  => \&check_commit_ratio,
+        'desc' => 'Commit and rollback rate per second and commit ratio since last execution.'
+    },
     'database_size' => {
         'sub'  => \&check_database_size,
         'desc' => 'Variation of database sizes.',
@@ -1442,6 +1446,164 @@ sub check_backends_status {
     return warning( $me, \@msg_warn, \@perfdata ) if scalar @msg_warn > 0;
 
     return ok( $me, [ "$num_backends backend connected" ], \@perfdata );
+}
+
+=item B<commit_ratio> (all)
+
+Check the commit and rollback rate per second since last call.
+
+This service uses the status file (see --status-file parameter).
+
+Perfdata contains the commit rate, rollback rate, transaction rate and commit
+ratio for each database since last call.
+
+Critical and Warning thresholds are optional. They accept a list of coma
+separated 'label=value'. Available label are B<rollback>, B<rollback_rate>
+and B<commit_ratio>, which will be compared to the number of rollback, the
+rollback rate and the commit ratio of each database. Warning or critical will
+be raised if value is more than B<rollback> or B<rollback_rate> or less than
+B<commit_ratio>.
+
+=cut
+
+sub check_commit_ratio {
+    my @rs;
+    my @msg_warn;
+    my @msg_crit;
+    my @perfdata;
+    my @hosts;
+    my %xacts;
+    my %new_xacts;
+    my $sec;
+    my $commits;
+    my $rollbacks;
+    my $global_commits;
+    my $global_rollbacks;
+    my $ratio;
+    my %warn;
+    my %crit;
+    my %args = %{ $_[0] };
+    my $me   = 'POSTGRES_COMMIT_RATIO';
+    my $sql  = q{
+        SELECT floor(extract(EPOCH from now())), s.datname,
+            s.xact_commit, s.xact_rollback
+        FROM pg_stat_database s
+          JOIN pg_database d ON s.datid = d.oid
+        WHERE d.datallowconn
+    };
+
+    if ( defined $args{'warning'} ) {
+        my $thresholds_re = qr/(rollback|rollback_rate|commit_ratio)\s*=\s*(\d+)/i;
+
+        # warning and critical must be list of status=value
+        pod2usage(
+            -message => "FATAL: critical and warning thresholds only accept a list of 'label=value' separated by comma.\n"
+                . "See documentation for more information.",
+            -exitval => 127
+        ) unless $args{'warning'} =~ m/^$thresholds_re(\s*,\s*$thresholds_re)*$/
+            and $args{'critical'} =~ m/^$thresholds_re(\s*,\s*$thresholds_re)*$/ ;
+
+        while ( $args{'warning'} =~ /$thresholds_re/g ) {
+            my ($threshold, $value) = ($1, $2);
+            $warn{$threshold} = $value if $1 and defined $2;
+        }
+
+        while ( $args{'critical'} =~ /$thresholds_re/g ) {
+            my ($threshold, $value) = ($1, $2);
+            $crit{$threshold} = $value if $1 and defined $2;
+        }
+    }
+
+    @hosts = @{ parse_hosts %args };
+
+    pod2usage(
+        -message => 'FATAL: you must give only one host with service "database_size".',
+        -exitval => 127
+    ) if @hosts != 1;
+
+    %xacts = %{ load( $hosts[0], 'commit_ratio', $args{'status-file'} ) || {} };
+
+    @rs = @{ query( $hosts[0], $sql ) };
+
+    $new_xacts{$_->[1]} = {
+        'ts'       => $_->[0],
+        'commit'   => $_->[2],
+        'rollback' => $_->[3]
+    } foreach @rs;
+
+    save $hosts[0], 'commit_ratio', \%new_xacts, $args{'status-file'};
+
+    return ok( $me, ['First call'] ) unless keys %xacts;
+
+    foreach my $db (keys %new_xacts) {
+        $sec = ($new_xacts{$db}{'ts'}-$xacts{$db}{'ts'});
+        # Just in case this check is called twice in the same second
+        $sec = 1 if $sec == 0;
+
+        $commits   = $new_xacts{$db}{'commit'}   - $xacts{$db}{'commit'};
+        $rollbacks = $new_xacts{$db}{'rollback'} - $xacts{$db}{'rollback'};
+        $global_commits   += $commits;
+        $global_rollbacks += $rollbacks;
+
+        my $commit_rate   = $commits   / $sec;
+        my $rollback_rate = $rollbacks / $sec;
+        my $xact_rate     = ($commits + $rollbacks ) / $sec;
+
+        push @perfdata, sprintf "'%s_commit_rate'=%.2ftps",   $db, $commit_rate;
+        push @perfdata, sprintf "'%s_rollback_rate'=%.2ftps", $db, $rollback_rate;
+        push @perfdata, sprintf "'%s_xact_rate'=%.2ftps",     $db, $xact_rate;
+
+        if ( $rollbacks == 0) {
+            $ratio = 100;
+        } else {
+            $ratio = $commits * 100 / ($commits + $rollbacks);
+        }
+
+        push @perfdata,  sprintf("'%s_commit_ratio'=%.2f%%", $db, $ratio );
+
+        THRESHOLD_LOOP: foreach my $val ( ('rollback', 'rollback_rate', 'commit_ratio') ) {
+            my $prefix = "${db}_${val}";
+            # Criticals
+            if ( exists $crit{$val} ) {
+                if ( $val eq "rollback" and $crit{$val} < $rollbacks ) {
+                    push @msg_crit => "'$prefix'=$rollbacks";
+                    next THRESHOLD_LOOP;
+                }
+                if ( $val eq "rollback_rate" and $crit{$val} < $rollback_rate ) {
+                    push @msg_crit => sprintf "'%s'=%.2ftps", $prefix, $rollback_rate;
+                    next THRESHOLD_LOOP;
+                }
+                if ( $val eq "commit_ratio" and $crit{$val} > $ratio ) {
+                    push @msg_crit => sprintf "'%s'=%.2f%%", $prefix, $ratio;
+                    next THRESHOLD_LOOP;
+                }
+            }
+            # Warnings
+            if ( exists $warn{$val} ) {
+                if ( $val eq "rollback" and $warn{$val} < $rollbacks ) {
+                    push @msg_warn => "'$prefix'=$rollbacks";
+                    next THRESHOLD_LOOP;
+                }
+                if ( $val eq "rollback_rate" and $warn{$val} < $rollback_rate ) {
+                    push @msg_warn => sprintf("'%s'=%.2ftps", $prefix, $rollback_rate );
+                    next THRESHOLD_LOOP;
+                }
+                if ( $val eq "commit_ratio" and $warn{$val} > $ratio ) {
+                    push @msg_warn => sprintf("'%s'=%.2f%%", $prefix, $ratio );
+                    next THRESHOLD_LOOP;
+                }
+            }
+        }
+    }
+
+    return critical( $me, [ "Commits: $global_commits - Rollbacks: $global_rollbacks", @msg_crit, @msg_warn ], \@perfdata )
+        if scalar @msg_crit > 0;
+
+    return warning( $me, [ "Commits: $global_commits - Rollbacks: $global_rollbacks", @msg_warn ], \@perfdata )
+        if scalar @msg_warn > 0;
+
+    return ok( $me, ["Commits: $global_commits - Rollbacks: $global_rollbacks"], \@perfdata );
+
 }
 
 =item B<database_size> (8.1+)
