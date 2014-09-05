@@ -2640,10 +2640,12 @@ sub check_streaming_delta {
     my $num_clusters    = 0;
     my %queries         = (
         $PG_VERSION_92 => q{SELECT application_name, client_addr, pid,
-            sent_location, write_location, flush_location, replay_location
+            sent_location, write_location, flush_location, replay_location,
+            pg_current_xlog_location()
             FROM pg_stat_replication},
         $PG_VERSION_91 => q{SELECT application_name, client_addr, procpid,
-            sent_location, write_location, flush_location, replay_location
+            sent_location, write_location, flush_location, replay_location,
+            pg_current_xlog_location()
             FROM pg_stat_replication}
     );
     # FIXME this service should check for given slaves in opts!
@@ -2672,7 +2674,7 @@ sub check_streaming_delta {
     return unknown($me, ['No slaves connected'], ["'# of slaves'=0"])
         unless @rs;
 
-    $rs[0][3] =~ m{^([0-9A-F]+)/([0-9A-F]+)$};
+    $rs[0][7] =~ m{^([0-9A-F]+)/([0-9A-F]+)$};
     $master_location = (hex('ff000000') * hex($1)) + hex($2);
 
     ($w_limit_flushed, $w_limit_replayed) = split /,/, $args{'warning'};
@@ -2695,12 +2697,17 @@ sub check_streaming_delta {
 
     # compute deltas
     foreach my $host (@rs) {
+        my $send_delta;
+        my $write_delta;
         my $flush_delta;
         my $replay_delta;
         my $name;
 
         $host->[3] =~ m{^([0-9A-F]+)/([0-9A-F]+)$};
-        $master_location = (hex('ff000000') * hex($1)) + hex($2);
+        $send_delta = $master_location - (hex('ff000000') * hex($1)) - hex($2);
+
+        $host->[4] =~ m{^([0-9A-F]+)/([0-9A-F]+)$};
+        $write_delta = $master_location - (hex('ff000000') * hex($1)) - hex($2);
 
         $host->[5] =~ m{^([0-9A-F]+)/([0-9A-F]+)$};
         $flush_delta = $master_location - (hex('ff000000') * hex($1)) - hex($2);
@@ -2710,7 +2717,9 @@ sub check_streaming_delta {
 
         $name = "$host->[0]\@$host->[1]";
 
-        push @perfdata => "'flushed delta $name'=${flush_delta}B ".
+        push @perfdata => "'sent delta $name'=${send_delta}B ".
+            "'wrote delta $name'=${write_delta}B ".
+            "'flushed delta $name'=${flush_delta}B ".
             "'replay delta $name'=${replay_delta}B ".
             "'pid $name'=$host->[2]";
 
