@@ -1648,6 +1648,7 @@ Check the number of wal files ready to archive.
 Perfdata returns the number of wal files waiting to be archived.
 
 Critical and Warning thresholds only accept a raw number of file
+
 =cut
 
 sub check_ready_archives {
@@ -1825,6 +1826,7 @@ call as well.
 
 Critical and Warning thresholds only accept an interval (eg. 1h30m25s)
 and apply on the oldest analyse maintenance.
+
 =cut
 
 sub check_last_analyze {
@@ -2769,7 +2771,9 @@ databases that does not allow connections wont be checked, nor the
 databases which has never been accessed.
 
 Critical and Warning thresholds are optionnal. They only accept a percentage.
+
 =cut
+
 sub check_hit_ratio {
     my @rs;
     my @perfdata;
@@ -2852,7 +2856,9 @@ Check the age of the backup label file.
 Perfdata returns the age of the backup_label file, -1 if not present.
 
 Critical and Warning thresholds only accept an interval (eg. 1h30m25s).
+
 =cut
+
 sub check_backup_label_age {
     my $rs;
     my $c_limit;
@@ -2914,6 +2920,7 @@ Perfdata contains the max/avg age time and the number of prepared
 transaction per databases.
 
 Critical and Warning thresholds only accept an interval.
+
 =cut
 
 sub check_oldest_2pc {
@@ -3028,6 +3035,7 @@ Perfdata contains the max/avg age time and the number of idle
 transaction per databases.
 
 Critical and Warning thresholds only accept an interval.
+
 =cut
 
 sub check_oldest_idlexact {
@@ -3148,6 +3156,7 @@ Perfdata contains the max/avg/min running time and the number of query per
 databases.
 
 Critical and Warning thresholds only accept an interval.
+
 =cut
 
 sub check_longest_query {
@@ -3284,7 +3293,9 @@ Perform a simple connection test.
 No perfdata is returned.
 
 This service ignore critical and warning arguments.
+
 =cut
+
 sub check_connection {
     my @rs;
     my @hosts;
@@ -3321,6 +3332,7 @@ display them in the perfdata format, with unit if needed (eg. "size=35B").
 If a field contains multiple values, they have to be space separated.
 
 =cut
+
 sub check_custom_query {
     my %args    = %{ $_[0] };
     my $me      = 'POSTGRES_CUSTOM_QUERY';
@@ -3456,6 +3468,7 @@ Specific parameters are :
 --no_check_fsync, --no_check_enable, --no_check_track_counts.
 
 =cut
+
 sub check_configuration {
     my @perfdata;
     my @hosts;
@@ -3526,7 +3539,9 @@ given, the thresholds are computed based on the
 "autovacumm_freeze_min_age" parameter.
 
 Perfdatas return the age of each database.
+
 =cut
+
 sub check_max_freeze_age {
     my @rs;
     my @perfdata;
@@ -3640,6 +3655,7 @@ as "in production" by pg_controldata.
 This service ignores critical and warning arguments.
 
 No perfdata are returned.
+
 =cut
 
 sub check_is_master {
@@ -3676,6 +3692,7 @@ Checks if the cluster is in recovery and accepts read only queries.
 This service ignores critical and warning arguments.
 
 No perfdata are returned.
+
 =cut
 
 sub check_is_hot_standby {
@@ -3708,6 +3725,7 @@ You must provide the expected version using either C<--warning> OR
 C<--critical>.
 
 No perfdata are returned.
+
 =cut
 
 sub check_pga_version {
