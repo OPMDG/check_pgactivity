@@ -8,13 +8,13 @@
 
 check_pgactivity - PostgreSQL plugins for Nagios
 
-=head1 SYNOPSIS
+=head2 SYNOPSIS
 
   check_pgactivity {-w|--warning THRESHOLD} {-c|--critical THRESHOLD} [-s|--service SERVICE ] [-h|--host HOST] [-U|--username ROLE] [-p|--port PORT] [-d|--dbname DATABASE] [-S|--dbservice SERVICE_NAME] [-P|--psql PATH] [--debug] [--status-file FILE] [--path PATH] [-t|--timemout TIMEOUT]
   check_pgactivity [--list]
   check_pgactivity [--help]
 
-=head1 DESCRIPTION
+=head2 DESCRIPTION
 
 check_pgactivity is dedicated to monitoring PostgreSQL cluster from Nagios. It
 offers many different services and returns various usefull perfdata for
@@ -463,7 +463,7 @@ sub to_interval($) {
     return $interval;
 }
 
-=head1 THRESHOLDS
+=head2 THRESHOLDS
 
 THRESHOLD given as warning and critical values can either be a raw number, a
 percentage, an interval or a size. Each available service supports one or more
@@ -596,7 +596,7 @@ sub get_size($;$) {
 }
 
 
-=head1 CONNEXIONS
+=head2 CONNEXIONS
 
 check_pgactivity allows two different of connexion specification: by service or
 by specifying values for host, user, port and database. Moreover, some services
@@ -956,7 +956,7 @@ sub output ($$;$$$) {
     return $rc;
 }
 
-=head1 SERVICES
+=head2 SERVICES
 
 Here is the list, descriptions and parameters of available services.
 
@@ -1391,7 +1391,7 @@ sub check_backends_status {
 
 Check the variation of database sizes.
 
-This service uses the status file (see --status-file parameter).
+This service uses the status file (see C<--status-file> parameter).
 
 Perfdata contains the size difference for each database since last call.
 
@@ -1817,7 +1817,7 @@ LOOP_DB: foreach my $db (@all_db) {
 Check on each databases that the oldest analyze (from autovacuum or not) is not
 older than the given threshold.
 
-This service uses the status file (see --status-file parameter) with
+This service uses the status file (see C<--status-file> parameter) with
 PostgreSQL 9.1+.
 
 Perfdata returns oldest analyze per database in seconds. With PostgreSQL
@@ -1838,7 +1838,7 @@ sub check_last_analyze {
 Check on each databases that the oldest vacuum (from autovacuum or not) is not
 older than the given threshold.
 
-This service uses the status file (see --status-file parameter) with
+This service uses the status file (see C<--status-file> parameter) with
 PostgreSQL 9.1+.
 
 Perfdata returns oldest vacuum per database in seconds. With PostgreSQL
@@ -1995,7 +1995,7 @@ sub check_locks {
 
 Check the percentage of pages written by backends since last check.
 
-This service uses the status file (see --status-file parameter).
+This service uses the status file (see C<--status-file> parameter).
 
 Perfdata contains differentials of pg_stat_bgwriter counters since last
 call.
@@ -2319,8 +2319,8 @@ website if check_pgactivity can access it or given as a parameter.
 
 Without C<--critical> or C<--warning> parameters, this service attempt
 to fetch the latest version online. You can optionnaly set the path to
-your prefered program using the parameter "--path" (eg.
- --path '/usr/bin/wget'). Supported programs are: GET, wget, curl,
+your prefered program using the parameter C<--path> (eg.
+C<--path '/usr/bin/wget'>). Supported programs are: GET, wget, curl,
 fetch, lynx, links, links2.
 
 The online version, rise a critical alert if the minor version is not
@@ -2604,7 +2604,7 @@ sub check_hot_standby_delta {
 
 Check the data delta between a cluster and its standbys in streaming replication.
 
-Optionnal argument "--slave" allows to specify some slaves that MUST be
+Optionnal argument C<--slave> allows to specify some slaves that MUST be
 connected. This argument can be used as many time as you need to check multiple
 slaves connections, or you can specify multiple slaves connections at one time,
 using comma separated values. Both methods can be used in a single call. The
@@ -3319,13 +3319,13 @@ sub check_connection {
 
 Perform the given user query.
 
-The query is specified with the --query parameter. The first column will be
+The query is specified with the C<--query parameter>. The first column will be
 used to perform the test for the status, if warning and critical are provided.
 
 The warning and critical arguments are optionnal. They can be treated as integer
-(default), size or time depending to the --type argument. Warning and critical
+(default), size or time depending to the C<--type> argument. Warning and critical
 will be raised if they are greater than the first column, or less if the
---reverse option is used.
+C<--reverse> option is used.
 
 All others columns will be used to generate the perfdata. The query has to
 display them in the perfdata format, with unit if needed (eg. "size=35B").
@@ -3463,9 +3463,9 @@ Check the most important settings.
 Warning and critical tresholds are ignored.
 
 Specific parameters are :
---work_mem, --maintenance_work_mem, --shared_buffers,-- wal_buffers,
---checkpoint_segments, --effective_cache_size, --no_check_autovacuum,
---no_check_fsync, --no_check_enable, --no_check_track_counts.
+C<--work_mem>, C<--maintenance_work_mem>, C<--shared_buffers>,C<-- wal_buffers>,
+C<--checkpoint_segments>, C<--effective_cache_size>, C<--no_check_autovacuum>,
+C<--no_check_fsync>, C<--no_check_enable>, C<--no_check_track_counts>.
 
 =cut
 
@@ -4632,7 +4632,7 @@ exit $services{ $args{'service'} }{'sub'}->( \%args );
 
 __END__
 
-=head1 EXAMPLES
+=head2 EXAMPLES
 
 =over
 
@@ -4650,12 +4650,12 @@ Execute service "streaming_delta" between hosts "service=pg92" and "host=slave u
 
 =back
 
-=head1 LICENSING
+=head2 LICENSING
 
 This program is open source, licensed under the PostgreSQL license.
 For license terms, see the LICENSE provided with the sources.
 
-=head1 AUTHORS
+=head2 AUTHORS
 
 Author: Open PostgreSQL Monitoring Development Group
 Copyright: (C) 2012-2014 Open PostgreSQL Development Group
