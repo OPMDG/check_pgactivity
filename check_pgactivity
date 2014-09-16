@@ -610,14 +610,14 @@ The rules with connexions parameters are:
 
 =over
 
-=item * Parameter C<--dbservice SERVICE_NAME>
+=item B<Parameter> C<--dbservice SERVICE_NAME>
 
 Define a new host using the given service. Multiple hosts can be defined by
 giving multiple services seperated by a comma. Eg.
 
   --dbservice service1,service2
 
-=item * Parameters C<--host HOST>, C<--port PORT>, C<--user ROLE> or C<--dbname DATABASE>
+=item B<Parameters> C<--host HOST>, C<--port PORT>, C<--user ROLE> or C<--dbname DATABASE>
 
 One of these parameters is enough to defines a new host. If some other
 parameters are missing, default values are used.
@@ -637,7 +637,7 @@ parameter will use the first given value for this parameter. Eg.:
 
 Means: "host=h1 port=5433" and "host=h2 port=5433".
 
-=item * Services are define first
+=item B<Services are define first>
 
 As instance, giving:
 
@@ -646,7 +646,7 @@ As instance, giving:
 Means "service=s1" and "host=h1 port=5433" in this order. If the service
 supports only one host, the second is ignored
 
-=item * Mutual exclusion between both methods
+=item B<Mutual exclusion between both methods>
 
 You can not overwrite services connexions variables with parameters C<--host HOST>, C<--port PORT>, C<--user ROLE> or C<--dbname DATABASE>
 
