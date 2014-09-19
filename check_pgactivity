@@ -1474,8 +1474,9 @@ DB_LOOP: foreach my $db (@rs) {
 
 Check the number of wal files.
 
-Perfdata returns the total number of wal files, current number of written wal
-and the current number of recycled wal.
+Perfdata returns the total number of wal files, current number of written wal,
+the current number of recycled wal and the rate of wal written to disk since
+last execution.
 
 Critical and Warning thresholds accept either a raw number of file or a
 percentage. In case of percentage, the limit is computed based on:
