@@ -3540,10 +3540,14 @@ DB_LOOP:    foreach my $setting (@rc) {
 
 Checks oldest database in transaction age.
 
-Critical and Warning thresholds are optionnal. They accept either a raw
-number or percentage for PostgreSQL 8.2 and more. If percentage is
-given, the thresholds are computed based on the
-"autovacumm_freeze_min_age" parameter.
+Critical and Warning thresholds are optionnal. They accept either a raw number
+or percentage for PostgreSQL 8.2 and more. If percentage is given, the
+thresholds are computed based on the "autovacuum_freeze_max_age" parameter.
+100% means some table(s) reached the maximum age and will trigger an autovacuum
+freeze. Percentage thresholds should therefore be greater than 100%.
+
+Even with no threshold, this service will raise a critical alert if one database
+has a negative age.
 
 Perfdatas return the age of each database.
 
@@ -3560,7 +3564,7 @@ sub check_max_freeze_age {
     my $c_limit;
     my $w_limit;
     my $oldestdb;
-    my $oldestage = -1;
+    my $oldestage     = -1;
     my %args          = %{ $_[0] };
     my $me            = 'POSTGRES_MAX_FREEZE_AGE';
     my %queries       = (
@@ -3609,7 +3613,7 @@ sub check_max_freeze_age {
 
     if ( scalar @rs and defined $args{'critical'} ) {
         $c_limit = int($1 * $rs[0][2]/100) if $args{'critical'} =~ /^([0-9.]+)%$/;
-        $w_limit  = int($1 * $rs[0][2]/100) if $args{'warning'}  =~ /^([0-9.]+)%$/;
+        $w_limit = int($1 * $rs[0][2]/100) if $args{'warning'}  =~ /^([0-9.]+)%$/;
     }
 
     REC_LOOP: foreach my $r (@rs) {
@@ -3630,6 +3634,11 @@ sub check_max_freeze_age {
             if defined $c_limit;
 
         push @perfdata => $perfdata_value;
+
+        if ( $r->[1] < 0 ) {
+            push @msg_crit => "$r->[0] has a negative age" ;
+            next REC_LOOP;
+        }
 
         if ( defined $c_limit ) {
             if ( $r->[1] > $c_limit ) {
