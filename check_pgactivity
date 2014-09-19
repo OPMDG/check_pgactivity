@@ -42,7 +42,7 @@ setlocale( LC_ALL, 'C' );
 
 $| = 1;
 
-$VERSION = '1.14';
+$VERSION = '1.15';
 $PROGRAM = 'check_pgactivity';
 
 my $PG_VERSION_MIN = 70400;
@@ -1476,7 +1476,7 @@ Check the number of wal files.
 
 Perfdata returns the total number of wal files, current number of written wal,
 the current number of recycled wal and the rate of wal written to disk since
-last execution.
+last execution on master clusters.
 
 Critical and Warning thresholds accept either a raw number of file or a
 percentage. In case of percentage, the limit is computed based on:
@@ -1516,7 +1516,11 @@ sub check_wal_files {
               (2 + current_setting('checkpoint_completion_target')::float4),
             1 + current_setting('wal_keep_segments')::float4 +
               2 * current_setting('checkpoint_segments')::float4
-          ), pg_current_xlog_location(),
+          ),
+          CASE WHEN pg_is_in_recovery()
+            THEN NULL
+            ELSE pg_current_xlog_location()
+          END,
           current_setting('wal_keep_segments')::integer
         FROM pg_ls_dir('pg_xlog') AS s(f)
         WHERE f ~ '^[0-9A-F]{24}$'
@@ -1617,7 +1621,7 @@ sub check_wal_files {
 
     push @msg => "$num_seg WAL files";
 
-    if ( $hosts[0]{'version_num'} >= $PG_VERSION_82 ) {
+    if ( $hosts[0]{'version_num'} >= $PG_VERSION_82 and $rs[0][2] ne '') {
         my $now = time();
         my $curr_lsn = $rs[0][2];
         my @prev_lsn = @{ load( $hosts[0], 'last wal files LSN', $args{'status-file'} ) || [] };
