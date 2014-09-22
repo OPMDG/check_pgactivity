@@ -2654,11 +2654,11 @@ sub check_streaming_delta {
     my %queries         = (
         $PG_VERSION_92 => q{SELECT application_name, client_addr, pid,
             sent_location, write_location, flush_location, replay_location,
-            pg_current_xlog_location()
+            CASE pg_is_in_recovery() WHEN true THEN pg_last_xlog_receive_location() ELSE pg_current_xlog_location() END
             FROM pg_stat_replication},
         $PG_VERSION_91 => q{SELECT application_name, client_addr, procpid,
             sent_location, write_location, flush_location, replay_location,
-            pg_current_xlog_location()
+            CASE pg_is_in_recovery() WHEN true THEN pg_last_xlog_receive_location() ELSE pg_current_xlog_location() END
             FROM pg_stat_replication}
     );
     # FIXME this service should check for given slaves in opts!
