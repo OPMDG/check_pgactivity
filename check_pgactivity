@@ -2878,11 +2878,18 @@ sub check_backup_label_age {
     my @hosts;
     my %args    = %{ $_[0] };
     my $me      = 'POSTGRES_BACKUP_LABEL_AGE';
-    my $sql     = q{SELECT max(s.r) AS value FROM (
+    my %queries         = (
+        $PG_VERSION_81 => q{SELECT max(s.r) AS value FROM (
             SELECT CAST(extract(epoch FROM current_timestamp - (pg_stat_file(file)).modification) AS integer) AS r
             FROM pg_ls_dir('.') AS ls(file)
             WHERE file='backup_label' UNION SELECT 0
-        ) AS s};
+        ) AS s},
+        $PG_VERSION_93 => q{
+            SELECT CASE WHEN pg_is_in_backup()
+                        THEN CAST(extract(epoch FROM current_timestamp - pg_backup_start_time()) AS integer)
+                        ELSE 0
+                   END}
+    );
 
     # warning and critical are mandatory.
     pod2usage(
@@ -2907,7 +2914,7 @@ sub check_backup_label_age {
 
     is_compat $hosts[0], 'backup_label_age', $PG_VERSION_81 or exit 1;
 
-    $rs = @{ query( $hosts[0], $sql )->[0] }[0];
+    $rs = @{ query_ver( $hosts[0], %queries )->[0] }[0];
 
     push @perfdata,
          "age=${rs}s;$w_limit;$c_limit";
