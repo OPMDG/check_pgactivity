@@ -1881,6 +1881,11 @@ for 8.2+:
 
   max_locks_per_transaction * (max_connections + max_prepared_transactions)
 
+for 9.1+, regarding lockmode :
+
+  max_locks_per_transaction * (max_connections + max_prepared_transactions)
+or max_pred_locks_per_transaction * (max_connections + max_prepared_transactions)
+
 =cut
 
 sub check_locks {
@@ -1890,13 +1895,14 @@ sub check_locks {
     my @hosts;
     my %args          = %{ $_[0] };
     my $total_locks   = 0;
+    my $total_pred_locks   = 0;
     my $waiting_locks = 0;
     my $me            = 'POSTGRES_LOCKS';
     my %queries       = (
         $PG_VERSION_74 => q{
             SELECT count(l.*), ref.mode,
                 current_setting('max_locks_per_transaction')::integer
-                * current_setting('max_connections')::integer, ref.granted
+                * current_setting('max_connections')::integer, 0, ref.granted
             FROM (
                 SELECT 'AccessShareLock',                't'::boolean
                 UNION SELECT 'RowShareLock',             't'
@@ -1917,14 +1923,14 @@ sub check_locks {
             ) ref (mode, granted)
             LEFT JOIN pg_locks l
                 ON (ref.mode, ref.granted) = (l.mode, l.granted)
-            GROUP BY 2,3,4
+            GROUP BY 2,3,4,5
             ORDER BY ref.granted, ref.mode
         },
         $PG_VERSION_82 => q{
             SELECT count(l.*), ref.mode,
                 current_setting('max_locks_per_transaction')::integer * (
                     current_setting('max_prepared_transactions')::integer
-                    + current_setting('max_connections')::integer), ref.granted
+                    + current_setting('max_connections')::integer), 0, ref.granted
             FROM (SELECT * FROM ( VALUES
                 ('AccessShareLock',          't'::boolean),
                 ('RowShareLock',             't'),
@@ -1946,7 +1952,41 @@ sub check_locks {
             ) ref
             LEFT JOIN pg_locks l
                 ON (ref.mode, ref.granted) = (l.mode, l.granted)
-            GROUP BY 2,3,4
+            GROUP BY 2,3,4,5
+            ORDER BY ref.granted, ref.mode
+        },
+        $PG_VERSION_91 => q{
+            SELECT count(l.*), ref.mode,
+                current_setting('max_locks_per_transaction')::integer * (
+                    current_setting('max_prepared_transactions')::integer
+                    + current_setting('max_connections')::integer),
+                current_setting('max_pred_locks_per_transaction')::integer * (
+                    current_setting('max_prepared_transactions')::integer
+                    + current_setting('max_connections')::integer), ref.granted
+            FROM (SELECT * FROM ( VALUES
+                ('AccessShareLock',          't'::boolean),
+                ('RowShareLock',             't'),
+                ('RowExclusiveLock',         't'),
+                ('ShareUpdateExclusiveLock', 't'),
+                ('ShareLock',                't'),
+                ('ShareRowExclusiveLock',    't'),
+                ('ExclusiveLock',            't'),
+                ('AccessExclusiveLock',      't'),
+                ('AccessShareLock',          'f'),
+                ('RowShareLock',             'f'),
+                ('RowExclusiveLock',         'f'),
+                ('ShareUpdateExclusiveLock', 'f'),
+                ('ShareLock',                'f'),
+                ('ShareRowExclusiveLock',    'f'),
+                ('ExclusiveLock',            'f'),
+                ('AccessExclusiveLock',      'f'),
+                ('SIReadLock',               't'),
+                ('SIReadLock',               'f')
+                ) lockmode (mode, granted)
+            ) ref
+            LEFT JOIN pg_locks l
+                ON (ref.mode, ref.granted) = (l.mode, l.granted)
+            GROUP BY 2,3,4,5
             ORDER BY ref.granted, ref.mode
         }
     );
@@ -1975,12 +2015,18 @@ sub check_locks {
 
     @rs = @{ query_ver $hosts[0], %queries };
 
+    $args{'predcritical'} = $args{'critical'};
+    $args{'predwarning'} = $args{'warning'};
+
     $args{'critical'} = int($1 * $rs[0][2]/100) if $args{'critical'} =~ /^([0-9.]+)%$/;
     $args{'warning'}  = int($1 * $rs[0][2]/100) if $args{'warning'}  =~ /^([0-9.]+)%$/;
+    $args{'predcritical'} = int($1 * $rs[0][3]/100) if $args{'predcritical'} =~ /^([0-9.]+)%$/;
+    $args{'predwarning'}  = int($1 * $rs[0][3]/100) if $args{'predwarning'}  =~ /^([0-9.]+)%$/;
 
     map {
-        $total_locks += $_->[0];
-        if ($_->[3] eq 't') {
+        $total_locks += $_->[0] if $_->[1] ne 'SIReadLock';
+        $total_pred_locks += $_->[0] if $_->[1] eq 'SIReadLock';
+        if ($_->[4] eq 't') {
             push @perfdata =>
                 ( "$_->[1]=$_->[0];$args{'warning'};$args{'critical'}" );
         }
@@ -1991,13 +2037,13 @@ sub check_locks {
         }
     } @rs;
 
-    push @msg => "$total_locks locks, $waiting_locks waiting locks";
+    push @msg => "$total_locks locks, $total_pred_locks predicate locks, $waiting_locks waiting locks";
 
     return critical( $me, \@msg, \@perfdata )
-        if $total_locks >= $args{'critical'};
+        if $total_locks >= $args{'critical'} or $total_pred_locks >= $args{'predcritical'};
 
     return warning( $me, \@msg, \@perfdata )
-        if $total_locks >= $args{'warning'};
+        if $total_locks >= $args{'warning'} or $total_pred_locks >= $args{'predwarning'};
 
     return ok( $me, \@msg, \@perfdata );
 }
