@@ -2621,8 +2621,9 @@ sub check_hot_standby_delta {
 
         push @perfdata => "'receive delta $host->{'name'}'=".
             ($host->{'receive_delta'} > 0 ? $host->{'receive_delta'}:0).
-            "B 'replay delta $host->{'name'}'=".
-            ($host->{'replay_delta'} > 0 ? $host->{'replay_delta'}:0) .'B'
+            "B;$w_limit_received;$c_limit_received; 'replay delta $host->{'name'}'=".
+            ($host->{'replay_delta'} > 0 ? $host->{'replay_delta'}:0) .
+            "B;$w_limit_replayed;$c_limit_replayed"
         ;
 
         if ($host->{'receive_delta'} > $c_limit_received) {
