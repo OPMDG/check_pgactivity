@@ -1980,8 +1980,7 @@ sub check_locks {
                 ('ShareRowExclusiveLock',    'f'),
                 ('ExclusiveLock',            'f'),
                 ('AccessExclusiveLock',      'f'),
-                ('SIReadLock',               't'),
-                ('SIReadLock',               'f')
+                ('SIReadLock',               't')
                 ) lockmode (mode, granted)
             ) ref
             LEFT JOIN pg_locks l
@@ -2027,8 +2026,13 @@ sub check_locks {
         $total_locks += $_->[0] if $_->[1] ne 'SIReadLock';
         $total_pred_locks += $_->[0] if $_->[1] eq 'SIReadLock';
         if ($_->[4] eq 't') {
-            push @perfdata =>
-                ( "$_->[1]=$_->[0];$args{'warning'};$args{'critical'}" );
+            if ($_->[1] ne 'SIReadLock') {
+                push @perfdata =>
+                    ( "$_->[1]=$_->[0];$args{'warning'};$args{'critical'}" );
+            } else {
+                push @perfdata =>
+                    ( "$_->[1]=$_->[0];$args{'predwarning'};$args{'predcritical'}" );
+            }
         }
         else {
             $waiting_locks += $_->[0];
