@@ -605,7 +605,7 @@ Descriptions and parameters of available services.
  
 
 
-\ **oldest_xact**\  (8.3+)
+\ **oldest_idlexact**\  (8.3+)
  
  Check the oldest \ *idle*\  transaction.
  
