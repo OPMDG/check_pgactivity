@@ -3103,7 +3103,7 @@ sub check_oldest_2pc {
     return ok( $me, \@msg, \@perfdata );
 }
 
-=item B<oldest_xact> (8.3+)
+=item B<oldest_idlexact> (8.3+)
 
 Check the oldest I<idle> transaction.
 
