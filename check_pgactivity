@@ -3979,13 +3979,13 @@ sub check_btree_bloat {
       $PG_VERSION_74 =>  q{
       SELECT current_database(), nspname AS schemaname, tblname, idxname,
         bs*(sub.relpages)::bigint AS real_size,
-        bs*otta::bigint as estimated_size,
-        bs*(sub.relpages-otta)::bigint AS bloat_size,
-        (sub.relpages-otta)::float * 100 / sub.relpages AS bloat_ratio
+        bs*est_pages::bigint as estimated_size,
+        bs*(sub.relpages-est_pages)::bigint AS bloat_size,
+        100 * (sub.relpages-est_pages)::float / sub.relpages AS bloat_ratio
       FROM (
         SELECT bs, nspname, table_oid, tblname, idxname, relpages, coalesce(
-            ceil((reltuples*(4+nulldatahdrwidth))/(bs-pagehdr::float)) + 1, 0
-          ) AS otta, is_na
+            1+ceil(reltuples/floor((bs-pageopqdata-pagehdr)/(4+nulldatahdrwidth)::float)), 0
+          ) AS est_pages, is_na
         FROM (
           SELECT maxalign, bs, nspname, tblname, idxname, reltuples, relpages, relam, table_oid,
             ( index_tuple_hdr_bm +
@@ -3998,7 +3998,7 @@ sub check_btree_bloat {
                   WHEN nulldatawidth::integer%maxalign = 0 THEN maxalign
                   ELSE nulldatawidth::integer%maxalign
                 END
-            )::numeric AS nulldatahdrwidth, pagehdr, is_na
+            )::numeric AS nulldatahdrwidth, pagehdr, pageopqdata, is_na
           FROM (
             SELECT
               i.nspname, i.tblname, i.idxname, i.reltuples, i.relpages, i.relam, a.attrelid AS table_oid,
@@ -4008,25 +4008,18 @@ sub check_btree_bloat {
                 ELSE 4
               END AS maxalign,
               20 AS pagehdr,
+              16 AS pageopqdata,
               CASE WHEN max(coalesce(s.null_frac,0)) = 0
-                THEN 2 -- IndexTupleData size
+                THEN 2
                 ELSE 2 + (( 32 + 8 - 1 ) / 8)
               END AS index_tuple_hdr_bm,
-              sum( (1-coalesce(s.null_frac, 0))
-                * coalesce(
-                  CASE
-                    WHEN t.typlen = -1 THEN s.avg_width + 4
-                    WHEN t.typlen = -2 THEN s.avg_width + 1
-                    ELSE t.typlen
-                  END
-                , 1024)) AS nulldatawidth,
+              sum( (1-coalesce(s.null_frac, 0)) * coalesce(s.avg_width, 1024)) AS nulldatawidth,
               max( CASE WHEN a.atttypid = 'pg_catalog.name'::regtype THEN 1 ELSE 0 END ) > 0
-                OR count(1) <> i.indnatts
-              AS is_na
+                OR count(1) <> i.indnatts AS is_na
             FROM pg_attribute AS a
               JOIN (
-                SELECT nspname, tbl.relname AS tblname, idx.relname AS idxname, idx.reltuples, idx.relpages, idx.relam, indrelid,
-                  indexrelid, string_to_array(pg_catalog.textin(pg_catalog.int2vectorout(indkey)), ' ')::smallint[] AS attnum, indnatts
+                SELECT nspname, tbl.relname AS tblname, idx.relname AS idxname, idx.reltuples, idx.relpages, idx.relam,
+                  indrelid, indexrelid, string_to_array(pg_catalog.textin(pg_catalog.int2vectorout(indkey)), ' ')::smallint[] AS attnum, indnatts
                 FROM pg_index
                   JOIN pg_class idx ON idx.oid=pg_index.indexrelid
                   JOIN pg_class tbl ON tbl.oid=pg_index.indrelid
@@ -4034,7 +4027,7 @@ sub check_btree_bloat {
                 WHERE tbl.relkind = 'r'
               ) AS i ON a.attrelid = i.indexrelid
               JOIN pg_stats AS s ON s.schemaname = i.nspname
-                AND s.tablename = i.tblname AND s.attname = a.attname
+                AND s.tablename = i.tblname AND s.attname = pg_catalog.pg_get_indexdef(a.attrelid, a.attnum, TRUE)
               JOIN pg_type AS t ON a.atttypid = t.oid
             WHERE a.attnum > 0
             GROUP BY 1, 2, 3, 4, 5, 6, 7, 8, 9, i.indnatts
@@ -4046,15 +4039,14 @@ sub check_btree_bloat {
       ORDER BY 2,3,4 },
       # page header is 24 and block_size GUC, support index on expression
       $PG_VERSION_80 =>  q{
-      SELECT current_database(), nspname AS schemaname, tblname, idxname,
-        bs*(sub.relpages)::bigint AS real_size,
-        bs*otta::bigint as estimated_size,
-        bs*(sub.relpages-otta)::bigint AS bloat_size,
-        (sub.relpages-otta)::float * 100 / sub.relpages AS bloat_ratio
+      SELECT current_database(), nspname AS schemaname, tblname, idxname, bs*(sub.relpages)::bigint AS real_size,
+        bs*est_pages::bigint as estimated_size,
+        bs*(sub.relpages-est_pages)::bigint AS bloat_size,
+        100 * (sub.relpages-est_pages)::float / sub.relpages AS bloat_ratio, is_na
       FROM (
         SELECT bs, nspname, table_oid, tblname, idxname, relpages, coalesce(
-            ceil((reltuples*(4+nulldatahdrwidth))/(bs-pagehdr::float)) + 1, 0
-          ) AS otta, is_na
+            1+ceil(reltuples/floor((bs-pageopqdata-pagehdr)/(4+nulldatahdrwidth)::float)), 0
+          ) AS est_pages, is_na
         FROM (
           SELECT maxalign, bs, nspname, tblname, idxname, reltuples, relpages, relam, table_oid,
             ( index_tuple_hdr_bm +
@@ -4067,7 +4059,7 @@ sub check_btree_bloat {
                   WHEN nulldatawidth::integer%maxalign = 0 THEN maxalign
                   ELSE nulldatawidth::integer%maxalign
                 END
-            )::numeric AS nulldatahdrwidth, pagehdr, is_na
+            )::numeric AS nulldatahdrwidth, pagehdr, pageopqdata, is_na
           FROM (
             SELECT
               i.nspname, i.tblname, i.idxname, i.reltuples, i.relpages, i.relam, a.attrelid AS table_oid,
@@ -4077,23 +4069,17 @@ sub check_btree_bloat {
                 ELSE 4
               END AS maxalign,
               24 AS pagehdr,
+              16 AS pageopqdata,
               CASE WHEN max(coalesce(s.null_frac,0)) = 0
                 THEN 2
                 ELSE 2 + (( 32 + 8 - 1 ) / 8)
               END AS index_tuple_hdr_bm,
-              sum( (1-coalesce(s.null_frac, 0))
-                * coalesce(
-                  CASE
-                    WHEN t.typlen = -1 THEN s.avg_width + 4
-                    WHEN t.typlen = -2 THEN s.avg_width + 1
-                    ELSE t.typlen
-                  END
-                , 1024)) AS nulldatawidth,
+              sum( (1-coalesce(s.null_frac, 0)) * coalesce(s.avg_width, 1024)) AS nulldatawidth,
               max( CASE WHEN a.atttypid = 'pg_catalog.name'::regtype THEN 1 ELSE 0 END ) > 0 AS is_na
             FROM pg_attribute AS a
               JOIN (
-                SELECT nspname, tbl.relname AS tblname, idx.relname AS idxname, idx.reltuples, idx.relpages, idx.relam, indrelid,
-                  indexrelid, string_to_array(pg_catalog.textin(pg_catalog.int2vectorout(indkey)), ' ')::smallint[] AS attnum
+                SELECT nspname, tbl.relname AS tblname, idx.relname AS idxname, idx.reltuples, idx.relpages, idx.relam,
+                  indrelid, indexrelid, string_to_array(pg_catalog.textin(pg_catalog.int2vectorout(indkey)), ' ')::smallint[] AS attnum
                 FROM pg_index
                   JOIN pg_class idx ON idx.oid=pg_index.indexrelid
                   JOIN pg_class tbl ON tbl.oid=pg_index.indrelid
@@ -4101,7 +4087,7 @@ sub check_btree_bloat {
                 WHERE tbl.relkind = 'r'
               ) AS i ON a.attrelid = i.indexrelid
               JOIN pg_stats AS s ON s.schemaname = i.nspname
-                AND ((s.tablename = i.tblname AND s.attname = a.attname)
+                AND ((s.tablename = i.tblname AND s.attname = pg_catalog.pg_get_indexdef(a.attrelid, a.attnum, TRUE))
                 OR   (s.tablename = i.idxname AND s.attname = a.attname))
               JOIN pg_type AS t ON a.atttypid = t.oid
             WHERE a.attnum > 0
@@ -4113,84 +4099,15 @@ sub check_btree_bloat {
       WHERE NOT is_na
       ORDER BY 2,3,4 },
       # new column pg_index.indisvalid
-      $PG_VERSION_82 =>  q{
-      SELECT current_database(), nspname AS schemaname, tblname, idxname,
-        bs*(sub.relpages)::bigint AS real_size,
-        bs*otta::bigint as estimated_size,
-        bs*(sub.relpages-otta)::bigint AS bloat_size,
-        (sub.relpages-otta)::float * 100 / sub.relpages AS bloat_ratio
-      FROM (
-        SELECT bs, nspname, table_oid, tblname, idxname, relpages, coalesce(
-            ceil((reltuples*(4+nulldatahdrwidth))/(bs-pagehdr::float)) + 1, 0
-          ) AS otta, is_na
-        FROM (
-          SELECT maxalign, bs, nspname, tblname, idxname, reltuples, relpages, relam, table_oid,
-            ( index_tuple_hdr_bm +
-                maxalign - CASE
-                  WHEN index_tuple_hdr_bm%maxalign = 0 THEN maxalign
-                  ELSE index_tuple_hdr_bm%maxalign
-                END
-              + nulldatawidth + maxalign - CASE
-                  WHEN nulldatawidth = 0 THEN 0
-                  WHEN nulldatawidth::integer%maxalign = 0 THEN maxalign
-                  ELSE nulldatawidth::integer%maxalign
-                END
-            )::numeric AS nulldatahdrwidth, pagehdr, is_na
-          FROM (
-            SELECT
-              i.nspname, i.tblname, i.idxname, i.reltuples, i.relpages, i.relam, a.attrelid AS table_oid,
-              current_setting('block_size')::numeric AS bs,
-              CASE
-                WHEN version() ~ 'mingw32' OR version() ~ '64-bit|x86_64|ppc64|ia64|amd64' THEN 8
-                ELSE 4
-              END AS maxalign,
-              24 AS pagehdr,
-              CASE WHEN max(coalesce(s.null_frac,0)) = 0
-                THEN 2
-                ELSE 2 + (( 32 + 8 - 1 ) / 8)
-              END AS index_tuple_hdr_bm,
-              sum( (1-coalesce(s.null_frac, 0))
-                * coalesce(
-                  CASE
-                    WHEN t.typlen = -1 THEN s.avg_width + 4
-                    WHEN t.typlen = -2 THEN s.avg_width + 1
-                    ELSE t.typlen
-                  END
-                , 1024)) AS nulldatawidth,
-              max( CASE WHEN a.atttypid = 'pg_catalog.name'::regtype THEN 1 ELSE 0 END ) > 0 AS is_na
-            FROM pg_attribute AS a
-              JOIN (
-                SELECT nspname, tbl.relname AS tblname, idx.relname AS idxname, idx.reltuples, idx.relpages, idx.relam,
-                  indrelid, indexrelid, indkey::smallint[] AS attnum
-                FROM pg_index
-                  JOIN pg_class idx ON idx.oid=pg_index.indexrelid
-                  JOIN pg_class tbl ON tbl.oid=pg_index.indrelid
-                  JOIN pg_namespace ON pg_namespace.oid = idx.relnamespace
-                WHERE pg_index.indisvalid AND tbl.relkind = 'r'
-              ) AS i ON a.attrelid = i.indexrelid
-              JOIN pg_stats AS s ON s.schemaname = i.nspname
-                AND ((s.tablename = i.tblname AND s.attname = a.attname)
-                OR   (s.tablename = i.idxname AND s.attname = a.attname))
-              JOIN pg_type AS t ON a.atttypid = t.oid
-            WHERE a.attnum > 0
-            GROUP BY 1, 2, 3, 4, 5, 6, 7, 8, 9
-          ) AS s1
-        ) AS s2
-          JOIN pg_am am ON s2.relam = am.oid WHERE am.amname = 'btree'
-      ) AS sub
-      WHERE NOT is_na
-      ORDER BY 2,3,4 },
-      # text types header is 1 or 4
       $PG_VERSION_83 =>  q{
-      SELECT current_database(), nspname AS schemaname, tblname, idxname,
-        bs*(sub.relpages)::bigint AS real_size,
-        bs*otta::bigint as estimated_size,
-        bs*(sub.relpages-otta)::bigint AS bloat_size,
-        (sub.relpages-otta)::float * 100 / sub.relpages AS bloat_ratio
+      SELECT current_database(), nspname AS schemaname, tblname, idxname, bs*(sub.relpages)::bigint AS real_size,
+        bs*est_pages::bigint as estimated_size,
+        bs*(sub.relpages-est_pages)::bigint AS bloat_size,
+        100 * (sub.relpages-est_pages)::float / sub.relpages AS bloat_ratio, is_na
       FROM (
         SELECT bs, nspname, table_oid, tblname, idxname, relpages, coalesce(
-            ceil((reltuples*(4+nulldatahdrwidth))/(bs-pagehdr::float)) + 1, 0
-          ) AS otta, is_na
+            1+ceil(reltuples/floor((bs-pageopqdata-pagehdr)/(4+nulldatahdrwidth)::float)), 0
+          ) AS est_pages, is_na
         FROM (
           SELECT maxalign, bs, nspname, tblname, idxname, reltuples, relpages, relam, table_oid,
             ( index_tuple_hdr_bm +
@@ -4203,7 +4120,7 @@ sub check_btree_bloat {
                   WHEN nulldatawidth::integer%maxalign = 0 THEN maxalign
                   ELSE nulldatawidth::integer%maxalign
                 END
-            )::numeric AS nulldatahdrwidth, pagehdr, is_na
+            )::numeric AS nulldatahdrwidth, pagehdr, pageopqdata, is_na
           FROM (
             SELECT
               i.nspname, i.tblname, i.idxname, i.reltuples, i.relpages, i.relam, a.attrelid AS table_oid,
@@ -4213,21 +4130,12 @@ sub check_btree_bloat {
                 ELSE 4
               END AS maxalign,
               24 AS pagehdr,
+              16 AS pageopqdata,
               CASE WHEN max(coalesce(s.null_frac,0)) = 0
                 THEN 2
                 ELSE 2 + (( 32 + 8 - 1 ) / 8)
               END AS index_tuple_hdr_bm,
-              sum( (1-coalesce(s.null_frac, 0))
-                * coalesce(
-                  CASE
-                    WHEN t.typlen = -1 THEN
-                      CASE WHEN s.avg_width < 127
-                        THEN s.avg_width + 1 ELSE s.avg_width + 4
-                      END
-                    WHEN t.typlen = -2 THEN s.avg_width + 1
-                    ELSE t.typlen
-                  END
-                , 1024)) AS nulldatawidth,
+              sum( (1-coalesce(s.null_frac, 0)) * coalesce(s.avg_width, 1024)) AS nulldatawidth,
               max( CASE WHEN a.atttypid = 'pg_catalog.name'::regtype THEN 1 ELSE 0 END ) > 0 AS is_na
             FROM pg_attribute AS a
               JOIN (
@@ -4240,7 +4148,7 @@ sub check_btree_bloat {
                 WHERE pg_index.indisvalid AND tbl.relkind = 'r'
               ) AS i ON a.attrelid = i.indexrelid
               JOIN pg_stats AS s ON s.schemaname = i.nspname
-                AND ((s.tablename = i.tblname AND s.attname = a.attname)
+                AND ((s.tablename = i.tblname AND s.attname = pg_catalog.pg_get_indexdef(a.attrelid, a.attnum, TRUE))
                 OR   (s.tablename = i.idxname AND s.attname = a.attname))
               JOIN pg_type AS t ON a.atttypid = t.oid
             WHERE a.attnum > 0
