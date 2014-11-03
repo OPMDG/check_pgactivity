@@ -2047,10 +2047,10 @@ sub check_locks {
     push @msg => "$total_locks locks, $total_pred_locks predicate locks, $waiting_locks waiting locks";
 
     return critical( $me, \@msg, \@perfdata )
-        if $total_locks >= $args{'critical'} or $total_pred_locks >= $args{'predcritical'};
+        if $total_locks >= $args{'critical'} or ( $hosts[0]->{'version_num'} >= $PG_VERSION_91 and $total_pred_locks >= $args{'predcritical'} );
 
     return warning( $me, \@msg, \@perfdata )
-        if $total_locks >= $args{'warning'} or $total_pred_locks >= $args{'predwarning'};
+        if $total_locks >= $args{'warning'} or ( $hosts[0]->{'version_num'} >= $PG_VERSION_91 and $total_pred_locks >= $args{'predwarning'});
 
     return ok( $me, \@msg, \@perfdata );
 }
