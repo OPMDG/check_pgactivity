@@ -1730,23 +1730,15 @@ sub check_last_maintenance {
         $PG_VERSION_82 => qq{
             SELECT coalesce(min(
                 extract(epoch FROM current_timestamp -
-                    CASE last_auto${type} > last_${type}
-                        WHEN 't' THEN last_auto${type}
-                        ELSE last_${type}
-                    END
-                )::float
-            ), 'NaN'::float)
+                    greatest(last_${type}, last_auto${type})
+                )), 'NaN'::float)
             FROM pg_stat_user_tables
         },
         $PG_VERSION_91 => qq{
             SELECT coalesce(min(
-                    extract(epoch FROM current_timestamp -
-                        CASE last_auto${type} > last_${type}
-                            WHEN 't' THEN last_auto${type}
-                            ELSE last_${type}
-                        END
-                    )::float
-                ), 'NaN'::float),
+                extract(epoch FROM current_timestamp -
+                    greatest(last_${type}, last_auto${type})
+                )), 'NaN'::float),
                 coalesce(sum(${type}_count), 0) AS ${type}_count,
                 coalesce(sum(auto${type}_count), 0) AS auto${type}_count
             FROM pg_stat_user_tables
@@ -1788,7 +1780,7 @@ LOOP_DB: foreach my $db (@all_db) {
         my $rs = query_ver( $hosts[0], %queries, $db )->[0];
         $db =~ s/=//g;
 
-        $perfdata = "$db=$rs->[0]s;$w_limit;$c_limit";
+        $perfdata = "'$db'=$rs->[0]s;$w_limit;$c_limit";
 
         if ($hosts[0]->{'version_num'} >= $PG_VERSION_91 ) {
             $new_counts{$db} = [$rs->[1], $rs->[2]];
