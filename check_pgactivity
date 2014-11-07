@@ -967,8 +967,8 @@ Descriptions and parameters of available services.
 
 Check the autovacuum activity on the cluster.
 
-Perfdata contains the age of oldest autovacuum and the number of workers by
-type (VACUUM, VACUUM ANALYZE, ANALYZE, VACUUM FREEZE).
+Perfdata contains the age of oldest running autovacuum and the number of workers
+by type (VACUUM, VACUUM ANALYZE, ANALYZE, VACUUM FREEZE).
 
 Thresholds, if any, are ignored.
 
