@@ -189,6 +189,10 @@ my %services = (
         'sub'  => \&check_table_bloat,
         'desc' => 'Check tables bloat.'
     },
+    'temp_files' => {
+        'sub'  => \&check_temp_files,
+        'desc' => 'Check temp files generation'
+    }
 );
 
 
@@ -4566,6 +4570,310 @@ sub check_table_bloat {
         [ @perfdata ], [ @longmsg ]
             if $w_count > 0;
     return ok $me, [ "Table bloat ok" ], \@perfdata;
+}
+
+=item B<temp_files> (8.1+)
+
+Check the number and size of temp files.
+
+This service uses the status file (see C<--status-file> parameter) for 9.2+.
+
+Perfdata returns the number and total size of temp files found in
+C<pgsql_tmp> folders. They are aggregated by database until 8.2, then
+by tablespace (see GUC temp_tablespaces).
+
+Starting with 9.2, perfdata returns as well the number of temp files per
+database since last run, the total size of temp file per database since last
+run and the rate at which temp files were generated.
+
+Critical and Warning thresholds are optional. They accept either a number
+of file (raw value), a size (unit is B<mandatory> to define a size) or both
+values separated by a comma.
+
+Threshols applied on current temp files beeing created AND the number/size
+of temp files created since last execution.
+
+=cut
+
+sub check_temp_files {
+    my $me  = 'POSTGRES_TEMP_FILES';
+    my $now = time();
+    my $w_flimit;
+    my $c_flimit;
+    my $w_limit;
+    my $c_limit;
+    my $perf_flimits = '';
+    my $perf_limits  = '';
+    my $obj = 'database(s)';
+    my @msg_crit;
+    my @msg_warn;
+    my @perfdata;
+    my @hosts;
+    my @rs;
+    my %prev_temp_files;
+    my %new_temp_files;
+    my %args = %{ $_[0] };
+
+    my %queries   = (
+        # WARNING: these queries might have a race condition between pg_ls_dir and pg_stat_file!
+        $PG_VERSION_81 => q{
+          SELECT 'live', agg.datname, sum(CASE WHEN agg.tmpfile <> '' THEN 1 ELSE 0 END),
+            sum(CASE
+              WHEN agg.tmpfile <> '' THEN (pg_stat_file(agg.dir||'/'||agg.tmpfile)).size
+              ELSE 0 END)
+          FROM (
+            SELECT t3.datname, t3.spcname, t3.dbroot||'/'||t3.dbcont AS dir, 
+              CASE gs.i WHEN 1 THEN pg_ls_dir(t3.dbroot||'/'||t3.dbcont) ELSE '' END AS tmpfile
+            FROM (
+              SELECT d.datname, t2.spcname, t2.tblroot||'/'||t2.tblcont AS dbroot, pg_ls_dir(t2.tblroot||'/'||t2.tblcont) AS dbcont
+              FROM (
+                SELECT t.spcname, t.tblroot, pg_ls_dir(tblroot) AS tblcont
+                FROM (
+                  SELECT spc.spcname, 'pg_tblspc/'||spc.oid AS tblroot
+                  FROM pg_tablespace AS spc
+                  WHERE spc.spcname !~ '^pg_'
+                  UNION ALL
+                  SELECT 'pg_default', 'base' AS dir
+                ) AS t
+              ) AS t2
+              JOIN pg_database d ON d.oid=t2.tblcont
+            ) AS t3, (SELECT generate_series(1,2) AS i) AS gs
+            WHERE t3.dbcont='pgsql_tmp'
+          ) AS agg
+          GROUP BY 1,2
+        },
+        $PG_VERSION_83 => q{
+          SELECT 'live', agg.spcname, sum(CASE WHEN agg.tmpfile <> '' THEN 1 ELSE 0 END),
+            sum(CASE
+              WHEN agg.tmpfile <> '' THEN (pg_stat_file(agg.dir||'/'||agg.tmpfile)).size
+              ELSE 0 END)
+          FROM (
+            SELECT gs.i, sr.oid, sr.spcname, sr.dir,
+              CASE WHEN gs.i = 1 THEN pg_ls_dir(sr.dir) ELSE '' END AS tmpfile
+            FROM (
+              SELECT spc.oid, spc.spcname, 'pg_tblspc/'||spc.oid||'/pgsql_tmp' AS dir, pg_ls_dir('pg_tblspc/'||spc.oid) AS sub
+              FROM (
+                SELECT oid, spcname
+                FROM pg_tablespace WHERE spcname !~ '^pg_'
+              ) AS spc
+              UNION ALL
+              SELECT 0, 'pg_default', 'base/pgsql_tmp' AS dir, 'pgsql_tmp' AS sub
+            ) sr, (SELECT generate_series(1,2) AS i) AS gs
+            WHERE sr.sub='pgsql_tmp'
+          ) agg
+          GROUP BY 1,2
+        },
+        $PG_VERSION_90 => q{
+          SELECT 'live', agg.spcname, sum(CASE WHEN agg.tmpfile <> '' THEN 1 ELSE 0 END),
+            sum(CASE
+                WHEN agg.tmpfile <> '' THEN (pg_stat_file(agg.dir||'/'||agg.tmpfile)).size
+                ELSE 0 END)
+          FROM (
+            SELECT ls.oid, ls.spcname, ls.dir||'/'||ls.sub AS dir,
+                CASE gs.i WHEN 1 THEN '' ELSE pg_ls_dir(dir||'/'||ls.sub) END AS tmpfile
+            FROM (
+              SELECT sr.oid, sr.spcname, 'pg_tblspc/'||sr.oid||'/'||sr.spc_root AS dir,
+                pg_ls_dir('pg_tblspc/'||sr.oid||'/'||sr.spc_root) AS sub
+              FROM (
+                SELECT spc.oid, spc.spcname, pg_ls_dir('pg_tblspc/'||spc.oid) AS spc_root,
+                    trim( trailing E'\n ' FROM pg_read_file('PG_VERSION', 0, 100)) as v
+                FROM (
+                  SELECT oid, spcname
+                  FROM pg_tablespace WHERE spcname !~ '^pg_'
+                ) AS spc
+              ) sr
+              WHERE sr.spc_root ~ ('^PG_'||sr.v)
+              UNION ALL
+              SELECT 0, 'pg_default', 'base' AS dir, pg_ls_dir('base') AS sub
+            ) AS ls,
+            (SELECT generate_series(1,2) AS i) AS gs
+            WHERE ls.sub = 'pgsql_tmp'
+          ) agg
+          GROUP BY 1,2
+        },
+        $PG_VERSION_92 => q{
+          SELECT 'live', agg.spcname, sum(CASE WHEN agg.tmpfile <> '' THEN 1 ELSE 0 END),
+            sum(CASE
+                WHEN agg.tmpfile <> '' THEN (pg_stat_file(agg.dir||'/'||agg.tmpfile)).size
+                ELSE 0 END)
+          FROM (
+            SELECT ls.oid, ls.spcname, ls.dir||'/'||ls.sub AS dir,
+                CASE gs.i WHEN 1 THEN '' ELSE pg_ls_dir(dir||'/'||ls.sub) END AS tmpfile
+            FROM (
+              SELECT sr.oid, sr.spcname, 'pg_tblspc/'||sr.oid||'/'||sr.spc_root AS dir,
+                pg_ls_dir('pg_tblspc/'||sr.oid||'/'||sr.spc_root) AS sub
+              FROM (
+                SELECT spc.oid, spc.spcname, pg_ls_dir('pg_tblspc/'||spc.oid) AS spc_root,
+                    trim( trailing E'\n ' FROM pg_read_file('PG_VERSION')) as v
+                FROM (
+                  SELECT oid, spcname
+                  FROM pg_tablespace WHERE spcname !~ '^pg_'
+                ) AS spc
+              ) sr
+              WHERE sr.spc_root ~ ('^PG_'||sr.v)
+              UNION ALL
+              SELECT 0, 'pg_default', 'base' AS dir, pg_ls_dir('base') AS sub
+            ) AS ls,
+            (SELECT generate_series(1,2) AS i) AS gs
+            WHERE ls.sub = 'pgsql_tmp'
+          ) agg
+          GROUP BY 1,2
+          UNION ALL
+          SELECT 'db', d.datname, s.temp_files, s.temp_bytes
+          FROM pg_database AS d
+          JOIN pg_stat_database AS s ON s.datid=d.oid
+          WHERE datallowconn
+        },
+    );
+
+    @hosts = @{ parse_hosts %args };
+
+    is_compat $hosts[0], 'temp_files', $PG_VERSION_81 or exit 1;
+
+    $obj = 'tablespace(s)' if $hosts[0]{'version_num'} >= $PG_VERSION_83;
+    $obj = 'tablespace(s)/database(s)' if $hosts[0]{'version_num'} >= $PG_VERSION_92;
+
+    pod2usage(
+        -message => 'FATAL: you must give only one host with service "temp_files".',
+        -exitval => 127
+    ) if @hosts != 1;
+
+    if ( defined $args{'warning'} and defined $args{'critical'} ) {
+
+        while ( $args{'warning'} =~ m/(?:(\d+)([kmgtpez]?b)?)/ig ) {
+            if ( defined $2 ) {
+                $w_limit = get_size("$1$2");
+            }
+            else {
+                $w_flimit = $1;
+            }
+        }
+
+        while ( $args{'critical'} =~ m/(?:(\d+)([kmgtpez]?b)?)/ig ) {
+            if ( defined $2 ) {
+                $c_limit = get_size("$1$2");
+            }
+            else {
+                $c_flimit = $1;
+            }
+        }
+
+        pod2usage(
+            -message => 'FATAL: you must give the number file thresholds '
+                .'for both warning AND critical if used with service "temp_files".',
+            -exitval => 127
+        ) if (defined $w_flimit and not defined $c_flimit)
+            or (not defined $w_flimit and defined $c_flimit);
+
+        pod2usage(
+            -message => 'FATAL: you must give the total size thresholds '
+                .'for both warning AND critical if used with service "temp_files".',
+            -exitval => 127
+        ) if (defined $w_limit and not defined $c_limit)
+            or (not defined $w_limit and defined $c_limit);
+
+        $perf_flimits = ";$w_flimit;$c_flimit" if defined $w_flimit;
+        $perf_limits  = ";$w_limit;$c_limit" if defined $w_limit;
+    }
+
+    %prev_temp_files = %{ load( $hosts[0], 'temp_files', $args{'status-file'} ) || {} };
+
+    @rs = @{ query_ver( $hosts[0], %queries ) };
+
+DB_LOOP: foreach my $stat (@rs) {
+        my $frate;
+        my $brate;
+        my $last_check;
+        my $last_number;
+        my $last_size;
+        my $diff_number;
+        my $diff_size;
+
+        if ( $stat->[0] eq 'live' ) {
+            push @perfdata => "'# files in $stat->[1]'=$stat->[2]File${perf_flimits}";
+            push @perfdata => "'Total size in $stat->[1]'=$stat->[3]B${perf_limits}";
+
+            if ( defined $c_limit) {
+                if ( $stat->[3] > $c_limit ) {
+                    push @msg_crit => sprintf("%s (%s file(s)/%s)",
+                        $stat->[1], $stat->[2], to_size($stat->[3])
+                    );
+                    next DB_LOOP;
+                }
+
+                push @msg_warn => sprintf("%s (%s file(s)/%s)",
+                    $stat->[1], $stat->[2], to_size($stat->[3])
+                ) if $stat->[3] > $w_limit;
+            }
+
+            if ( defined $c_flimit) {
+                if ( $stat->[2] > $c_flimit ) {
+                    push @msg_crit => sprintf("%s (%s file(s)/%s)",
+                        $stat->[1], $stat->[2], to_size($stat->[3])
+                    );
+                    next DB_LOOP;
+                }
+
+                push @msg_warn => sprintf("%s (%s file(s)/%s)",
+                    $stat->[1], $stat->[2], to_size($stat->[3])
+                ) if $stat->[2] > $w_flimit;
+            }
+
+            next DB_LOOP;
+        }
+
+        $new_temp_files{ $stat->[1] } = [ $now, $stat->[2], $stat->[3] ];
+        next DB_LOOP unless defined $prev_temp_files{ $stat->[1] };
+
+        $last_check  = $prev_temp_files{ $stat->[1] }[0];
+        $last_number = $prev_temp_files{ $stat->[1] }[1];
+        $last_size   = $prev_temp_files{ $stat->[1] }[2];
+        $diff_number = $stat->[2] - $last_number;
+        $diff_size   = $stat->[3] - $last_size;
+
+        $frate = 60 * $diff_number / ($now - $last_check);
+        $brate = 60 * $diff_size   / ($now - $last_check);
+
+        push @perfdata => "'$stat->[1]'=${frate}Fpm";
+        push @perfdata => "'$stat->[1]'=${brate}Bpm";
+        push @perfdata => "'$stat->[1]'=${diff_number}Files${perf_flimits}";
+        push @perfdata => "'$stat->[1]'=${diff_size}B${perf_limits}";
+
+        if ( defined $c_limit) {
+            if ( $diff_size > $c_limit ) {
+                push @msg_crit => sprintf("%s (%s file(s)/%s)",
+                    $stat->[1], $diff_number, to_size($diff_size)
+                );
+                next DB_LOOP;
+            }
+
+            push @msg_warn => sprintf("%s (%s file(s)/%s)",
+                $stat->[1], $diff_number, to_size($diff_size)
+            ) if $diff_size > $w_limit;
+        }
+
+        if ( defined $c_flimit) {
+            if ( $diff_number > $c_flimit ) {
+                push @msg_crit => sprintf("%s (%s file(s)/%s)",
+                    $stat->[1], $diff_number, to_size($diff_size)
+                );
+                next DB_LOOP;
+            }
+
+            push @msg_warn => sprintf("%s (%s file(s)/%s)",
+                $stat->[1], $diff_number, to_size($diff_size)
+            ) if $diff_number > $w_flimit;
+        }
+    }
+
+    save $hosts[0], 'temp_files', \%new_temp_files, $args{'status-file'};
+
+    return critical( $me, [ @msg_crit, @msg_warn ], \@perfdata )
+        if scalar @msg_crit > 0;
+
+    return warning( $me, \@msg_warn, \@perfdata ) if scalar @msg_warn > 0;
+
+    return ok( $me, [ scalar(@rs) . " $obj checked" ], \@perfdata );
 }
 
 # End of SERVICE section in pod doc
