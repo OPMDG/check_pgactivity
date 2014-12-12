@@ -2441,7 +2441,7 @@ sub check_minor_version {
         our %get_methods = (
             'GET'    => "GET -t $timeout -H 'Pragma: no-cache' $url",
             'wget'   => "wget --quiet --timeout=$timeout --no-cache -O - $url",
-            'curl'   => "curl --silent --max-time=$timeout -H 'Pragma: no-cache' $url",
+            'curl'   => "curl --silent --max-time $timeout -H 'Pragma: no-cache' $url",
             'fetch'  => "fetch -q -T $timeout -o - $url",
             'lynx'   => "lynx --connect-timeout=$timeout --dump $url",
             'links'  => 'links -dump $url',
