@@ -1053,7 +1053,7 @@ sub check_autovacuum {
             $oldest = $r->[1];
         }
         $numautovac++;
-        if ( $r->[0] =~ '(to prevent wraparound)$' ) {
+        if ( $r->[0] =~ '\(to prevent wraparound\)$' ) {
             $activity{'VACUUM_FREEZE'}++;
         } else {
             if ( $r->[0] =~ '^autovacuum: VACUUM ANALYZE' ) {
