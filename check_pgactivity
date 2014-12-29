@@ -3831,11 +3831,11 @@ sub check_pga_version {
 
     return critical( $me,
         [ "check_pgactivity version $VERSION (should be $args{'critical'}!)" ]
-    ) if defined $args{'critical'} and $VERSION != $args{'critical'};
+    ) if defined $args{'critical'} and $VERSION ne $args{'critical'};
 
     return warning( $me,
         [ "check_pgactivity version $VERSION (should be $args{'warning'}!)" ]
-    ) if defined $args{'warning'} and $VERSION != $args{'warning'};
+    ) if defined $args{'warning'} and $VERSION ne $args{'warning'};
 
     return ok( $me, [ "check_pgactivity version $VERSION" ] );
 }
