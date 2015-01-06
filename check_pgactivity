@@ -373,7 +373,11 @@ sub save($$$$) {
         $hostkey = "$host->{'host'}$host->{'port'}";
     }
 
-    $all = retrieve($storage) if -f $storage;
+    die "File «${storage}» not recognized as a check_pgactivity status file.\n\n"
+        ."Please, check its path or move away this wrong file"
+        unless -r $storage and Storable::file_magic( $storage );
+
+    $all = retrieve($storage) if -r $storage;
 
     $all->{$hostkey}{$name} = $ref;
 
@@ -402,7 +406,11 @@ sub load($$$) {
         $hostkey = "$host->{'host'}$host->{'port'}";
     }
 
-    return undef unless -f $storage;
+    return undef unless -r $storage;
+
+    die "File «${storage}» not recognized as a check_pgactivity status file.\n\n"
+        ."Please, check its path or move away this wrong file"
+        unless Storable::file_magic( $storage );
 
     $all = retrieve($storage);
 
