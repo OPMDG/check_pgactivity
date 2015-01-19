@@ -3269,7 +3269,7 @@ sub check_oldest_idlexact {
 
         $oldest_idle = $r->[1] if $r->[1] > $oldest_idle;
 
-        $stats{$r->[0]}{'num'}++;
+        $stats{$r->[0]}{'num'}++ if $r->[1] > -1;
         $stats{$r->[0]}{'max'} = $r->[1] if $stats{$r->[0]}{'max'} < $r->[1];
         $stats{$r->[0]}{'avg'} = (
             $stats{$r->[0]}{'avg'} * ($stats{$r->[0]}{'num'} -1) + $r->[1])
