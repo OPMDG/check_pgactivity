@@ -375,7 +375,7 @@ sub save($$$$) {
 
     die "File «${storage}» not recognized as a check_pgactivity status file.\n\n"
         ."Please, check its path or move away this wrong file"
-        unless -r $storage and Storable::file_magic( $storage );
+        if -r $storage and not Storable::file_magic( $storage );
 
     $all = retrieve($storage) if -r $storage;
 
