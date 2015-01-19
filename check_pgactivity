@@ -2853,16 +2853,15 @@ sub check_hit_ratio {
     my @msg_crit;
     my @msg_warn;
     my @hosts;
+    my %db_hitratio;
+    my %new_db_hitratio;
     my %args         = %{ $_[0] };
     my $me           = 'POSTGRES_HIT_RATIO';
-    my $min_hit_ratio = 100000;
-    my $sql          = q{SELECT d.datname,
-        round((blks_hit::float/(blks_read+blks_hit+1)*100)::numeric, 2) as cachehitratio
+    my $sql          = q{SELECT d.datname, blks_hit, blks_read
         FROM pg_stat_database sd
-        JOIN pg_database d ON d.oid = sd.datid
+          JOIN pg_database d ON d.oid = sd.datid
         WHERE d.datallowconn AND NOT d.datistemplate
-        AND (blks_read+blks_hit) > 0
-        ORDER BY datname, cachehitratio};
+        ORDER BY datname};
 
     # warning and critical must be %.
     if ( defined $args{'warning'} and defined $args{'critical'} ) {
@@ -2885,38 +2884,68 @@ sub check_hit_ratio {
     ) if @hosts != 1;
 
 
+    %db_hitratio = %{ load( $hosts[0], 'db_hitratio', $args{'status-file'} ) || {} };
+
     @rs = @{ query( $hosts[0], $sql ) };
 
     DB_LOOP: foreach my $db (@rs) {
-        my $perfdata_value = "$db->[0]=$db->[1]%";
+        my $ratio;
+        my $hit_delta;
+        my $read_delta;
+        my $perfdata_value;
+
+        $new_db_hitratio{ $db->[0] } = [ $db->[1], $db->[2], 'NaN' ];
+
+        next DB_LOOP unless defined $db_hitratio{ $db->[0] };
+
+        $hit_delta  = $new_db_hitratio{ $db->[0] }[0] - $db_hitratio{ $db->[0] }[0];
+        $read_delta = $new_db_hitratio{ $db->[0] }[1] - $db_hitratio{ $db->[0] }[1];
+
+        # metrics moved since last run
+        if ( $hit_delta + $read_delta > 0 ) {
+            $ratio = 100 * $hit_delta / ( $hit_delta + $read_delta );
+            $ratio = int($ratio*100+0.05)/100;
+            $new_db_hitratio{ $db->[0] }[2] = $ratio;
+
+            $perfdata_value = sprintf "'%s'=%s%%", $db->[0], $ratio;
+        }
+        # no activity since last run, use previous hit ratio
+        # this should not happen as the query itself hit/read.
+        elsif ( $db->[1] + $db->[2] > 0 ) {
+            $ratio = $db_hitratio{ $db->[0] }[2];
+            $perfdata_value = sprintf "'%s'=%s%%", $db->[0], $ratio;
+        }
+        # this database has no reported activity yet
+        else {
+            $new_db_hitratio{ $db->[0] }[2] = 'NaN';
+            $perfdata_value = sprintf "'%s'=NaN%%", $db->[0];
+        }
 
         $perfdata_value .= ";$args{'warning'};$args{'critical'}"
             if defined $args{'critical'};
 
-        $min_hit_ratio = $db->[1] if $db->[1] < $min_hit_ratio ;
-
-        push @perfdata, $perfdata_value;
+        push @perfdata => $perfdata_value;
 
         if ( defined $args{'critical'} ) {
             if ( $db->[1] < $args{'critical'} ) {
-                push @msg_crit =>
-                    "$db->[0]: $db->[1]";
+                push @msg_crit => sprintf "%s: %s%%", $db->[0], $ratio;
                 next DB_LOOP;
             }
 
             if ( defined $args{'warning'} and $db->[1] < $args{'warning'} ) {
-                push @msg_warn =>
-                    "$db->[0]: $db->[1]";
+                push @msg_warn => sprintf "%s: %s%%", $db->[0], $ratio;
             }
         }
     }
 
+    save $hosts[0], 'db_hitratio', \%new_db_hitratio, $args{'status-file'};
+
     if ( defined $args{'critical'} ) {
         return critical( $me, [ @msg_crit, @msg_warn ], \@perfdata )
-            if $min_hit_ratio < $args{'critical'};
+            if scalar @msg_crit;
 
         return warning( $me, \@msg_warn, \@perfdata )
-            if $min_hit_ratio < $args{'warning'};
+            if scalar @msg_warn;
     }
 
     return ok( $me, [ scalar(@rs) . " database(s) checked" ], \@perfdata );
