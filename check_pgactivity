@@ -200,8 +200,9 @@ my %services = (
 
 =item B<-s>, B<--service> SERVICE
 
-The nagios service to run. See section SERVICES for a description of available
-services or use C<--list> for a short service and description list.
+The nagios service to run. See section SERVICES for a description of
+available services or use C<--list> for a short service and description
+list.
 
 =item B<-h>, B<--host> HOST
 
@@ -219,9 +220,34 @@ Database server port (default: "5432").
 
 Database name to connect to (default: "postgres").
 
+B<WARNING>! This is not necessarily one of the database that will be
+checked. See C<--dbinclude> and C<--dbexclude> .
+
 =item B<-S>, B<--dbservice> SERVICE_NAME
 
 The connection service name from pg_service.conf to use.
+
+=item B<--dbexclude> REGEXP
+
+Some services are automatically checking all the databases of your
+cluster (note: that does not mean they always need to connect on all
+of them to check them though). C<--dbexclude> allows to exclude any
+database whose name matches the given perl regular expression. You
+can repeat this option as many time as needed.
+
+See C<--dbinclude> as well. If a database match both dbexclude and
+dbinclude arguments, it is excluded.
+
+=item B<--dbinclude> REGEXP
+
+Some services are automatically checking all the databases of your
+cluster(note: that does not mean they always need to connect on all
+of them to check them though). C<--dbinclude> allows to B<ONLY> check
+databases whose names match the given perl regular expression. You
+can repeat this option as many time as needed.
+
+See C<--dbexclude> as well. If a database match both dbexclude and
+dbinclude arguments, it is excluded.
 
 =item B<-w>, B<--warning> THRESHOLD
 
@@ -283,6 +309,7 @@ my %args = (
     'critical'              => undef,
     'exclude'               => [],
     'dbexclude'             => [],
+    'dbinclude'             => [],
     'tmpdir'                => File::Spec->tmpdir(),
     'psql'                  => undef,
     'path'                  => undef,
@@ -1099,12 +1126,6 @@ Critical and Warning thresholds accept either a raw number or a percentage (eg.
 80%). When a threshold is a percentage, it is compared to the cluster parameter
 C<max_connections>.
 
-This service supports a C<--dbexclude REGEX> parameter to exclude databases
-matching the given regular expression. The regular expression applies to
-"pg_stat_database.datname".
-
-You can use multiple C<--dbexclude REGEX> parameters.
-
 =cut
 
 sub check_backends {
@@ -1154,10 +1175,6 @@ sub check_backends {
         if $args{'warning'} =~ /^([0-9.]+)%$/;
 
     LOOP_DB: foreach my $db (@rs) {
-        foreach my $exclude_re ( @{ $args{'dbexclude'} } ) {
-            next LOOP_DB if $db->[0] =~ /$exclude_re/;
-        }
-
         $num_backends += $db->[1];
         push @perfdata,
             "$db->[0]=$db->[1];$args{'warning'};$args{'critical'};0;$db->[2]";
@@ -1422,11 +1439,7 @@ execution.
 Critical and Warning thresholds accept either a raw number, a percentage, or a
 size (eg. 2.5G).
 
-This service supports a C<--dbexclude REGEX> parameter to exclude databases
-matching the given regular expression. The regular expression applies to
-"pg_database.datname".
-
-You can use multiple C<--dbexclude REGEX> parameters.
+This service supports both C<--dbexclude> and C<--dbinclude> parameters.
 
 =cut
 
@@ -1439,6 +1452,8 @@ sub check_database_size {
     my %new_db_sizes;
     my %db_sizes;
     my %args       = %{ $_[0] };
+    my @dbinclude  = @{ $args{'dbinclude'} };
+    my @dbexclude  = @{ $args{'dbexclude'} };
     my $me         = 'POSTGRES_DB_SIZE';
     my $db_checked = 0;
     my $sql        = q{SELECT datname, pg_database_size(datname)
@@ -1470,11 +1485,10 @@ sub check_database_size {
         my $w_limit;
         my $c_limit;
 
-        foreach my $exclude_re ( @{ $args{'dbexclude'} } ) {
-            next DB_LOOP if $db->[0] =~ /$exclude_re/;
-        }
-
         $new_db_sizes{ $db->[0] } = $db->[1];
+
+        next DB_LOOP if grep { $db->[0] =~ /$_/ } @dbexclude;
+        next DB_LOOP if @dbinclude and not grep { $db->[0] =~ /$_/ } @dbinclude;
 
         $db_checked++;
 
@@ -1757,10 +1771,13 @@ sub check_last_maintenance {
     my @all_db;
     my %counts;
     my %new_counts;
-    my $type    = $_[0];
-    my %args    = %{ $_[1] };
-    my $me      = 'POSTGRES_LAST_' . uc($type);
-    my %queries = (
+    my $dbchecked  = 0;
+    my $type       = $_[0];
+    my %args       = %{ $_[1] };
+    my @dbinclude  = @{ $args{'dbinclude'} };
+    my @dbexclude  = @{ $args{'dbexclude'} };
+    my $me         = 'POSTGRES_LAST_' . uc($type);
+    my %queries    = (
         $PG_VERSION_82 => qq{
             SELECT coalesce(min(
                 extract(epoch FROM current_timestamp -
@@ -1813,9 +1830,10 @@ LOOP_DB: foreach my $db (@all_db) {
         my $perfdata;
         my $rs;
 
-        foreach my $exclude_re ( @{ $args{'dbexclude'} } ) {
-            next LOOP_DB if $db =~ /$exclude_re/;
-        }
+        next LOOP_DB if grep { $db =~ /$_/ } @dbexclude;
+        next LOOP_DB if @dbinclude and not grep { $db =~ /$_/ } @dbinclude;
+
+        $dbchecked++;
 
         $rs = query_ver( $hosts[0], %queries, $db )->[0];
         $db =~ s/=//g;
@@ -1855,7 +1873,7 @@ LOOP_DB: foreach my $db (@all_db) {
 
     return warning( $me, \@msg_warn, \@perfdata ) if scalar @msg_warn > 0;
 
-    return ok( $me, [ scalar(@all_db) . " database(s) checked" ], \@perfdata );
+    return ok( $me, [ "$dbchecked database(s) checked" ], \@perfdata );
 }
 
 =item B<last_analyze> (8.2+)
@@ -1873,11 +1891,7 @@ returned.
 Critical and Warning thresholds only accept an interval (eg. 1h30m25s)
 and apply to the oldest execution of analyse.
 
-This service supports a C<--dbexclude REGEX> parameter to exclude databases
-matching the given regular expression. The regular expression applies to
-"pg_database.datname".
-
-You can use multiple C<--dbexclude REGEX> parameters.
+This service supports both C<--dbexclude> and C<--dbinclude> parameters.
 
 =cut
 
@@ -1900,11 +1914,7 @@ execution.
 Critical and Warning thresholds only accept an interval (eg. 1h30m25s)
 and apply to the oldest vacuum.
 
-This service supports a C<--dbexclude REGEX> parameter to exclude databases
-matching the given regular expression. The regular expression applies to
-"pg_database.datname".
-
-You can use multiple C<--dbexclude REGEX> parameters.
+This service supports both C<--dbexclude> and C<--dbinclude> parameters.
 
 =cut
 
@@ -2885,11 +2895,8 @@ databases which have never been accessed.
 
 Critical and Warning thresholds are optional. They only accept a percentage.
 
-This service supports a C<--dbexclude REGEX> parameter to exclude databases
-matching the given regular expression. The regular expression applies to
-"pg_database.datname".
+This service supports both C<--dbexclude> and C<--dbinclude> parameters.
 
-You can use multiple C<--dbexclude REGEX> parameters.
 =cut
 
 sub check_hit_ratio {
@@ -2900,10 +2907,12 @@ sub check_hit_ratio {
     my @hosts;
     my %db_hitratio;
     my %new_db_hitratio;
-    my %args         = %{ $_[0] };
-    my $me           = 'POSTGRES_HIT_RATIO';
-    my $db_checked   = 0;
-    my $sql          = q{SELECT d.datname, blks_hit, blks_read
+    my %args       = %{ $_[0] };
+    my @dbinclude  = @{ $args{'dbinclude'} };
+    my @dbexclude  = @{ $args{'dbexclude'} };
+    my $me         = 'POSTGRES_HIT_RATIO';
+    my $db_checked = 0;
+    my $sql        = q{SELECT d.datname, blks_hit, blks_read
         FROM pg_stat_database sd
           JOIN pg_database d ON d.oid = sd.datid
         WHERE d.datallowconn AND NOT d.datistemplate
@@ -2942,9 +2951,8 @@ sub check_hit_ratio {
 
         $new_db_hitratio{ $db->[0] } = [ $db->[1], $db->[2], 'NaN' ];
 
-        foreach my $exclude_re ( @{ $args{'dbexclude'} } ) {
-            next DB_LOOP if $db->[0] =~ /$exclude_re/;
-        }
+        next DB_LOOP if grep { $db->[0] =~ /$_/ } @dbexclude;
+        next DB_LOOP if @dbinclude and not grep { $db->[0] =~ /$_/ } @dbinclude;
 
         $db_checked++;
 
@@ -3197,11 +3205,8 @@ per databases.
 
 Critical and Warning thresholds only accept an interval.
 
-This service supports a C<--dbexclude REGEX> parameter to exclude databases
-matching the given regular expression. The regular expression applies to
-"pg_database.datname".
+This service supports both C<--dbexclude> and C<--dbinclude> parameters.
 
-You can use multiple C<--dbexclude REGEX> parameters.
 =cut
 
 sub check_oldest_idlexact {
@@ -3211,6 +3216,9 @@ sub check_oldest_idlexact {
     my @hosts;
     my $c_limit;
     my $w_limit;
+    my %args        = %{ $_[0] };
+    my @dbinclude   = @{ $args{'dbinclude'} };
+    my @dbexclude   = @{ $args{'dbexclude'} };
     my $me          = 'POSTGRES_OLDEST_IDLEXACT';
     my $oldest_idle = 0;
     my $nb_idle     = 0;
@@ -3278,9 +3286,8 @@ sub check_oldest_idlexact {
 
     DB_LOOP: foreach my $db (sort keys %stats) {
 
-        foreach my $exclude_re ( @{ $args{'dbexclude'} } ) {
-            next DB_LOOP if $db =~ /$exclude_re/;
-        }
+        next DB_LOOP if grep { $db =~ /$_/ } @dbexclude;
+        next DB_LOOP if @dbinclude and not grep { $db =~ /$_/ } @dbinclude;
 
         $nb_idle += $stats{$db}{'num'};
 
@@ -3326,14 +3333,12 @@ database.
 
 Critical and Warning thresholds only accept an interval.
 
-This service supports a C<--dbexclude REGEX> parameter to exclude databases
-matching the given regular expression. The regular expression applies to
-"pg_database.datname".
+This service supports both C<--dbexclude> and C<--dbinclude> parameters.
 
 It also supports argument C<--exclude REGEX> to exclude queries matching the
 given regular expression from the check.
 
-You can use multiple C<--dbexclude REGEX> or C<--exclude REGEX> parameters.
+You can use multiple C<--exclude REGEX> parameters.
 
 =cut
 
@@ -3345,6 +3350,8 @@ sub check_longest_query {
     my $c_limit;
     my $w_limit;
     my %args          = %{ $_[0] };
+    my @dbinclude     = @{ $args{'dbinclude'} };
+    my @dbexclude     = @{ $args{'dbexclude'} };
     my $me            = 'POSTGRES_LONGEST_QUERY';
     my $longest_query = 0;
     my $nb_query      = 0;
@@ -3408,10 +3415,9 @@ sub check_longest_query {
 
     REC_LOOP: foreach my $r (@rs) {
 
-        # exclude on db name
-        foreach my $exclude_re ( @{ $args{'dbexclude'} } ) {
-            next REC_LOOP if $r->[0] =~ /$exclude_re/;
-        }
+        # exclude/include on db name
+        next REC_LOOP if grep { $r->[0] =~ /$_/ } @dbexclude;
+        next REC_LOOP if @dbinclude and not grep { $r->[0] =~ /$_/ } @dbinclude;
 
         # exclude on query text
         foreach my $exclude_re ( @{ $args{'exclude'} } ) {
@@ -3726,11 +3732,7 @@ has a negative age.
 
 Perfdata return the age of each database.
 
-This service supports a C<--dbexclude REGEX> parameter to exclude databases
-matching the given regular expression. The regular expression applies to
-"pg_database.datname".
-
-You can use multiple C<--dbexclude REGEX> parameters.
+This service supports both C<--dbexclude> and C<--dbinclude> parameters.
 
 =cut
 
@@ -3746,6 +3748,8 @@ sub check_max_freeze_age {
     my $oldestdb;
     my $oldestage     = -1;
     my %args          = %{ $_[0] };
+    my @dbinclude     = @{ $args{'dbinclude'} };
+    my @dbexclude     = @{ $args{'dbexclude'} };
     my $me            = 'POSTGRES_MAX_FREEZE_AGE';
     my %queries       = (
        $PG_VERSION_74 => q{SELECT datname, age(datfrozenxid)
@@ -3797,9 +3801,8 @@ sub check_max_freeze_age {
     REC_LOOP: foreach my $r (@rs) {
         my $perfdata_value;
 
-        foreach my $exclude_re ( @{ $args{'dbexclude'} } ) {
-            next REC_LOOP if $r->[0] =~ /$exclude_re/;
-        }
+        next REC_LOOP if grep { $r->[0] =~ /$_/ } @dbexclude;
+        next REC_LOOP if @dbinclude and not grep { $r->[0] =~ /$_/ } @dbinclude;
 
         if ($oldestage < $r->[1]) {
             $oldestdb = $r->[0];
@@ -4057,9 +4060,7 @@ B<bloat> size, not object size. If a percentage is given, the threshold will
 apply to the bloat size compared to the total index size. If multiple threshold
 values are passed, check_pgactivity will choose the largest (bloat size) value.
 
-This service supports a C<--dbexclude REGEX> parameter to exclude databases
-matching the given regular expression. The regular expression applies to
-"pg_database.datname".
+This service supports both C<--dbexclude> and C<--dbinclude> parameters.
 
 It also supports a C<--exclude REGEX> parameter to exclude relations matching
  the given regular expression. The regular expression applies to
@@ -4068,7 +4069,7 @@ relation name for all schemas and databases, filter on a qualified named relatio
 (schema + relation) for all databases or filter on a qualified named relation in
 only one database.
 
-You can use multiple C<--exclude REGEX> or C<--dbexclude REGEX> parameters.
+You can use multiple C<--exclude REGEX> parameters.
 
 B<Warning>: With a non-superuser role, only indexes on table the role is
 granted access to are checked!
@@ -4088,6 +4089,8 @@ sub check_btree_bloat {
     my $w_count = 0;
     my $c_count = 0;
     my %args    = %{ $_[0] };
+    my @dbinclude  = @{ $args{'dbinclude'} };
+    my @dbexclude  = @{ $args{'dbexclude'} };
     my $me      = 'POSTGRES_BTREE_BLOAT';
     my %queries = (
       # text types header is 4
@@ -4305,9 +4308,8 @@ sub check_btree_bloat {
         my $nb_ind      = 0;
         my $idx_bloated = 0;
 
-        foreach my $exclude_re ( @{ $args{'dbexclude'} } ) {
-            next ALLDB_LOOP if $db =~ /$exclude_re/;
-        }
+        next ALLDB_LOOP if grep { $db =~ /$_/ } @dbexclude;
+        next ALLDB_LOOP if @dbinclude and not grep { $db =~ /$_/ } @dbinclude;
 
         @rc = @{ query_ver( $hosts[0], %queries, $db ) };
 
@@ -4380,9 +4382,7 @@ apply to the bloat size compared to the table + TOAST size.
 If multiple threshold values are passed, check_pgactivity will choose the
 largest (bloat size) value.
 
-This service supports a C<--dbexclude REGEX> parameter to exclude databases
-matching the given regular expression. The regular expression applies to
-"pg_database.datname".
+This service supports both C<--dbexclude> and C<--dbinclude> parameters.
 
 This service supports a C<--exclude REGEX> parameter to exclude relations
 matching the given regular expression. The regular expression applies to
@@ -4391,7 +4391,7 @@ relation name for all schemas and databases, filter on a qualified named relatio
 (schema + relation) for all databases or filter on a qualified named relation in
 only one database.
 
-You can use multiple C<--exclude REGEX> or C<--dbexclude REGEX> parameters.
+You can use multiple C<--exclude REGEX> parameters.
 
 B<Warning>: With a non-superuser role, this service can only check the tables
 the given role is granted to read!
@@ -4411,6 +4411,8 @@ sub check_table_bloat {
     my $w_count   = 0;
     my $c_count   = 0;
     my %args      = %{ $_[0] };
+    my @dbinclude = @{ $args{'dbinclude'} };
+    my @dbexclude = @{ $args{'dbexclude'} };
     my $me        = 'POSTGRES_TABLE_BLOAT';
     my %queries   = (
         # The following queries comes straight from:
@@ -4629,9 +4631,8 @@ sub check_table_bloat {
         my $nb_tbl      = 0;
         my $tbl_bloated = 0;
 
-        foreach my $exclude_re ( @{ $args{'dbexclude'} } ) {
-            next ALLDB_LOOP if $db =~ /$exclude_re/;
-        }
+        next ALLDB_LOOP if grep { $db =~ /$_/ } @dbexclude;
+        next ALLDB_LOOP if @dbinclude and not grep { $db =~ /$_/ } @dbinclude;
 
         @rc = @{ query_ver( $hosts[0], %queries, $db ) };
 
@@ -5046,6 +5047,7 @@ GetOptions(
         'debug!',
         'timeout|t=s',
         'dbexclude=s',
+        'dbinclude=s'
 ) or pod2usage( -exitval => 127 );
 
 list_services() if $args{'list'};
@@ -5130,6 +5132,7 @@ unless ($args{'psql'}) {
 # pre-compile given regexp
 $_ = qr/$_/ for ( @{ $args{'exclude'} } );
 $_ = qr/$_/ for ( @{ $args{'dbexclude'} } );
+$_ = qr/$_/ for ( @{ $args{'dbinclude'} } );
 
 
 exit $services{ $args{'service'} }{'sub'}->( \%args );
@@ -5151,6 +5154,14 @@ Execute service "streaming_delta" between hosts "service=pg92" and "service=pg92
 =item C<check_pgactivity --debug --dbservice pg92 -h slave -U supervisor --service streaming_delta -w 60 -c 90>
 
 Execute service "streaming_delta" between hosts "service=pg92" and "host=slave user=supervisor".
+
+=item C<check_pgactivity -p 5433 -h slave --service hit_ratio --dbexclude idelone --dbexclude "(?i:sleep)" -w 90% -c 80%>
+
+Execute service "hit_ratio" on host "slave" port "5433, excluding database matching the regexps "idelone" and "(?i:sleep)".
+
+=item C<check_pgactivity -p 5433 -h slave --service hit_ratio --dbinclude importantone -w 90% -c 80%>
+
+Execute service "hit_ratio" on host "slave" port "5433, only for databases matching the regexp "importantone".
 
 =back
 
