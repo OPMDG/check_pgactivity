@@ -809,10 +809,9 @@ sub query($$;$) {
     $tmpfile = File::Temp->new(
         TEMPLATE => 'check_pga-XXXXXXXX',
         DIR      => $args{'tmpdir'}
-    );
-    # Always add a comma to make sure psql doesn't wait for the rest of
-    # the query string.
-    print $tmpfile "$query;";
+    ) or die "Could not create or write in a temp file!";
+
+    print $tmpfile "$query;" or die "Could not create or write in a temp file!";
 
     $psqlcmd  = qq{ $args{'psql'} --set "ON_ERROR_STOP=1" }
               . qq{ -qXAtf $tmpfile -R $RS -F $FS };
