@@ -25,6 +25,7 @@ use vars qw($VERSION $PROGRAM);
 
 use strict;
 use warnings;
+use v5.8.0;
 
 use POSIX;
 use Data::Dumper;
