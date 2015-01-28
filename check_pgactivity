@@ -368,6 +368,22 @@ sub list_services() {
     exit 0;
 }
 
+# Check wrapper around Storable::file_magic to fallback on
+# Storable::read_magic under perl 5.8 and below
+sub is_storable($) {
+    my $storage = shift;
+    my $head;
+
+    return Storable::file_magic( $storage ) if
+        defined *Storable::file_magic{CODE};
+
+    open my $fh, '<', $storage;
+    read $fh, $head, 64;
+    close $fh;
+
+    return defined Storable::read_magic($head);
+}
+
 # Record the given ref content for the given host in a file on disk.
 # The file is defined by argument "--status-file" on command line. By default:
 #
@@ -403,7 +419,7 @@ sub save($$$$) {
 
     die "File «${storage}» not recognized as a check_pgactivity status file.\n\n"
         ."Please, check its path or move away this wrong file"
-        if -r $storage and not Storable::file_magic( $storage );
+        if -r $storage and not is_storable $storage;
 
     $all = retrieve($storage) if -r $storage;
 
@@ -438,7 +454,7 @@ sub load($$$) {
 
     die "File «${storage}» not recognized as a check_pgactivity status file.\n\n"
         ."Please, check its path or move away this wrong file"
-        unless Storable::file_magic( $storage );
+        unless is_storable $storage;
 
     $all = retrieve($storage);
 
