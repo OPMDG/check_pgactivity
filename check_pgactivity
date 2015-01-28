@@ -352,7 +352,8 @@ sub terminate() {
 
 # print the version and exit
 sub version() {
-    print "check_pgactivity version $VERSION, Perl $^V\n";
+    printf "check_pgactivity version %s, Perl %vd\n",
+        $VERSION, $^V;
 
     exit 0;
 }
@@ -3946,6 +3947,7 @@ sub check_pga_version {
     my @hosts;
     my %args = %{ $_[0] };
     my $me   = 'PGACTIVITY_VERSION';
+    my $msg  = "check_pgactivity $VERSION %s, Perl %vd";
 
     pod2usage(
         -message => 'FATAL: you must provide a warning or a critical threshold for service pga_version!',
@@ -3960,14 +3962,14 @@ sub check_pga_version {
         or (defined $args{'warning'} and $args{'warning'} !~ m/^\d\.\d+(?:beta\d*)?$/ );
 
     return critical( $me,
-        [ "check_pgactivity $VERSION (should be $args{'critical'}!), Perl $^V" ]
+        [ sprintf($msg, "(should be $args{'critical'}!)", $^V) ]
     ) if defined $args{'critical'} and $VERSION ne $args{'critical'};
 
     return warning( $me,
-        [ "check_pgactivity $VERSION (should be $args{'warning'}!), Perl $^V" ]
+        [ sprintf($msg, "(should be $args{'warning'}!)", $^V) ]
     ) if defined $args{'warning'} and $VERSION ne $args{'warning'};
 
-    return ok( $me, [ "check_pgactivity $VERSION, Perl $^V" ] );
+    return ok( $me, [ sprintf($msg, "", $^V) ] );
 }
 
 =item B<is_replay_paused> (9.1+)
