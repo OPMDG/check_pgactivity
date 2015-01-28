@@ -352,7 +352,7 @@ sub terminate() {
 
 # print the version and exit
 sub version() {
-    print "check_pgactivity version $VERSION\n";
+    print "check_pgactivity version $VERSION, Perl $^V\n";
 
     exit 0;
 }
@@ -3960,14 +3960,14 @@ sub check_pga_version {
         or (defined $args{'warning'} and $args{'warning'} !~ m/^\d\.\d+(?:beta\d*)?$/ );
 
     return critical( $me,
-        [ "check_pgactivity version $VERSION (should be $args{'critical'}!)" ]
+        [ "check_pgactivity $VERSION (should be $args{'critical'}!), Perl $^V" ]
     ) if defined $args{'critical'} and $VERSION ne $args{'critical'};
 
     return warning( $me,
-        [ "check_pgactivity version $VERSION (should be $args{'warning'}!)" ]
+        [ "check_pgactivity $VERSION (should be $args{'warning'}!), Perl $^V" ]
     ) if defined $args{'warning'} and $VERSION ne $args{'warning'};
 
-    return ok( $me, [ "check_pgactivity version $VERSION" ] );
+    return ok( $me, [ "check_pgactivity $VERSION, Perl $^V" ] );
 }
 
 =item B<is_replay_paused> (9.1+)
