@@ -11,7 +11,7 @@ check_pgactivity - PostgreSQL plugin for Nagios
 =head2 SYNOPSIS
 
   check_pgactivity {-w|--warning THRESHOLD} {-c|--critical THRESHOLD} [-s|--service SERVICE ] [-h|--host HOST] [-U|--username ROLE] [-p|--port PORT] [-d|--dbname DATABASE] [-S|--dbservice SERVICE_NAME] [-P|--psql PATH] [--debug] [--status-file FILE] [--path PATH] [-t|--timemout TIMEOUT]
-  check_pgactivity [--list]
+  check_pgactivity [-l|--list]
   check_pgactivity [--help]
 
 =head2 DESCRIPTION
@@ -283,7 +283,7 @@ Timeout to use (default: "30s"). It can be specified as raw (in seconds) or as
 an interval. This timeout will be used as C<statement_timeout> for psql and URL
 timeout for C<minor_version> service.
 
-=item B<--list>
+=item B<-l>, B<--list>
 
 List available services.
 
@@ -5200,7 +5200,7 @@ GetOptions(
         'ignore-wal-size!',
         'suffix=s',
         'slave=s',
-        'list!',
+        'list|l!',
         'version|V!',
         'help|?!',
         'debug!',
