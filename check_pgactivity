@@ -197,6 +197,10 @@ my %services = (
     'temp_files' => {
         'sub'  => \&check_temp_files,
         'desc' => 'Check temp files generation'
+    },
+    'replication_slots' => {
+        'sub'  => \&check_replication_slots,
+        'desc' => 'Check delta in bytes of the replication slots.'
     }
 );
 
@@ -5155,6 +5159,89 @@ DB_LOOP: foreach my $stat (@rs) {
     return warning( $me, \@msg_warn, \@perfdata ) if scalar @msg_warn > 0;
 
     return ok( $me, [ scalar(@rs) . " $obj checked" ], \@perfdata );
+}
+
+=item B<replication_slots> (9.4+)
+
+Check the WAL retained by each replication slots.
+
+Perfdata returns the number of WAL that each replication slot has to keep.
+
+Critical and Warning thresholds are optional. If provided, the number of WAL
+kept by each repication slot will be compared to the threshold.
+These thresholds only accept a raw number.
+
+=cut
+
+sub check_replication_slots {
+    my $me  = 'POSTGRES_REPLICATION_SLOTS';
+    my @msg_crit;
+    my @msg_warn;
+    my @perfdata;
+    my @hosts;
+    my @rs;
+    my %args = %{ $_[0] };
+
+    my $query   = q{
+        WITH wal_size AS (
+            SELECT current_setting('wal_block_size')::int * setting::int AS val
+            FROM pg_settings
+            WHERE name = 'wal_segment_size'
+        )
+        SELECT slot.slot_name,
+        COALESCE(
+            floor(
+                (pg_xlog_location_diff(pg_current_xlog_location(), slot.restart_lsn)
+                - (pg_xlogfile_name_offset(restart_lsn)).file_offset
+                )
+                / (s.val)
+            ),0
+        )
+        FROM pg_replication_slots slot
+        CROSS JOIN wal_size s
+    };
+
+    @hosts = @{ parse_hosts %args };
+
+    is_compat $hosts[0], 'replication_slots', $PG_VERSION_94 or exit 1;
+
+    pod2usage(
+        -message => 'FATAL: you must give only one host with service "replication_slots".',
+        -exitval => 127
+    ) if @hosts != 1;
+
+    if ( defined $args{'warning'} and defined $args{'critical'} ) {
+        # warning and critical must be raw
+        pod2usage(
+            -message => "FATAL: critical and warning thresholds only accept raw numbers.",
+            -exitval => 127
+        ) unless $args{'warning'}  =~ m/^([0-9]+)$/
+            and  $args{'critical'} =~ m/^([0-9]+)$/;
+    }
+
+    @rs = @{ query( $hosts[0], $query ) };
+
+SLOTS_LOOP: foreach my $row (@rs) {
+        push @perfdata => "$row->[0]=$row->[1]";
+        if ( defined $args{'warning'} ) {
+            if ( $row->[1] >= $args{'critical'} ){
+                push @msg_crit => "$row->[0]: $row->[1] WAL";
+                next SLOTS_LOOP;
+                }
+            if ( $row->[1] >= $args{'warning'} ){
+                push @msg_warn => "$row->[0]: $row->[1] WAL";
+                }
+        }
+    }
+
+
+    return critical( $me, [ @msg_crit, @msg_warn ], \@perfdata )
+        if scalar @msg_crit > 0;
+
+    return warning( $me, [ @msg_warn ], \@perfdata )
+        if scalar @msg_warn > 0;
+
+    return ok( $me, [ "Replication slots OK" ], \@perfdata );
 }
 
 # End of SERVICE section in pod doc
