@@ -57,7 +57,6 @@ my $PG_VERSION_91  = 90100;
 my $PG_VERSION_92  = 90200;
 my $PG_VERSION_93  = 90300;
 my $PG_VERSION_94  = 90400;
-my $PG_VERSION_MAX = 9999999;
 
 # Available services and descriptions.
 #
@@ -952,7 +951,7 @@ sub is_compat($$$;$) {
     my $host    = shift;
     my $service = shift;
     my $min     = shift;
-    my $max     = shift() || $PG_VERSION_MAX;
+    my $max     = shift() || 9999999;;
     my $ver;
 
     set_pgversion($host);
