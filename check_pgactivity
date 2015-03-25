@@ -2816,7 +2816,7 @@ sub check_hot_standby_delta {
     ) if @hosts < 2;
 
     is_compat $hosts[0], 'hot_standby_delta', $PG_VERSION_90 or exit 1;
-
+    is_compat $hosts[1], 'hot_standby_delta', $PG_VERSION_90 or exit 1;
 
     # fetch LSNs
     foreach my $host (@hosts) {
@@ -2824,6 +2824,12 @@ sub check_hot_standby_delta {
         $num_clusters += $host->{'rs'}[0];
         $master_location = $host->{'rs'}[1] if $host->{'rs'}[0];
     }
+
+    return critical($me, ["PostgreSQL major versions differ amongst clusters ($hosts[0]{'version_num'} vs. $hosts[1]{'version_num'})."] )
+        if $hosts[0]{'version'} != $hosts[1]{'version'};
+
+    return critical($me, ['No cluster in production.'])
+        if $num_clusters == 0;
 
     return critical($me, ['More than one cluster in production.'])
         if $num_clusters != 1;
