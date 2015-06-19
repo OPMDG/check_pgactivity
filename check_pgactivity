@@ -1144,8 +1144,9 @@ Check the total number of connections in the PostgreSQL cluster.
 Perfdata contains the number of connections per database.
 
 Critical and Warning thresholds accept either a raw number or a percentage (eg.
-80%). When a threshold is a percentage, it is compared to the cluster parameter
-C<max_connections>.
+80%). When a threshold is a percentage, it is compared to the difference
+between the cluster parameters C<max_connections> and
+C<superuser_reserved_connections>.
 
 =cut
 
@@ -1160,7 +1161,7 @@ sub check_backends {
     my $num_backends = 0;
     my $sql          = q{
         SELECT s.datname, s.numbackends,
-            current_setting('max_connections')
+            current_setting('max_connections')::int - current_setting('superuser_reserved_connections')::int
         FROM pg_stat_database AS s
             JOIN pg_database d ON d.oid=s.datid
         WHERE d.datallowconn
@@ -1200,6 +1201,9 @@ sub check_backends {
         push @perfdata,
             "$db->[0]=$db->[1];$args{'warning'};$args{'critical'};0;$db->[2]";
     }
+
+    push @perfdata,
+            "maximum_connections=$rs[0][2];$args{'warning'};$args{'critical'};0;$rs[0][2]";
 
     push @msg => "$num_backends connections on $rs[0][2]";
 
