@@ -5168,7 +5168,7 @@ Check the WAL retained by each replication slots.
 Perfdata returns the number of WAL that each replication slot has to keep.
 
 Critical and Warning thresholds are optional. If provided, the number of WAL
-kept by each repication slot will be compared to the threshold.
+kept by each replication slot will be compared to the threshold.
 These thresholds only accept a raw number.
 
 =cut

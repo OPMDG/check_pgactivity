@@ -16,7 +16,7 @@ SYNOPSIS
 .. code-block:: perl
 
    check_pgactivity {-w|--warning THRESHOLD} {-c|--critical THRESHOLD} [-s|--service SERVICE ] [-h|--host HOST] [-U|--username ROLE] [-p|--port PORT] [-d|--dbname DATABASE] [-S|--dbservice SERVICE_NAME] [-P|--psql PATH] [--debug] [--status-file FILE] [--path PATH] [-t|--timemout TIMEOUT]
-   check_pgactivity [--list]
+   check_pgactivity [-l|--list]
    check_pgactivity [--help]
 
 
@@ -137,7 +137,7 @@ offers many options to measure and monitor useful performance metrics.
 
 
 
-\ **--list**\
+\ **-l**\ , \ **--list**\
 
  List available services.
 
@@ -303,8 +303,9 @@ Descriptions and parameters of available services.
  Perfdata contains the number of connections per database.
 
  Critical and Warning thresholds accept either a raw number or a percentage (eg.
- 80%). When a threshold is a percentage, it is compared to the cluster parameter
- \ ``max_connections``\ .
+ 80%). When a threshold is a percentage, it is compared to the difference
+ between the cluster parameters \ ``max_connections``\  and
+ \ ``superuser_reserved_connections``\ .
 
 
 
@@ -885,6 +886,18 @@ Descriptions and parameters of available services.
 
  Threshols applied on current temp files beeing created AND the number/size
  of temp files created since last execution.
+
+
+
+\ **replication_slots**\  (9.4+)
+
+ Check the WAL retained by each replication slots.
+
+ Perfdata returns the number of WAL that each replication slot has to keep.
+
+ Critical and Warning thresholds are optional. If provided, the number of WAL
+ kept by each replication slot will be compared to the threshold.
+ These thresholds only accept a raw number.
 
 
 
