@@ -1028,6 +1028,167 @@ Descriptions and parameters of available services.
 
 =over
 
+
+=item B<archive_folder>
+
+Check if all archived WALs exist between the oldest and the latest WAL in the
+archive folder and make sure they are 16MB. The given folder must have archived
+files from ONE cluster. The version of PostgreSQL that created the archives is
+only checked on the last one, for performance consideration.
+
+This service requires the argument C<--path> on the command line to specify the
+archive folder path to check.
+
+Optional argument C<--ignore-wal-size> skips the WAL size check. This is useful
+if your archived WALs are compressed. Default behaviour is to check the WALs
+size.
+
+Optional argument C<--suffix> allows you define the prefix of your archived
+WALs. Useful if they are compressed with an extension (eg. .gz, .bz2, ...).
+Default is no suffix.
+
+Perfdata contains the number of WALs archived and the age of the most recent
+one.
+
+Critical and Warning define the max age of the latest archived WAL as an
+interval (eg. 5m or 300s ).
+
+=cut
+
+sub check_archive_folder {
+    my @msg;
+    my @msg_crit;
+    my @msg_warn;
+    my @perfdata;
+    my @filelist;
+    my @filelist_sorted;
+    my $w_limit;
+    my $c_limit;
+    my $timeline;
+    my $wal;
+    my $seg;
+    my $latest_wal_age;
+    my $dh;
+    my $wal_version;
+    my $filename_re;
+    my $suffix         = $args{'suffix'};
+    my $check_size     = not $args{'ignore-wal-size'};
+    my $me             = 'POSTGRES_ARCHIVES';
+    my $seg_per_wal    = 255; # increased later for pg > 9.2
+    my %args           = %{ $_[0] };
+    my %wal_versions   = (
+        '80' => 53340,
+        '81' => 53341,
+        '82' => 53342,
+        '83' => 53346,
+        '84' => 53347,
+        '90' => 53348,
+        '91' => 53350,
+        '92' => 53361,
+        '93' => 53365
+    );
+
+    # "path" argument must be given
+    pod2usage(
+        -message => 'FATAL: you must specify the archive folder using "--path <dir>".',
+        -exitval => 127
+    ) unless defined $args{'path'};
+
+    # invalid "path" argument
+    pod2usage(
+        -message => "FATAL: \"$args{'path'}\" is not a valid folder.",
+        -exitval => 127
+    ) unless -d $args{'path'};
+
+    # warning and critical are mandatory.
+    pod2usage(
+        -message => "FATAL: you must specify critical and warning thresholds.",
+        -exitval => 127
+    ) unless defined $args{'warning'} and defined $args{'critical'} ;
+
+    pod2usage(
+        -message => "FATAL: critical and warning thresholds only acccepts interval.",
+        -exitval => 127
+    ) unless ( is_time( $args{'warning'} ) and is_time( $args{'critical'} ) );
+
+
+    opendir( $dh, $args{'path'} )
+        or die "Cannot opendir $args{'path'} : $!\n";
+
+    $filename_re = qr/^[0-9A-F]{24}$suffix$/;
+    @filelist = map { [ $_ => (stat("$args{'path'}/$_"))[9,7] ] }
+        grep( /$filename_re/, readdir($dh) );
+
+    closedir($dh);
+
+    return unknown $me, ['No archived WAL found.'] unless @filelist;
+
+
+    $w_limit = get_time($args{'warning'});
+    $c_limit = get_time($args{'critical'});
+
+    # sort by mtime
+    @filelist_sorted = sort { ($a->[1] <=> $b->[1]) || ($a->[0] cmp $b->[0]) } @filelist;
+
+    $latest_wal_age = time() - $filelist_sorted[-1][1];
+
+    # We need to read the XLOG_PAGE_MAGIC to be able to guess $seg_per_wal
+    open FIRST_WAL, "<$args{'path'}/$filelist_sorted[-1][0]";
+    read(FIRST_WAL, $wal_version, 2);
+    close FIRST_WAL;
+    $wal_version = unpack('S', $wal_version);
+
+    dprint ("wal version: $wal_version\n");
+
+    # FIXME: As there is no consensus about XLOG_PAGE_MAGIC algo accros postrges
+    # versions this piece of code should checked for compatibility for each new
+    # PostgreSQL version to confirm the new XLOG_PAGE_MAGIC is still greater
+    # than the previous one (or at least the 9.2 one).
+    $seg_per_wal++ if $wal_version >= $wal_versions{'93'};
+
+    push @perfdata,
+        "latest_archive_age=${latest_wal_age}s;$w_limit;$c_limit ".
+        "num_archives=". scalar(@filelist_sorted);
+
+    $timeline = hex(substr($filelist_sorted[-1][0], 0, 8));
+    $wal = hex(substr($filelist_sorted[0][0], 8, 8));
+    $seg = hex(substr($filelist_sorted[0][0], 16, 8));
+
+    # check ALL archives are here.
+    for ( my $i = 0; $i <= $#filelist_sorted ; $i++ ) {
+        dprint ("Checking WAL $filelist_sorted[$i][0]\n");
+        my $curr = sprintf('%08X%08X%08X%s',
+            $timeline,
+            $wal + int(($seg + $i)/$seg_per_wal),
+            ($seg + $i)%$seg_per_wal,
+            $suffix
+        );
+
+        if ( $curr ne $filelist_sorted[$i][0] ) {
+            push @msg => "Wrong sequence or file missing @ '$curr'";
+            last;
+        }
+
+        if ( $check_size and $filelist_sorted[$i][2] != 16777216 ) {
+            push @msg => "'$curr' is not 16MB";
+            last;
+        }
+    }
+
+    return critical( $me, \@msg, \@perfdata ) if @msg;
+
+    push @msg => scalar(@filelist_sorted)." WAL archived in '$args{'path'}', "
+        ."latest archived since ". to_interval($latest_wal_age);
+
+    return critical( $me, \@msg, \@perfdata )
+        if $latest_wal_age >= $c_limit;
+
+    return warning( $me, \@msg, \@perfdata )
+        if $latest_wal_age >= $w_limit;
+
+    return ok( $me, \@msg, \@perfdata );
+}
+
 =item B<autovacuum> (8.1+)
 
 Check the autovacuum activity on the cluster.
@@ -1456,529 +1617,36 @@ sub check_backends_status {
     return ok( $me, [ "$num_backends backend connected" ], \@perfdata );
 }
 
-=item B<commit_ratio> (all)
 
-Check the commit and rollback rate per second since last call.
+=item B<backup_label_age> (8.1+)
 
-This service uses the status file (see --status-file parameter).
+Check the age of the backup label file.
 
-Perfdata contains the commit rate, rollback rate, transaction rate and rollback
-ratio for each database since last call.
+Perfdata returns the age of the backup_label file, -1 if not present.
 
-Critical and Warning thresholds are optional. They accept a list of coma
-separated 'label=value'. Available label are B<rollbacks>, B<rollback_rate>
-and B<rollback_ratio>, which will be compared to the number of rollback, the
-rollback rate and the rollback ratio of each database. Warning or critical will
-be raised if reported value is greater than B<rollbacks>, B<rollback_rate> or
-B<rollback_ratio>.
+Critical and Warning thresholds only accept an interval (eg. 1h30m25s).
 
 =cut
 
-sub check_commit_ratio {
-    my @rs;
-    my @msg_warn;
-    my @msg_crit;
-    my @perfdata;
-    my @hosts;
-    my %xacts;
-    my %new_xacts;
-    my $global_commits;
-    my $global_rollbacks;
-    my $ratio;
-    my %warn;
-    my %crit;
-    my %args = %{ $_[0] };
-    my $me   = 'POSTGRES_COMMIT_RATIO';
-    my $sql  = q{
-        SELECT floor(extract(EPOCH from now())), s.datname,
-            s.xact_commit, s.xact_rollback
-        FROM pg_stat_database s
-          JOIN pg_database d ON s.datid = d.oid
-        WHERE d.datallowconn
-    };
-
-    if ( defined $args{'warning'} ) {
-        my $thresholds_re = qr/(rollbacks|rollback_rate|rollback_ratio)\s*=\s*(\d+)/i;
-
-        # warning and critical must be list of status=value
-        pod2usage(
-            -message => "FATAL: critical and warning thresholds only accept a list of 'label=value' separated by comma.\n"
-                . "See documentation for more information about accepted labels.",
-            -exitval => 127
-        ) unless $args{'warning'} =~ m/^$thresholds_re(\s*,\s*$thresholds_re)*$/
-            and $args{'critical'} =~ m/^$thresholds_re(\s*,\s*$thresholds_re)*$/ ;
-
-        while ( $args{'warning'} =~ /$thresholds_re/g ) {
-            my ($threshold, $value) = ($1, $2);
-            $warn{$threshold} = $value if $1 and defined $2;
-        }
-
-        while ( $args{'critical'} =~ /$thresholds_re/g ) {
-            my ($threshold, $value) = ($1, $2);
-            $crit{$threshold} = $value if $1 and defined $2;
-        }
-    }
-
-    @hosts = @{ parse_hosts %args };
-
-    pod2usage(
-        -message => 'FATAL: you must give only one host with service "database_size".',
-        -exitval => 127
-    ) if @hosts != 1;
-
-    %xacts = %{ load( $hosts[0], 'commit_ratio', $args{'status-file'} ) || {} };
-
-    @rs = @{ query( $hosts[0], $sql ) };
-
-    $new_xacts{$_->[1]} = {
-        'ts'       => $_->[0],
-        'commit'   => $_->[2],
-        'rollback' => $_->[3]
-    } foreach @rs;
-
-    save $hosts[0], 'commit_ratio', \%new_xacts, $args{'status-file'};
-
-    return ok( $me, ['First call'] ) unless keys %xacts;
-
-    foreach my $db (keys %new_xacts) {
-
-        my $commits   = $new_xacts{$db}{'commit'} - $xacts{$db}{'commit'};
-        my $rollbacks = $new_xacts{$db}{'rollback'} - $xacts{$db}{'rollback'};
-
-        # default to 1 sec if called twice in the same second
-        my $sec = ( $new_xacts{$db}{'ts'} - $xacts{$db}{'ts'} ) || 1;
-
-        my $commit_rate   = $commits   / $sec;
-        my $rollback_rate = $rollbacks / $sec;
-        my $xact_rate     = ($commits + $rollbacks ) / $sec;
-
-        $global_commits   += $commits;
-        $global_rollbacks += $rollbacks;
-
-        push @perfdata, sprintf "'%s_commit_rate'=%.2ftps",   $db, $commit_rate;
-        push @perfdata, sprintf "'%s_rollback_rate'=%.2ftps", $db, $rollback_rate;
-        push @perfdata, sprintf "'%s_xact_rate'=%.2ftps",     $db, $xact_rate;
-
-        if ( $rollbacks == 0) {
-            $ratio = 0;
-        } else {
-            $ratio = $rollbacks * 100 / ($commits + $rollbacks);
-        }
-
-        push @perfdata,  sprintf("'%s_rollback_ratio'=%.2f%%", $db, $ratio );
-
-        THRESHOLD_LOOP: foreach my $val ( ('rollbacks', 'rollback_rate', 'rollback_ratio') ) {
-            my $prefix = "${db}_${val}";
-            # Criticals
-            if ( exists $crit{$val} ) {
-                if ( $val eq "rollbacks" and $crit{$val} < $rollbacks ) {
-                    push @msg_crit => "'$prefix'=$rollbacks";
-                    next THRESHOLD_LOOP;
-                }
-                if ( $val eq "rollback_rate" and $crit{$val} < $rollback_rate ) {
-                    push @msg_crit => sprintf "'%s'=%.2ftps", $prefix, $rollback_rate;
-                    next THRESHOLD_LOOP;
-                }
-                if ( $val eq "rollback_ratio" and $crit{$val} < $ratio ) {
-                    push @msg_crit => sprintf "'%s'=%.2f%%", $prefix, $ratio;
-                    next THRESHOLD_LOOP;
-                }
-            }
-            # Warnings
-            if ( exists $warn{$val} ) {
-                if ( $val eq "rollbacks" and $warn{$val} < $rollbacks ) {
-                    push @msg_warn => "'$prefix'=$rollbacks";
-                    next THRESHOLD_LOOP;
-                }
-                if ( $val eq "rollback_rate" and $warn{$val} < $rollback_rate ) {
-                    push @msg_warn => sprintf("'%s'=%.2ftps", $prefix, $rollback_rate );
-                    next THRESHOLD_LOOP;
-                }
-                if ( $val eq "rollback_ratio" and $warn{$val} < $ratio ) {
-                    push @msg_warn => sprintf("'%s'=%.2f%%", $prefix, $ratio );
-                    next THRESHOLD_LOOP;
-                }
-            }
-        }
-    }
-
-    return critical( $me, [ "Commits: $global_commits - Rollbacks: $global_rollbacks", @msg_crit, @msg_warn ], \@perfdata )
-        if scalar @msg_crit > 0;
-
-    return warning( $me, [ "Commits: $global_commits - Rollbacks: $global_rollbacks", @msg_warn ], \@perfdata )
-        if scalar @msg_warn > 0;
-
-    return ok( $me, ["Commits: $global_commits - Rollbacks: $global_rollbacks"], \@perfdata );
-
-}
-
-=item B<database_size> (8.1+)
-
-Check the variation of database sizes.
-
-This service uses the status file (see C<--status-file> parameter).
-
-Perfdata contains the size difference for each database since the last
-execution.
-
-Critical and Warning thresholds accept either a raw number, a percentage, or a
-size (eg. 2.5G).
-
-This service supports both C<--dbexclude> and C<--dbinclude> parameters.
-
-=cut
-
-sub check_database_size {
-    my @msg_crit;
-    my @msg_warn;
-    my @rs;
-    my @perfdata;
-    my @hosts;
-    my %new_db_sizes;
-    my %db_sizes;
-    my %args       = %{ $_[0] };
-    my @dbinclude  = @{ $args{'dbinclude'} };
-    my @dbexclude  = @{ $args{'dbexclude'} };
-    my $me         = 'POSTGRES_DB_SIZE';
-    my $db_checked = 0;
-    my $sql        = q{SELECT datname, pg_database_size(datname)
-        FROM pg_database};
-
-    # warning and critical are mandatory.
-    pod2usage(
-        -message => "FATAL: you must specify critical and warning thresholds.",
-        -exitval => 127
-    ) unless defined $args{'warning'} and defined $args{'critical'} ;
-
-
-    @hosts = @{ parse_hosts %args };
-
-    pod2usage(
-        -message => 'FATAL: you must give only one host with service "database_size".',
-        -exitval => 127
-    ) if @hosts != 1;
-
-    is_compat $hosts[0], 'database_size', $PG_VERSION_81 or exit 1;
-
-
-    %db_sizes = %{ load( $hosts[0], 'db_size', $args{'status-file'} ) || {} };
-
-    @rs = @{ query( $hosts[0], $sql ) };
-
-    DB_LOOP: foreach my $db (@rs) {
-        my $delta;
-        my $w_limit;
-        my $c_limit;
-
-        $new_db_sizes{ $db->[0] } = $db->[1];
-
-        next DB_LOOP if grep { $db->[0] =~ /$_/ } @dbexclude;
-        next DB_LOOP if @dbinclude and not grep { $db->[0] =~ /$_/ } @dbinclude;
-
-        $db_checked++;
-
-        next DB_LOOP unless defined $db_sizes{ $db->[0] };
-
-        $w_limit = get_size( $args{'warning'},  $db->[1] );
-        $c_limit = get_size( $args{'critical'}, $db->[1] );
-        $delta = $db->[1] - $db_sizes{ $db->[0] };
-
-        push @perfdata => "$db->[0]=$db->[1]B;$w_limit;$c_limit";
-
-        if ( abs($delta) >= $c_limit ) {
-            push @msg_crit => "$db->[0] ($delta, now: $db->[1])";
-            next DB_LOOP;
-        }
-
-        if ( abs($delta) >= $w_limit ) {
-            push @msg_warn => "$db->[0] ($delta, now: $db->[1])";
-            next DB_LOOP;
-        }
-    }
-
-    save $hosts[0], 'db_size', \%new_db_sizes, $args{'status-file'};
-
-    return critical( $me, [ @msg_crit, @msg_warn ], \@perfdata )
-        if scalar @msg_crit > 0;
-
-    return warning( $me, \@msg_warn, \@perfdata ) if scalar @msg_warn > 0;
-
-    return ok( $me, [ "$db_checked database(s) checked" ], \@perfdata );
-}
-
-=item B<wal_files> (8.1+)
-
-Check the number of WAL files.
-
-Perfdata returns the total number of WAL files, current number of written WAL,
-the current number of recycled WAL and the rate of WAL written to disk since
-last execution on master clusters.
-
-Critical and Warning thresholds accept either a raw number of files or a
-percentage. In case of percentage, the limit is computed based on:
-
-  100% = 1 + checkpoint_segments * (2 + checkpoint_completion_target)
-
-For PostgreSQL 8.1 and 8.2:
-
-  100% = 1 + checkpoint_segments * 2
-
-If C<wal_keep_segments> is set for 9.0 and above, the limit is the greatest
-of the following formulas :
-
-  100% = 1 + checkpoint_segments * (2 + checkpoint_completion_target)
-  100% = 1 + wal_keep_segments + 2 * checkpoint_segments
-
-=cut
-
-sub check_wal_files {
-    my $seg_written  = 0;
-    my $seg_recycled = 0;
-    my $seg_kept     = 0;
-    my $num_seg      = 0;
-    my $max_segs;
-    my $first_seg;
-    my @rs;
-    my @perfdata;
-    my @msg;
-    my @hosts;
-    my %args    = %{ $_[0] };
-    my $me      = 'POSTGRES_WAL_FILES';
-    my %queries = (
-      $PG_VERSION_90 => q{
-        SELECT s.f,
-          greatest(
-            1 + current_setting('checkpoint_segments')::float4 *
-              (2 + current_setting('checkpoint_completion_target')::float4),
-            1 + current_setting('wal_keep_segments')::float4 +
-              2 * current_setting('checkpoint_segments')::float4
-          ),
-          CASE WHEN pg_is_in_recovery()
-            THEN NULL
-            ELSE pg_current_xlog_location()
-          END,
-          current_setting('wal_keep_segments')::integer
-        FROM pg_ls_dir('pg_xlog') AS s(f)
-        WHERE f ~ '^[0-9A-F]{24}$'
-        ORDER BY
-          (pg_stat_file('pg_xlog/'||s.f)).modification DESC,
-          f DESC},
-      $PG_VERSION_83 => q{
-        SELECT s.f,
-          1 + (
-            current_setting('checkpoint_segments')::float4
-            * ( 2 + current_setting('checkpoint_completion_target')::float4 )
-          ), pg_current_xlog_location()
-        FROM pg_ls_dir('pg_xlog') AS s(f)
-        WHERE f ~ '^[0-9A-F]{24}$'
-        ORDER BY
-          (pg_stat_file('pg_xlog/'||s.f)).modification DESC,
-          f DESC},
-      $PG_VERSION_82 => q{
-        SELECT s.f,
-          1 + (current_setting('checkpoint_segments')::integer * 2), pg_current_xlog_location()
-        FROM pg_ls_dir('pg_xlog') AS s(f)
-        WHERE f ~ '^[0-9A-F]{24}$'
-        ORDER BY
-          (pg_stat_file('pg_xlog/'||s.f)).modification DESC,
-          f DESC},
-      $PG_VERSION_81 => q{
-        SELECT s.f,
-          1 + (current_setting('checkpoint_segments')::integer * 2)
-        FROM pg_ls_dir('pg_xlog') AS s(f)
-        WHERE f ~ '^[0-9A-F]{24}$'
-        ORDER BY
-          (pg_stat_file('pg_xlog/'||s.f)).modification DESC,
-          f DESC}
-    );
-
-    if ( defined $args{'warning'} ) {
-        # warning and critical are mandatory.
-        pod2usage(
-            -message => "FATAL: you must specify critical and warning thresholds.",
-            -exitval => 127
-        ) unless defined $args{'warning'} and defined $args{'critical'} ;
-
-        # warning and critical must be raw or %.
-        pod2usage(
-            -message => "FATAL: critical and warning thresholds only accept raw numbers or %.",
-            -exitval => 127
-        ) unless $args{'warning'}  =~ m/^([0-9.]+)%?$/
-            and  $args{'critical'} =~ m/^([0-9.]+)%?$/;
-    }
-
-    @hosts = @{ parse_hosts %args };
-
-    pod2usage(
-        -message => 'FATAL: you must give only one host with service "wal_files".',
-        -exitval => 127
-    ) if @hosts != 1;
-
-    is_compat $hosts[0], 'wal_files', $PG_VERSION_81 or exit 1;
-
-    @rs = @{ query_ver( $hosts[0], %queries ) };
-
-    $first_seg = $rs[0][0];
-    $max_segs  = $rs[0][1];
-
-    foreach my $r (@rs) {
-        $num_seg++;
-        $seg_recycled++ if $r->[0] gt $first_seg;
-    }
-
-    $seg_written = $num_seg - $seg_recycled;
-
-    push @perfdata => "total_wal=$num_seg";
-    push @perfdata => "recycled_wal=$seg_recycled";
-
-    # pay attention to the wal_keep_segment in perfdata
-    if ( $hosts[0]{'version_num'} >= $PG_VERSION_90) {
-        $seg_kept = $rs[0][3];
-        if ($seg_kept > 0) {
-            # cheet with numbers if the keep_segment was just set and the
-            # number of wal doesn't match it yet.
-            if ($seg_kept > $seg_written) {
-                push @perfdata => "written_wal=1";
-                push @perfdata => "kept_wal=". ($seg_written - 1);
-            }
-            else {
-                push @perfdata => "written_wal=" . ($seg_written - $seg_kept);
-                push @perfdata => "kept_wal=$seg_kept";
-            }
-        }
-        else {
-            push @perfdata => "written_wal=$seg_written";
-            push @perfdata => "kept_wal=0";
-        }
-    }
-    else {
-        push @perfdata => "written_wal=$seg_written";
-    }
-
-    push @msg => "$num_seg WAL files";
-
-    if ( $hosts[0]{'version_num'} >= $PG_VERSION_82 and $rs[0][2] ne '') {
-        my $now = time();
-        my $curr_lsn = $rs[0][2];
-        my @prev_lsn = @{ load( $hosts[0], 'last wal files LSN', $args{'status-file'} ) || [] };
-
-        $curr_lsn =~ m{^([0-9A-F]+)/([0-9A-F]+)$};
-        $curr_lsn = (hex('ff000000') * hex($1)) + hex($2);
-
-        unless ( @prev_lsn == 0 ) {
-            my $rate = ($curr_lsn - $prev_lsn[1])/($now - $prev_lsn[0]);
-            $rate = int($rate*100+0.5)/100;
-
-            push @perfdata => "wal_rate=${rate}Bps";
-        }
-
-        save $hosts[0], 'last wal files LSN', [ $now, $curr_lsn ], $args{'status-file'};
-    }
-
-    if ( defined $args{'warning'} ) {
-        my $w_limit = get_size( $args{'warning'},  $max_segs );
-        my $c_limit = get_size( $args{'critical'}, $max_segs );
-
-        $perfdata[0] .= ";$w_limit;$c_limit;1;$max_segs";
-
-        return critical( $me, \@msg, \@perfdata ) if $num_seg >= $c_limit;
-        return warning( $me, \@msg, \@perfdata )  if $num_seg >= $w_limit;
-    }
-
-    return ok( $me, \@msg, \@perfdata );
-}
-
-=item B<ready_archives> (8.1+)
-
-Check the number of WAL files ready to archive.
-
-Perfdata returns the number of WAL files waiting to be archived.
-
-Critical and Warning thresholds only accept a raw number of files.
-
-=cut
-
-sub check_ready_archives {
-    my @rs;
-    my @perfdata;
-    my @msg;
-    my @hosts;
-    my %args  = %{ $_[0] };
-    my $me    = 'POSTGRES_READY_ARCHIVES';
-    my $query = q{
-         SELECT count(*) AS count
-         FROM pg_ls_dir('pg_xlog/archive_status') as file
-         WHERE file ~ '^[0-9A-F]{24}.ready$' };
-
-    # warning and critical are mandatory.
-    pod2usage(
-        -message => "FATAL: you must specify critical and warning thresholds.",
-        -exitval => 127
-    ) unless defined $args{'warning'} and defined $args{'critical'} ;
-
-    # warning and critical must be raw
-    pod2usage(
-        -message => "FATAL: critical and warning thresholds only accept raw numbers.",
-        -exitval => 127
-    ) unless $args{'warning'}  =~ m/^([0-9]+)$/
-        and  $args{'critical'} =~ m/^([0-9]+)$/;
-
-    @hosts = @{ parse_hosts %args };
-
-    pod2usage(
-        -message => 'FATAL: you must give only one host with service "ready_archives".',
-        -exitval => 127
-    ) if @hosts != 1;
-
-    is_compat $hosts[0], 'ready_archives', $PG_VERSION_81 or exit 1;
-
-    @rs = @{ query( $hosts[0], $query )->[0] };
-
-    push @perfdata => "ready_archives=$rs[0];$args{'warning'};$args{'critical'}";
-
-    push @msg => "$rs[0] WAL files ready to archive";
-
-    return critical( $me, \@msg, \@perfdata ) if $rs[0] >= $args{'critical'};
-    return warning( $me, \@msg, \@perfdata ) if $rs[0] >= $args{'warning'};
-    return ok( $me, \@msg, \@perfdata );
-}
-
-# Agnostic check vacuum or analyze sub
-sub check_last_maintenance {
+sub check_backup_label_age {
     my $rs;
     my $c_limit;
     my $w_limit;
     my @perfdata;
-    my @msg_crit;
-    my @msg_warn;
-    my @msg;
     my @hosts;
-    my @all_db;
-    my %counts;
-    my %new_counts;
-    my $dbchecked  = 0;
-    my $type       = $_[0];
-    my %args       = %{ $_[1] };
-    my @dbinclude  = @{ $args{'dbinclude'} };
-    my @dbexclude  = @{ $args{'dbexclude'} };
-    my $me         = 'POSTGRES_LAST_' . uc($type);
-    my %queries    = (
-        $PG_VERSION_82 => qq{
-            SELECT coalesce(min(
-                extract(epoch FROM current_timestamp -
-                    greatest(last_${type}, last_auto${type})
-                )), 'NaN'::float)
-            FROM pg_stat_user_tables
-        },
-        $PG_VERSION_91 => qq{
-            SELECT coalesce(min(
-                extract(epoch FROM current_timestamp -
-                    greatest(last_${type}, last_auto${type})
-                )), 'NaN'::float),
-                coalesce(sum(${type}_count), 0) AS ${type}_count,
-                coalesce(sum(auto${type}_count), 0) AS auto${type}_count
-            FROM pg_stat_user_tables
-        }
+    my %args    = %{ $_[0] };
+    my $me      = 'POSTGRES_BACKUP_LABEL_AGE';
+    my %queries         = (
+        $PG_VERSION_81 => q{SELECT max(s.r) AS value FROM (
+            SELECT CAST(extract(epoch FROM current_timestamp - (pg_stat_file(file)).modification) AS integer) AS r
+            FROM pg_ls_dir('.') AS ls(file)
+            WHERE file='backup_label' UNION SELECT 0
+        ) AS s},
+        $PG_VERSION_93 => q{
+            SELECT CASE WHEN pg_is_in_backup()
+                        THEN CAST(extract(epoch FROM current_timestamp - pg_backup_start_time()) AS integer)
+                        ELSE 0
+                   END}
     );
 
     # warning and critical are mandatory.
@@ -1992,307 +1660,32 @@ sub check_last_maintenance {
         -exitval => 127
     ) unless ( is_time( $args{'warning'} ) and is_time( $args{'critical'} ) );
 
-    $c_limit = get_time $args{'critical'};
-    $w_limit = get_time $args{'warning'};
-
-
-    @hosts = @{ parse_hosts %args };
-
-    pod2usage(
-        -message => "FATAL: you must give only one host with service \"last_$type\".",
-        -exitval => 127
-    ) if @hosts != 1;
-
-    is_compat $hosts[0], "last_$type", $PG_VERSION_82 or exit 1;
-
-
-    @all_db = @{ get_all_dbname( $hosts[0] ) };
-
-    %counts = %{ load( $hosts[0], "${type}_counts", $args{'status-file'} ) || {} }
-        if $hosts[0]->{'version_num'} >= $PG_VERSION_91;
-
-LOOP_DB: foreach my $db (@all_db) {
-        my $perfdata;
-        my $rs;
-
-        next LOOP_DB if grep { $db =~ /$_/ } @dbexclude;
-        next LOOP_DB if @dbinclude and not grep { $db =~ /$_/ } @dbinclude;
-
-        $dbchecked++;
-
-        $rs = query_ver( $hosts[0], %queries, $db )->[0];
-        $db =~ s/=//g;
-
-        $perfdata = "'$db'=$rs->[0]s;$w_limit;$c_limit";
-
-        if ($hosts[0]->{'version_num'} >= $PG_VERSION_91 ) {
-            $new_counts{$db} = [$rs->[1], $rs->[2]];
-
-            if ( defined $counts{$db} ) {
-                my $delta      = $rs->[1] - $counts{$db}[0];
-                my $delta_auto = $rs->[2] - $counts{$db}[1];
-
-                $perfdata .= " '$db $type'=$delta"
-                    ." '$db auto$type'=$delta_auto";
-            }
-        }
-
-        push @perfdata => $perfdata;
-
-        if ( $rs->[0] =~ /^-inf/i or $rs->[0] >= $c_limit ) {
-            push @msg_crit => "$db: " . to_interval($rs->[0]);
-            next LOOP_DB;
-        }
-
-        if ( $rs->[0] >= $w_limit ) {
-            push @msg_warn => "$db: " . to_interval($rs->[0]);
-            next LOOP_DB;
-        }
-    }
-
-    save $hosts[0], "${type}_counts", \%new_counts, $args{'status-file'}
-        if $hosts[0]->{'version_num'} >= $PG_VERSION_91;
-
-    return critical( $me, [ @msg_crit, @msg_warn ], \@perfdata )
-        if scalar @msg_crit > 0;
-
-    return warning( $me, \@msg_warn, \@perfdata ) if scalar @msg_warn > 0;
-
-    return ok( $me, [ "$dbchecked database(s) checked" ], \@perfdata );
-}
-
-=item B<last_analyze> (8.2+)
-
-Check on each databases that the oldest C<analyze> (from autovacuum or not) is not
-older than the given threshold.
-
-This service uses the status file (see C<--status-file> parameter) with
-PostgreSQL 9.1+.
-
-Perfdata returns oldest C<analyze> per database in seconds. With PostgreSQL
-9.1+, the number of [auto]analyses per database since last call is also
-returned.
-
-Critical and Warning thresholds only accept an interval (eg. 1h30m25s)
-and apply to the oldest execution of analyse.
-
-This service supports both C<--dbexclude> and C<--dbinclude> parameters.
-
-=cut
-
-sub check_last_analyze {
-    return check_last_maintenance( 'analyze', @_ );
-}
-
-=item B<last_vacuum> (8.2+)
-
-Check that the oldest vacuum (from autovacuum or otherwise) in each database
-in the cluster is not older than the given threshold.
-
-This service uses the status file (see C<--status-file> parameter) with
-PostgreSQL 9.1+.
-
-Perfdata returns oldest vacuum per database in seconds. With PostgreSQL
-9.1+, it also returns the number of [auto]vacuums per database since last
-execution.
-
-Critical and Warning thresholds only accept an interval (eg. 1h30m25s)
-and apply to the oldest vacuum.
-
-This service supports both C<--dbexclude> and C<--dbinclude> parameters.
-
-=cut
-
-sub check_last_vacuum {
-    return check_last_maintenance( 'vacuum', @_ );
-}
-
-=item B<locks> (all)
-
-Check the number of locks on the hosts.
-
-Perfdata returns the number of locks, by type.
-
-Critical and Warning thresholds accept either a raw number of locks or a
-percentage. For percentage, it is computed using the following limits
-for 7.4 to 8.1:
-
-  max_locks_per_transaction * max_connections
-
-for 8.2+:
-
-  max_locks_per_transaction * (max_connections + max_prepared_transactions)
-
-for 9.1+, regarding lockmode :
-
-  max_locks_per_transaction * (max_connections + max_prepared_transactions)
-or max_pred_locks_per_transaction * (max_connections + max_prepared_transactions)
-
-=cut
-
-sub check_locks {
-    my @rs;
-    my @perfdata;
-    my @msg;
-    my @hosts;
-    my %args          = %{ $_[0] };
-    my $total_locks   = 0;
-    my $total_pred_locks   = 0;
-    my $waiting_locks = 0;
-    my $me            = 'POSTGRES_LOCKS';
-    my %queries       = (
-        $PG_VERSION_74 => q{
-            SELECT count(l.*), ref.mode,
-                current_setting('max_locks_per_transaction')::integer
-                * current_setting('max_connections')::integer, 0, ref.granted
-            FROM (
-                SELECT 'AccessShareLock',                't'::boolean
-                UNION SELECT 'RowShareLock',             't'
-                UNION SELECT 'RowExclusiveLock',         't'
-                UNION SELECT 'ShareUpdateExclusiveLock', 't'
-                UNION SELECT 'ShareLock',                't'
-                UNION SELECT 'ShareRowExclusiveLock',    't'
-                UNION SELECT 'ExclusiveLock',            't'
-                UNION SELECT 'AccessExclusiveLock',      't'
-                UNION SELECT 'AccessShareLock',          'f'
-                UNION SELECT 'RowShareLock',             'f'
-                UNION SELECT 'RowExclusiveLock',         'f'
-                UNION SELECT 'ShareUpdateExclusiveLock', 'f'
-                UNION SELECT 'ShareLock',                'f'
-                UNION SELECT 'ShareRowExclusiveLock',    'f'
-                UNION SELECT 'ExclusiveLock',            'f'
-                UNION SELECT 'AccessExclusiveLock',      'f'
-            ) ref (mode, granted)
-            LEFT JOIN pg_locks l
-                ON (ref.mode, ref.granted) = (l.mode, l.granted)
-            GROUP BY 2,3,4,5
-            ORDER BY ref.granted, ref.mode
-        },
-        $PG_VERSION_82 => q{
-            SELECT count(l.*), ref.mode,
-                current_setting('max_locks_per_transaction')::integer * (
-                    current_setting('max_prepared_transactions')::integer
-                    + current_setting('max_connections')::integer), 0, ref.granted
-            FROM (SELECT * FROM ( VALUES
-                ('AccessShareLock',          't'::boolean),
-                ('RowShareLock',             't'),
-                ('RowExclusiveLock',         't'),
-                ('ShareUpdateExclusiveLock', 't'),
-                ('ShareLock',                't'),
-                ('ShareRowExclusiveLock',    't'),
-                ('ExclusiveLock',            't'),
-                ('AccessExclusiveLock',      't'),
-                ('AccessShareLock',          'f'),
-                ('RowShareLock',             'f'),
-                ('RowExclusiveLock',         'f'),
-                ('ShareUpdateExclusiveLock', 'f'),
-                ('ShareLock',                'f'),
-                ('ShareRowExclusiveLock',    'f'),
-                ('ExclusiveLock',            'f'),
-                ('AccessExclusiveLock',      'f')
-                ) lockmode (mode, granted)
-            ) ref
-            LEFT JOIN pg_locks l
-                ON (ref.mode, ref.granted) = (l.mode, l.granted)
-            GROUP BY 2,3,4,5
-            ORDER BY ref.granted, ref.mode
-        },
-        $PG_VERSION_91 => q{
-            SELECT count(l.*), ref.mode,
-                current_setting('max_locks_per_transaction')::integer * (
-                    current_setting('max_prepared_transactions')::integer
-                    + current_setting('max_connections')::integer),
-                current_setting('max_pred_locks_per_transaction')::integer * (
-                    current_setting('max_prepared_transactions')::integer
-                    + current_setting('max_connections')::integer), ref.granted
-            FROM (SELECT * FROM ( VALUES
-                ('AccessShareLock',          't'::boolean),
-                ('RowShareLock',             't'),
-                ('RowExclusiveLock',         't'),
-                ('ShareUpdateExclusiveLock', 't'),
-                ('ShareLock',                't'),
-                ('ShareRowExclusiveLock',    't'),
-                ('ExclusiveLock',            't'),
-                ('AccessExclusiveLock',      't'),
-                ('AccessShareLock',          'f'),
-                ('RowShareLock',             'f'),
-                ('RowExclusiveLock',         'f'),
-                ('ShareUpdateExclusiveLock', 'f'),
-                ('ShareLock',                'f'),
-                ('ShareRowExclusiveLock',    'f'),
-                ('ExclusiveLock',            'f'),
-                ('AccessExclusiveLock',      'f'),
-                ('SIReadLock',               't')
-                ) lockmode (mode, granted)
-            ) ref
-            LEFT JOIN pg_locks l
-                ON (ref.mode, ref.granted) = (l.mode, l.granted)
-            GROUP BY 2,3,4,5
-            ORDER BY ref.granted, ref.mode
-        }
-    );
-
-    # warning and critical are mandatory.
-    pod2usage(
-        -message => "FATAL: you must specify critical and warning thresholds.",
-        -exitval => 127
-    ) unless defined $args{'warning'} and defined $args{'critical'} ;
-
-    # warning and critical must be raw or %.
-    pod2usage(
-        -message => "FATAL: critical and warning thresholds only accept raw numbers or %.",
-        -exitval => 127
-    ) unless $args{'warning'}  =~ m/^([0-9.]+)%?$/
-        and  $args{'critical'} =~ m/^([0-9.]+)%?$/;
-
+    $c_limit = get_time( $args{'critical'} );
+    $w_limit = get_time( $args{'warning'} );
 
     @hosts = @{ parse_hosts %args };
 
     pod2usage(
-        -message => 'FATAL: you must give only one host with service "locks".',
+        -message => 'FATAL: you must give only one host with service "backup_label_age".',
         -exitval => 127
     ) if @hosts != 1;
 
+    is_compat $hosts[0], 'backup_label_age', $PG_VERSION_81 or exit 1;
 
-    @rs = @{ query_ver $hosts[0], %queries };
+    $rs = @{ query_ver( $hosts[0], %queries )->[0] }[0];
 
-    $args{'predcritical'} = $args{'critical'};
-    $args{'predwarning'} = $args{'warning'};
+    push @perfdata,
+         "age=${rs}s;$w_limit;$c_limit";
 
-    $args{'critical'} = int($1 * $rs[0][2]/100) if $args{'critical'} =~ /^([0-9.]+)%$/;
-    $args{'warning'}  = int($1 * $rs[0][2]/100) if $args{'warning'}  =~ /^([0-9.]+)%$/;
-    $args{'predcritical'} = int($1 * $rs[0][3]/100) if $args{'predcritical'} =~ /^([0-9.]+)%$/;
-    $args{'predwarning'}  = int($1 * $rs[0][3]/100) if $args{'predwarning'}  =~ /^([0-9.]+)%$/;
+    return critical( $me, [ "age: ".to_interval($rs) ], \@perfdata )
+        if $rs > $c_limit;
 
-    map {
-        $total_locks += $_->[0] if $_->[1] ne 'SIReadLock';
-        $total_pred_locks += $_->[0] if $_->[1] eq 'SIReadLock';
-        if ($_->[4] eq 't') {
-            if ($_->[1] ne 'SIReadLock') {
-                push @perfdata =>
-                    ( "$_->[1]=$_->[0];$args{'warning'};$args{'critical'}" );
-            } else {
-                push @perfdata =>
-                    ( "$_->[1]=$_->[0];$args{'predwarning'};$args{'predcritical'}" );
-            }
-        }
-        else {
-            $waiting_locks += $_->[0];
-            push @perfdata =>
-                ( "'Waiting $_->[1]'=$_->[0];$args{'warning'};$args{'critical'}" );
-        }
-    } @rs;
+    return warning( $me, [ "age: ".to_interval($rs) ], \@perfdata )
+        if $rs > $w_limit;
 
-    push @msg => "$total_locks locks, $total_pred_locks predicate locks, $waiting_locks waiting locks";
-
-    return critical( $me, \@msg, \@perfdata )
-        if $total_locks >= $args{'critical'} or ( $hosts[0]->{'version_num'} >= $PG_VERSION_91 and $total_pred_locks >= $args{'predcritical'} );
-
-    return warning( $me, \@msg, \@perfdata )
-        if $total_locks >= $args{'warning'} or ( $hosts[0]->{'version_num'} >= $PG_VERSION_91 and $total_pred_locks >= $args{'predwarning'});
-
-    return ok( $me, \@msg, \@perfdata );
+    return ok( $me, [ "backup_label file ".( $rs == 0 ? "absent":"present (age: ".to_interval($rs).")") ], \@perfdata );
 }
+
 
 =item B<bgwriter> (8.3+)
 
@@ -2452,1794 +1845,6 @@ sub check_bgwriter {
 
     return ok( $me, \@msg, \@perfdata );
 }
-
-
-=item B<archive_folder>
-
-Check if all archived WALs exist between the oldest and the latest WAL in the
-archive folder and make sure they are 16MB. The given folder must have archived
-files from ONE cluster. The version of PostgreSQL that created the archives is
-only checked on the last one, for performance consideration.
-
-This service requires the argument C<--path> on the command line to specify the
-archive folder path to check.
-
-Optional argument C<--ignore-wal-size> skips the WAL size check. This is useful
-if your archived WALs are compressed. Default behaviour is to check the WALs
-size.
-
-Optional argument C<--suffix> allows you define the prefix of your archived
-WALs. Useful if they are compressed with an extension (eg. .gz, .bz2, ...).
-Default is no suffix.
-
-Perfdata contains the number of WALs archived and the age of the most recent
-one.
-
-Critical and Warning define the max age of the latest archived WAL as an
-interval (eg. 5m or 300s ).
-
-=cut
-
-sub check_archive_folder {
-    my @msg;
-    my @msg_crit;
-    my @msg_warn;
-    my @perfdata;
-    my @filelist;
-    my @filelist_sorted;
-    my $w_limit;
-    my $c_limit;
-    my $timeline;
-    my $wal;
-    my $seg;
-    my $latest_wal_age;
-    my $dh;
-    my $wal_version;
-    my $filename_re;
-    my $suffix         = $args{'suffix'};
-    my $check_size     = not $args{'ignore-wal-size'};
-    my $me             = 'POSTGRES_ARCHIVES';
-    my $seg_per_wal    = 255; # increased later for pg > 9.2
-    my %args           = %{ $_[0] };
-    my %wal_versions   = (
-        '80' => 53340,
-        '81' => 53341,
-        '82' => 53342,
-        '83' => 53346,
-        '84' => 53347,
-        '90' => 53348,
-        '91' => 53350,
-        '92' => 53361,
-        '93' => 53365
-    );
-
-    # "path" argument must be given
-    pod2usage(
-        -message => 'FATAL: you must specify the archive folder using "--path <dir>".',
-        -exitval => 127
-    ) unless defined $args{'path'};
-
-    # invalid "path" argument
-    pod2usage(
-        -message => "FATAL: \"$args{'path'}\" is not a valid folder.",
-        -exitval => 127
-    ) unless -d $args{'path'};
-
-    # warning and critical are mandatory.
-    pod2usage(
-        -message => "FATAL: you must specify critical and warning thresholds.",
-        -exitval => 127
-    ) unless defined $args{'warning'} and defined $args{'critical'} ;
-
-    pod2usage(
-        -message => "FATAL: critical and warning thresholds only acccepts interval.",
-        -exitval => 127
-    ) unless ( is_time( $args{'warning'} ) and is_time( $args{'critical'} ) );
-
-
-    opendir( $dh, $args{'path'} )
-        or die "Cannot opendir $args{'path'} : $!\n";
-
-    $filename_re = qr/^[0-9A-F]{24}$suffix$/;
-    @filelist = map { [ $_ => (stat("$args{'path'}/$_"))[9,7] ] }
-        grep( /$filename_re/, readdir($dh) );
-
-    closedir($dh);
-
-    return unknown $me, ['No archived WAL found.'] unless @filelist;
-
-
-    $w_limit = get_time($args{'warning'});
-    $c_limit = get_time($args{'critical'});
-
-    # sort by mtime
-    @filelist_sorted = sort { ($a->[1] <=> $b->[1]) || ($a->[0] cmp $b->[0]) } @filelist;
-
-    $latest_wal_age = time() - $filelist_sorted[-1][1];
-
-    # We need to read the XLOG_PAGE_MAGIC to be able to guess $seg_per_wal
-    open FIRST_WAL, "<$args{'path'}/$filelist_sorted[-1][0]";
-    read(FIRST_WAL, $wal_version, 2);
-    close FIRST_WAL;
-    $wal_version = unpack('S', $wal_version);
-
-    dprint ("wal version: $wal_version\n");
-
-    # FIXME: As there is no consensus about XLOG_PAGE_MAGIC algo accros postrges
-    # versions this piece of code should checked for compatibility for each new
-    # PostgreSQL version to confirm the new XLOG_PAGE_MAGIC is still greater
-    # than the previous one (or at least the 9.2 one).
-    $seg_per_wal++ if $wal_version >= $wal_versions{'93'};
-
-    push @perfdata,
-        "latest_archive_age=${latest_wal_age}s;$w_limit;$c_limit ".
-        "num_archives=". scalar(@filelist_sorted);
-
-    $timeline = hex(substr($filelist_sorted[-1][0], 0, 8));
-    $wal = hex(substr($filelist_sorted[0][0], 8, 8));
-    $seg = hex(substr($filelist_sorted[0][0], 16, 8));
-
-    # check ALL archives are here.
-    for ( my $i = 0; $i <= $#filelist_sorted ; $i++ ) {
-        dprint ("Checking WAL $filelist_sorted[$i][0]\n");
-        my $curr = sprintf('%08X%08X%08X%s',
-            $timeline,
-            $wal + int(($seg + $i)/$seg_per_wal),
-            ($seg + $i)%$seg_per_wal,
-            $suffix
-        );
-
-        if ( $curr ne $filelist_sorted[$i][0] ) {
-            push @msg => "Wrong sequence or file missing @ '$curr'";
-            last;
-        }
-
-        if ( $check_size and $filelist_sorted[$i][2] != 16777216 ) {
-            push @msg => "'$curr' is not 16MB";
-            last;
-        }
-    }
-
-    return critical( $me, \@msg, \@perfdata ) if @msg;
-
-    push @msg => scalar(@filelist_sorted)." WAL archived in '$args{'path'}', "
-        ."latest archived since ". to_interval($latest_wal_age);
-
-    return critical( $me, \@msg, \@perfdata )
-        if $latest_wal_age >= $c_limit;
-
-    return warning( $me, \@msg, \@perfdata )
-        if $latest_wal_age >= $w_limit;
-
-    return ok( $me, \@msg, \@perfdata );
-}
-
-
-=item B<minor_version> (all)
-
-Check if the cluster is running the most recent minor version of PostgreSQL.
-
-Latest version of PostgreSQL can be fetched from PostgreSQL official
-website if check_pgactivity can access it, or is given as a parameter.
-
-Without C<--critical> or C<--warning> parameters, this service attempts
-to fetch the latest version online. You can optionally set the path to
-your prefered program using the parameter C<--path> (eg.
-C<--path '/usr/bin/wget'>). Supported programs are: GET, wget, curl,
-fetch, lynx, links, links2.
-
-For the online version, a critical alert is raised if the minor version is not
-the most recent.
-
-If you do not want to (or cannot) query the PostgreSQL website, you
-must provide the expected version using either C<--warning> OR
-C<--critical>. The given format must be one or more MINOR versions
-seperated by anything but a '.'.
-
-For instance, the following parameters are all equivalent:
-
-  --critical "9.3.2 9.2.6 9.1.11 9.0.15 8.4.19"
-  --critical "9.3.2, 9.2.6, 9.1.11, 9.0.15, 8.4.19"
-  --critical 9.3.2,9.2.6,9.1.11,9.0.15,8.4.19
-  --critical 9.3.2/9.2.6/9.1.11/9.0.15/8.4.19
-
-Any value other than 3 numbers separated by dots will be ignored.
-if the running PostgreSQL major version is not found, the service raises an
-unknown status.
-
-Using the offline version raises either a critical or a warning depending
-on which one has been set.
-
-Perfdata returns the numerical version of PostgreSQL.
-
-=cut
-
-sub check_minor_version {
-    my @perfdata;
-    my @msg;
-    my %latest_versions;
-    my $rss;
-    my @hosts;
-    my $major_version;
-    my %args    = %{ $_[0] };
-    my $me      = 'POSTGRES_MINOR_VERSION';
-    my $timeout = get_time($args{'timeout'});
-    my $url     = 'http://www.postgresql.org/versions.rss';
-
-    @hosts = @{ parse_hosts %args };
-
-    pod2usage(
-        -message => 'FATAL: you must give only one host with service "minor_version".',
-        -exitval => 127
-    ) if @hosts != 1;
-
-    set_pgversion($hosts[0]);
-
-    if (not defined $args{'warning'}
-        and not defined $args{'critical'}
-    ) {
-        # These methods comes from check_postgres,
-        # by Greg Sabino Mullane <greg@endpoint.com>,
-        # licenced under BSD
-        our %get_methods = (
-            'GET'    => "GET -t $timeout -H 'Pragma: no-cache' $url",
-            'wget'   => "wget --quiet --timeout=$timeout --no-cache -O - $url",
-            'curl'   => "curl --silent --max-time $timeout -H 'Pragma: no-cache' $url",
-            'fetch'  => "fetch -q -T $timeout -o - $url",
-            'lynx'   => "lynx --connect-timeout=$timeout --dump $url",
-            'links'  => 'links -dump $url',
-            'links2' => 'links2 -dump $url'
-        );
-
-        # Force the fetching method
-        if ($args{'path'}) {
-            my $meth = basename $args{'path'};
-
-            pod2usage(
-                -message => "FATAL: \"$args{'path'}\" is not a valid program.",
-                -exitval => 127
-            ) unless -x $args{'path'};
-
-            pod2usage(
-                -message => "FATAL: \"$args{'path'}\" is not a supported program.",
-                -exitval => 127
-            ) unless $meth =~ 'GET|wget|curl|fetch|lynx|links|links2';
-        }
-
-        # fetch the latest versions
-        foreach my $exe (values %get_methods) {
-            $rss = qx{$exe 2>/dev/null};
-
-            last if $rss =~ 'PostgreSQL latest versions';
-        }
-
-        return unknown($me, [ 'Could not fetch PostgreSQL latest versions' ])
-            unless $rss;
-
-        $latest_versions{"$1.$2"} = [$1 * 10000 + $2 * 100 + $3, "$1.$2.$3"]
-            while $rss =~ m/<title>(\d+)\.(\d+)\.(\d+)/g;
-    }
-    else {
-        pod2usage(
-            -message => 'FATAL: you must provide a warning OR a critical threshold for service minor_version!',
-            -exitval => 127
-        ) if defined $args{'critical'} and defined $args{'warning'};
-
-        my $given_version = defined $args{'critical'} ?
-            $args{'critical'}
-            : $args{'warning'};
-
-        while ( $given_version =~ m/(\d+)\.(\d+)\.(\d+)/g ) {
-            $latest_versions{"$1.$2"} = [$1 * 10000 + $2 * 100 + $3, "$1.$2.$3"];
-        }
-    }
-
-    $hosts[0]{'version'} =~ '^(\d+\.\d+).*$';
-    $major_version = $1;
-
-    unless ( defined $latest_versions{$major_version} ) {
-        push @msg => "Unknown major PostgreSQL version $major_version";
-        return unknown( $me, \@msg );
-    }
-
-    push @perfdata => "version=". $hosts[0]{'version_num'} . "PGNUMVER";
-
-    if ( $hosts[0]{'version_num'} != $latest_versions{$major_version}[0] ) {
-        push @msg => "PostgreSQL version ". $hosts[0]{'version'}
-            ." (should be $latest_versions{$major_version}[1])";
-
-        return warning( $me, \@msg, \@perfdata )
-            if defined $args{'warning'};
-        return critical( $me, \@msg, \@perfdata );
-    }
-
-    push @msg => "PostgreSQL version ". $hosts[0]{'version'};
-
-    return ok( $me, \@msg, \@perfdata );
-}
-
-
-=item B<hot_standby_delta> (9.0)
-
-Check the data delta between a cluster and its Hot standbys.
-
-You must give the connection parameters for two or more clusters.
-
-Perfdata returns the data delta in bytes between the master and each Hot
-standby cluster listed.
-
-Critical and Warning thresholds can take one or two values separated by a
-comma. If only one value given, it applies to both received and replayed data.
-If two values are given, the first one applies to received data, the second one
-to replayed ones. These thresholds only accept a size (eg. 2.5G).
-
-This service raise a Critical if it doesn't find exactly ONE valid master
-cluster (ie. critical when 0 or 2 and more masters).
-
-=cut
-
-sub check_hot_standby_delta {
-    my @perfdata;
-    my @msg;
-    my @msg_crit;
-    my @msg_warn;
-    my $w_limit_received;
-    my $c_limit_received;
-    my $w_limit_replayed;
-    my $c_limit_replayed;
-    my @hosts;
-    my %args  = %{ $_[0] };
-    my $master_location = '';
-    my $num_clusters = 0;
-    my $me    = 'POSTGRES_HOT_STANDBY_DELTA';
-    # we need to coalesce on pg_last_xlog_receive_location because it returns
-    # NULL during WAL Shipping
-    my $query = "
-        SELECT (NOT pg_is_in_recovery())::int,
-            CASE pg_is_in_recovery()
-                WHEN 't' THEN coalesce(
-                    pg_last_xlog_receive_location(),
-                    pg_last_xlog_replay_location()
-                )
-                ELSE pg_current_xlog_location()
-            END,
-            CASE pg_is_in_recovery()
-                WHEN 't' THEN pg_last_xlog_replay_location()
-                ELSE NULL::text
-            END
-    ";
-
-    # warning and critical are mandatory.
-    pod2usage(
-        -message => "FATAL: you must specify critical and warning thresholds.",
-        -exitval => 127
-    ) unless defined $args{'warning'} and defined $args{'critical'} ;
-
-
-    @hosts = @{ parse_hosts %args };
-
-    pod2usage(
-        -message => 'FATAL: you must give two or more hosts with service "hot_standby_delta".',
-        -exitval => 127
-    ) if @hosts < 2;
-
-    is_compat $hosts[0], 'hot_standby_delta', $PG_VERSION_90 or exit 1;
-    is_compat $hosts[1], 'hot_standby_delta', $PG_VERSION_90 or exit 1;
-
-    # fetch LSNs
-    foreach my $host (@hosts) {
-        $host->{'rs'} = \@{ query( $host, $query )->[0] };
-        $num_clusters += $host->{'rs'}[0];
-        $master_location = $host->{'rs'}[1] if $host->{'rs'}[0];
-    }
-
-    return critical($me, ["PostgreSQL major versions differ amongst clusters ($hosts[0]{'version_num'} vs. $hosts[1]{'version_num'})."] )
-        if $hosts[0]{'version'} != $hosts[1]{'version'};
-
-    return critical($me, ['No cluster in production.'])
-        if $num_clusters == 0;
-
-    return critical($me, ['More than one cluster in production.'])
-        if $num_clusters != 1;
-
-    ($w_limit_received, $w_limit_replayed) = split /,/, $args{'warning'};
-    ($c_limit_received, $c_limit_replayed) = split /,/, $args{'critical'};
-
-    if (!defined($w_limit_replayed)) {
-        $w_limit_replayed = $w_limit_received;
-    }
-    if (!defined($c_limit_replayed)) {
-        $c_limit_replayed = $c_limit_received;
-    }
-
-    $w_limit_received = get_size( $w_limit_received );
-    $c_limit_received = get_size( $c_limit_received );
-    $w_limit_replayed = get_size( $w_limit_replayed );
-    $c_limit_replayed = get_size( $c_limit_replayed );
-
-    # we recycle this one to count the number of slave
-    $num_clusters = 0;
-
-    $master_location =~ m{^([0-9A-F]+)/([0-9A-F]+)$};
-    $master_location = (hex('ff000000') * hex($1)) + hex($2);
-
-    # compute deltas
-    foreach my $host (@hosts) {
-        next if $host->{'rs'}[0];
-        my ($a, $b) = split(/\//, $host->{'rs'}[1]);
-        $host->{'receive_delta'} = $master_location - (hex('ff000000') * hex($a)) - hex($b);
-
-        ($a, $b) = split(/\//, $host->{'rs'}[2]);
-        $host->{'replay_delta'} = $master_location - (hex('ff000000') * hex($a)) - hex($b);
-
-        $host->{'name'} =~ s/ db=.*$//;
-
-        push @perfdata => "'receive delta $host->{'name'}'=".
-            ($host->{'receive_delta'} > 0 ? $host->{'receive_delta'}:0).
-            "B;$w_limit_received;$c_limit_received; 'replay delta $host->{'name'}'=".
-            ($host->{'replay_delta'} > 0 ? $host->{'replay_delta'}:0) .
-            "B;$w_limit_replayed;$c_limit_replayed"
-        ;
-
-        if ($host->{'receive_delta'} > $c_limit_received) {
-            push @msg_crit, "critical receive lag for $host->{'name'}";
-            next;
-        }
-
-        if ($host->{'replay_delta'} > $c_limit_replayed) {
-            push @msg_crit, "critical replay lag for $host->{'name'}";
-            next;
-        }
-
-        if ($host->{'receive_delta'} > $w_limit_received) {
-            push @msg_warn, "warning receive lag for $host->{'name'}";
-            next;
-        }
-
-        if ($host->{'replay_delta'} > $w_limit_replayed) {
-            push @msg_warn, "warning replay lag for $host->{'name'}";
-            next;
-        }
-
-        $num_clusters++;
-    }
-
-    return critical( $me, [ @msg_crit, @msg_warn ], \@perfdata )
-        if @msg_crit > 0;
-
-    return warning( $me, \@msg_warn, \@perfdata ) if @msg_warn > 0;
-
-    return ok($me, [ "$num_clusters Hot standby checked" ], \@perfdata);
-}
-
-
-=item B<streaming_delta> (9.1+)
-
-Check the data delta between a cluster and its standbys in Streaming Replication.
-
-Optional argument C<--slave> allows you to specify some slaves that MUST be
-connected. This argument can be used as many times as desired to check multiple
-slave connections, or you can specify multiple slaves connections at one time,
-using comma separated values. Both methods can be used in a single call. The
-given value must be of the form "APPLICATION_NAME IP".
-Either of the two following examples will check for the presence of two slaves:
-
-  --slave 'slave1 192.168.1.11' --slave 'slave2 192.168.1.12'
-  --slave 'slave1 192.168.1.11','slave2 192.168.1.12'
-
-Perfdata returns the data delta in bytes between the master and all standbys
-found and the number of slaves connected.
-
-Critical and Warning thresholds can take one or two values separated by a
-comma. If only one value is supplied, it applies to both flushed and replayed
-data. If two values are supplied, the first one applies to flushed data,
-the second one to replayed data.
-These thresholds only accept a size (eg. 2.5G).
-
-=cut
-
-sub check_streaming_delta {
-    my @perfdata;
-    my @msg;
-    my @msg_crit;
-    my @msg_warn;
-    my @rs;
-    my $w_limit_flushed;
-    my $c_limit_flushed;
-    my $w_limit_replayed;
-    my $c_limit_replayed;
-    my @hosts;
-    my %slaves;
-    my %args            = %{ $_[0] };
-    my $me              = 'POSTGRES_STREAMING_DELTA';
-    my $master_location = '';
-    my $num_clusters    = 0;
-    my %queries         = (
-        $PG_VERSION_92 => q{SELECT application_name, client_addr, pid,
-            sent_location, write_location, flush_location, replay_location,
-            CASE pg_is_in_recovery() WHEN true THEN pg_last_xlog_receive_location() ELSE pg_current_xlog_location() END
-            FROM pg_stat_replication},
-        $PG_VERSION_91 => q{SELECT application_name, client_addr, procpid,
-            sent_location, write_location, flush_location, replay_location,
-            CASE pg_is_in_recovery() WHEN true THEN pg_last_xlog_receive_location() ELSE pg_current_xlog_location() END
-            FROM pg_stat_replication}
-    );
-    # FIXME this service should check for given slaves in opts!
-
-    # warning and critical are mandatory.
-    pod2usage(
-        -message => "FATAL: you must specify critical and warning thresholds.",
-        -exitval => 127
-    ) unless defined $args{'warning'} and defined $args{'critical'} ;
-
-
-    @hosts = @{ parse_hosts %args };
-
-    pod2usage(
-        -message => 'FATAL: you must give only one host with service "streaming_delta".',
-        -exitval => 127
-    ) if @hosts != 1;
-
-    is_compat $hosts[0], 'streaming_delta', $PG_VERSION_91 or exit 1;
-    if ( scalar @{ $args{'slave'} } ) {
-        $slaves{$_} = 0 foreach ( split ( /,/, join ( ',', @{ $args{'slave'} } ) ) );
-    }
-
-    @rs = @{ query_ver( $hosts[0], %queries ) };
-
-    return unknown($me, ['No slaves connected'], ["'# of slaves'=0"])
-        unless @rs;
-
-    $rs[0][7] =~ m{^([0-9A-F]+)/([0-9A-F]+)$};
-    $master_location = (hex('ff000000') * hex($1)) + hex($2);
-
-    ($w_limit_flushed, $w_limit_replayed) = split /,/, $args{'warning'};
-    ($c_limit_flushed, $c_limit_replayed) = split /,/, $args{'critical'};
-
-    if (!defined($w_limit_replayed)) {
-        $w_limit_replayed = $w_limit_flushed;
-    }
-    if (!defined($c_limit_replayed)) {
-        $c_limit_replayed = $c_limit_flushed;
-    }
-
-    $w_limit_flushed = get_size( $w_limit_flushed );
-    $c_limit_flushed = get_size( $c_limit_flushed );
-    $w_limit_replayed = get_size( $w_limit_replayed );
-    $c_limit_replayed = get_size( $c_limit_replayed );
-
-
-    push @perfdata => "'# of slaves'=". scalar @rs;
-
-    # compute deltas
-    foreach my $host (@rs) {
-        my $send_delta;
-        my $write_delta;
-        my $flush_delta;
-        my $replay_delta;
-        my $name;
-
-        $host->[3] =~ m{^([0-9A-F]+)/([0-9A-F]+)$};
-        $send_delta = $master_location - (hex('ff000000') * hex($1)) - hex($2);
-
-        $host->[4] =~ m{^([0-9A-F]+)/([0-9A-F]+)$};
-        $write_delta = $master_location - (hex('ff000000') * hex($1)) - hex($2);
-
-        $host->[5] =~ m{^([0-9A-F]+)/([0-9A-F]+)$};
-        $flush_delta = $master_location - (hex('ff000000') * hex($1)) - hex($2);
-
-        $host->[6] =~ m{^([0-9A-F]+)/([0-9A-F]+)$};
-        $replay_delta = $master_location - (hex('ff000000') * hex($1)) - hex($2);
-
-        $name = "$host->[0]\@$host->[1]";
-
-        push @perfdata => "'sent delta $name'=${send_delta}B ".
-            "'wrote delta $name'=${write_delta}B ".
-            "'flushed delta $name'=${flush_delta}B ".
-            "'replay delta $name'=${replay_delta}B ".
-            "'pid $name'=$host->[2]";
-
-        $num_clusters++;
-
-        $slaves{"$host->[0] $host->[1]"} = 1;
-
-        if ($flush_delta > $c_limit_flushed) {
-            push @msg_crit, "critical flush lag for $name";
-            next;
-        }
-
-        if ($replay_delta > $c_limit_replayed) {
-            push @msg_crit, "critical replay lag for $name";
-            next;
-        }
-
-        if ($flush_delta > $w_limit_flushed) {
-            push @msg_warn, "warning flush lag for $name";
-            next;
-        }
-
-        if ($replay_delta > $w_limit_replayed) {
-            push @msg_warn, "warning replay lag for $name";
-            next;
-        }
-    }
-
-    while ( my ( $host, $connected ) = each %slaves ) {
-        unshift @msg_crit => "$host not connected" unless $connected;
-    }
-
-    return critical( $me, [ @msg_crit, @msg_warn ], \@perfdata )
-        if @msg_crit > 0;
-
-    return warning( $me, \@msg_warn, \@perfdata ) if @msg_warn > 0;
-
-    return ok($me, [ "$num_clusters slaves checked" ], \@perfdata);
-}
-
-=item B<hit_ratio> (all)
-
-Check the cache hit ratio on the cluster.
-
-Perfdata returns the cache hit ratio per database. Template databases and
-databases that do not allow connections will not be checked, nor will the
-databases which have never been accessed.
-
-Critical and Warning thresholds are optional. They only accept a percentage.
-
-This service supports both C<--dbexclude> and C<--dbinclude> parameters.
-
-=cut
-
-sub check_hit_ratio {
-    my @rs;
-    my @perfdata;
-    my @msg_crit;
-    my @msg_warn;
-    my @hosts;
-    my %db_hitratio;
-    my %new_db_hitratio;
-    my %args       = %{ $_[0] };
-    my @dbinclude  = @{ $args{'dbinclude'} };
-    my @dbexclude  = @{ $args{'dbexclude'} };
-    my $me         = 'POSTGRES_HIT_RATIO';
-    my $db_checked = 0;
-    my $sql        = q{SELECT d.datname, blks_hit, blks_read
-        FROM pg_stat_database sd
-          JOIN pg_database d ON d.oid = sd.datid
-        WHERE d.datallowconn AND NOT d.datistemplate
-        ORDER BY datname};
-
-    # warning and critical must be %.
-    if ( defined $args{'warning'} and defined $args{'critical'} ) {
-        pod2usage(
-            -message => "FATAL: critical and warning thresholds only accept percentages.",
-            -exitval => 127
-        ) unless $args{'warning'} =~ m/^([0-9.]+)%$/
-            and $args{'critical'} =~ m/^([0-9.]+)%$/;
-
-        $args{'warning'}  = substr $args{'warning'}, 0, -1;
-        $args{'critical'} = substr $args{'critical'}, 0, -1;
-    }
-
-
-    @hosts = @{ parse_hosts %args };
-
-    pod2usage(
-        -message => 'FATAL: you must give only one host with service "hit_ratio".',
-        -exitval => 127
-    ) if @hosts != 1;
-
-
-    %db_hitratio = %{ load( $hosts[0], 'db_hitratio', $args{'status-file'} ) || {} };
-
-    @rs = @{ query( $hosts[0], $sql ) };
-
-    DB_LOOP: foreach my $db (@rs) {
-        my $ratio;
-        my $hit_delta;
-        my $read_delta;
-        my $perfdata_value;
-
-        $new_db_hitratio{ $db->[0] } = [ $db->[1], $db->[2], 'NaN' ];
-
-        next DB_LOOP if grep { $db->[0] =~ /$_/ } @dbexclude;
-        next DB_LOOP if @dbinclude and not grep { $db->[0] =~ /$_/ } @dbinclude;
-
-        $db_checked++;
-
-        next DB_LOOP unless defined $db_hitratio{ $db->[0] };
-
-        $hit_delta  = $new_db_hitratio{ $db->[0] }[0] - $db_hitratio{ $db->[0] }[0];
-        $read_delta = $new_db_hitratio{ $db->[0] }[1] - $db_hitratio{ $db->[0] }[1];
-
-        # metrics moved since last run
-        if ( $hit_delta + $read_delta > 0 ) {
-            $ratio = 100 * $hit_delta / ( $hit_delta + $read_delta );
-            $ratio = int($ratio*100+0.05)/100;
-            $new_db_hitratio{ $db->[0] }[2] = $ratio;
-
-            $perfdata_value = sprintf "'%s'=%s%%", $db->[0], $ratio;
-        }
-        # no activity since last run, use previous hit ratio
-        # this should not happen as the query itself hit/read.
-        elsif ( $db->[1] + $db->[2] > 0 ) {
-            $ratio = $db_hitratio{ $db->[0] }[2];
-            $perfdata_value = sprintf "'%s'=%s%%", $db->[0], $ratio;
-        }
-        # this database has no reported activity yet
-        else {
-            $new_db_hitratio{ $db->[0] }[2] = 'NaN';
-            $perfdata_value = sprintf "'%s'=NaN%%", $db->[0];
-        }
-
-        $perfdata_value .= ";$args{'warning'};$args{'critical'}"
-            if defined $args{'critical'};
-
-        push @perfdata => $perfdata_value;
-
-        if ( defined $args{'critical'} ) {
-            if ( $db->[1] < $args{'critical'} ) {
-                push @msg_crit => sprintf "%s: %s%%", $db->[0], $ratio;
-                next DB_LOOP;
-            }
-
-            if ( defined $args{'warning'} and $db->[1] < $args{'warning'} ) {
-                push @msg_warn => sprintf "%s: %s%%", $db->[0], $ratio;
-            }
-        }
-    }
-
-    save $hosts[0], 'db_hitratio', \%new_db_hitratio, $args{'status-file'};
-
-    if ( defined $args{'critical'} ) {
-        return critical( $me, [ @msg_crit, @msg_warn ], \@perfdata )
-            if scalar @msg_crit;
-
-        return warning( $me, \@msg_warn, \@perfdata )
-            if scalar @msg_warn;
-    }
-
-    return ok( $me, [ "$db_checked database(s) checked" ], \@perfdata );
-}
-
-=item B<backup_label_age> (8.1+)
-
-Check the age of the backup label file.
-
-Perfdata returns the age of the backup_label file, -1 if not present.
-
-Critical and Warning thresholds only accept an interval (eg. 1h30m25s).
-
-=cut
-
-sub check_backup_label_age {
-    my $rs;
-    my $c_limit;
-    my $w_limit;
-    my @perfdata;
-    my @hosts;
-    my %args    = %{ $_[0] };
-    my $me      = 'POSTGRES_BACKUP_LABEL_AGE';
-    my %queries         = (
-        $PG_VERSION_81 => q{SELECT max(s.r) AS value FROM (
-            SELECT CAST(extract(epoch FROM current_timestamp - (pg_stat_file(file)).modification) AS integer) AS r
-            FROM pg_ls_dir('.') AS ls(file)
-            WHERE file='backup_label' UNION SELECT 0
-        ) AS s},
-        $PG_VERSION_93 => q{
-            SELECT CASE WHEN pg_is_in_backup()
-                        THEN CAST(extract(epoch FROM current_timestamp - pg_backup_start_time()) AS integer)
-                        ELSE 0
-                   END}
-    );
-
-    # warning and critical are mandatory.
-    pod2usage(
-        -message => "FATAL: you must specify critical and warning thresholds.",
-        -exitval => 127
-    ) unless defined $args{'warning'} and defined $args{'critical'} ;
-
-    pod2usage(
-        -message => "FATAL: critical and warning thresholds only acccepts interval.",
-        -exitval => 127
-    ) unless ( is_time( $args{'warning'} ) and is_time( $args{'critical'} ) );
-
-    $c_limit = get_time( $args{'critical'} );
-    $w_limit = get_time( $args{'warning'} );
-
-    @hosts = @{ parse_hosts %args };
-
-    pod2usage(
-        -message => 'FATAL: you must give only one host with service "backup_label_age".',
-        -exitval => 127
-    ) if @hosts != 1;
-
-    is_compat $hosts[0], 'backup_label_age', $PG_VERSION_81 or exit 1;
-
-    $rs = @{ query_ver( $hosts[0], %queries )->[0] }[0];
-
-    push @perfdata,
-         "age=${rs}s;$w_limit;$c_limit";
-
-    return critical( $me, [ "age: ".to_interval($rs) ], \@perfdata )
-        if $rs > $c_limit;
-
-    return warning( $me, [ "age: ".to_interval($rs) ], \@perfdata )
-        if $rs > $w_limit;
-
-    return ok( $me, [ "backup_label file ".( $rs == 0 ? "absent":"present (age: ".to_interval($rs).")") ], \@perfdata );
-}
-
-
-=item B<oldest_2pc> (8.1+)
-
-Check the oldest I<two phase commit transaction> (aka. prepared transaction) in
-the cluster.
-
-Perfdata contains the max/avg age time and the number of prepared
-transaction per databases.
-
-Critical and Warning thresholds only accept an interval.
-
-=cut
-
-sub check_oldest_2pc {
-    my @rs;
-    my @perfdata;
-    my @msg;
-    my @hosts;
-    my $c_limit;
-    my $w_limit;
-    my $me          = 'POSTGRES_OLDEST_2PC';
-    my $oldest_2pc = 0;
-    my $nb_2pc      = 0;
-    my %stats       = ();
-    my $query         = q{SELECT transaction, gid,
-            coalesce(extract('epoch' FROM
-                    date_trunc('second', current_timestamp-prepared)
-                ), -1),
-            owner, d.datname
-        FROM pg_database AS d
-        LEFT JOIN pg_prepared_xacts AS x
-            ON d.datname=x.database
-        WHERE d.datallowconn
-    };
-
-
-    # warning and critical are mandatory.
-    pod2usage(
-        -message => "FATAL: you must specify critical and warning thresholds.",
-        -exitval => 127
-    ) unless defined $args{'warning'} and defined $args{'critical'} ;
-
-    pod2usage(
-        -message => "FATAL: critical and warning thresholds only acccepts interval.",
-        -exitval => 127
-    ) unless ( is_time( $args{'warning'} ) and is_time( $args{'critical'} ) );
-
-
-    $c_limit = get_time $args{'critical'};
-    $w_limit = get_time $args{'warning'};
-
-
-    @hosts = @{ parse_hosts %args };
-
-    pod2usage(
-        -message => 'FATAL: you must give only one host with service "oldest_2pc".',
-        -exitval => 127
-    ) if @hosts != 1;
-
-    is_compat $hosts[0], 'postgres_oldest_2pc', $PG_VERSION_81 or exit 1;
-
-
-    @rs = @{ query( $hosts[0], $query ) };
-
-    REC_LOOP: foreach my $r (@rs) {
-
-        $stats{$r->[4]} = {
-            'num' => 0,
-            'max' => -1,
-            'avg' => 0,
-        } unless exists $stats{$r->[4]};
-
-        $oldest_2pc = $r->[2] if $r->[2] > $oldest_2pc;
-
-        $stats{$r->[4]}{'num'}++ if $r->[0];
-        $stats{$r->[4]}{'max'} = $r->[2] if $stats{$r->[4]}{'max'} < $r->[2];
-        $stats{$r->[4]}{'avg'} = (
-            $stats{$r->[4]}{'avg'} * ($stats{$r->[4]}{'num'} -1) + $r->[2])
-            / $stats{$r->[4]}{'num'} if $stats{$r->[4]}{'num'};
-    }
-
-    DB_LOOP: foreach my $db (sort keys %stats) {
-
-        $nb_2pc += $stats{$db}{'num'};
-
-        unless($stats{$db}{'max'} > -1) {
-            $stats{$db}{'max'} = 'NaN';
-            $stats{$db}{'avg'} = 'NaN';
-        }
-
-        push @perfdata, (
-            "'$db max'=$stats{$db}{'max'}s;$w_limit;$c_limit",
-            "'$db avg'=$stats{$db}{'avg'}s;$w_limit;$c_limit",
-            "'$db # prep. xact'=$stats{$db}{'num'}"
-        );
-
-        if ( $stats{$db}{'max'} > $c_limit ) {
-            push @msg => "oldest 2pc on $db: ". to_interval($stats{$db}{'max'});
-            next DB_LOOP;
-        }
-
-        if ( $stats{$db}{'max'} > $w_limit ) {
-            push @msg => "oldest 2pc on $db: ". to_interval($stats{$db}{'max'});
-        }
-    }
-
-    unshift @msg => "$nb_2pc prepared transaction(s)";
-
-    return critical( $me, \@msg, \@perfdata )
-        if $oldest_2pc > $c_limit;
-
-    return warning( $me, \@msg, \@perfdata )
-        if $oldest_2pc > $w_limit;
-
-    return ok( $me, \@msg, \@perfdata );
-}
-
-=item B<oldest_idlexact> (8.3+)
-
-Check the oldest I<idle> transaction.
-
-Perfdata contains the max/avg age and the number of idle transactions
-per databases.
-
-Critical and Warning thresholds only accept an interval.
-
-This service supports both C<--dbexclude> and C<--dbinclude> parameters.
-
-=cut
-
-sub check_oldest_idlexact {
-    my @rs;
-    my @perfdata;
-    my @msg;
-    my @hosts;
-    my $c_limit;
-    my $w_limit;
-    my %args        = %{ $_[0] };
-    my @dbinclude   = @{ $args{'dbinclude'} };
-    my @dbexclude   = @{ $args{'dbexclude'} };
-    my $me          = 'POSTGRES_OLDEST_IDLEXACT';
-    my $oldest_idle = 0;
-    my $nb_idle     = 0;
-    my %stats       = ( );
-    my %queries     = (
-        $PG_VERSION_83 => q{SELECT d.datname,
-            coalesce(extract('epoch' FROM
-                    date_trunc('second', current_timestamp-xact_start)
-                ), -1)
-            FROM pg_database AS d
-            LEFT JOIN pg_stat_activity AS a ON (a.datid = d.oid AND current_query = '<IDLE> in transaction')},
-        $PG_VERSION_92 => q{SELECT d.datname,
-            coalesce(extract('epoch' FROM
-                    date_trunc('second', current_timestamp-xact_start)
-                ), -1)
-            FROM pg_database AS d
-            LEFT JOIN pg_stat_activity AS a ON (a.datid = d.oid AND state='idle in transaction')
-        }
-    );
-
-    # warning and critical are mandatory.
-    pod2usage(
-        -message => "FATAL: you must specify critical and warning thresholds.",
-        -exitval => 127
-    ) unless defined $args{'warning'} and defined $args{'critical'} ;
-
-    pod2usage(
-        -message => "FATAL: critical and warning thresholds only acccepts interval.",
-        -exitval => 127
-    ) unless ( is_time( $args{'warning'} ) and is_time( $args{'critical'} ) );
-
-
-    $c_limit = get_time $args{'critical'};
-    $w_limit = get_time $args{'warning'};
-
-
-    @hosts = @{ parse_hosts %args };
-
-    pod2usage(
-        -message => 'FATAL: you must give only one host with service "oldest_idlexact".',
-        -exitval => 127
-    ) if @hosts != 1;
-
-    is_compat $hosts[0], 'oldest_idlexact', $PG_VERSION_83 or exit 1;
-
-
-    @rs = @{ query_ver( $hosts[0], %queries ) };
-
-    REC_LOOP: foreach my $r (@rs) {
-
-        $stats{$r->[0]} = {
-            'num' => 0,
-            'max' => -1,
-            'avg' => 0,
-        } unless exists $stats{$r->[0]};
-
-        $oldest_idle = $r->[1] if $r->[1] > $oldest_idle;
-
-        $stats{$r->[0]}{'num'}++ if $r->[1] > -1;
-        $stats{$r->[0]}{'max'} = $r->[1] if $stats{$r->[0]}{'max'} < $r->[1];
-        $stats{$r->[0]}{'avg'} = (
-            $stats{$r->[0]}{'avg'} * ($stats{$r->[0]}{'num'} -1) + $r->[1])
-            / $stats{$r->[0]}{'num'} if $stats{$r->[0]}{'num'};
-    }
-
-    DB_LOOP: foreach my $db (sort keys %stats) {
-
-        next DB_LOOP if grep { $db =~ /$_/ } @dbexclude;
-        next DB_LOOP if @dbinclude and not grep { $db =~ /$_/ } @dbinclude;
-
-        $nb_idle += $stats{$db}{'num'};
-
-        unless($stats{$db}{'max'} > -1) {
-            $stats{$db}{'max'} = 'NaN';
-            $stats{$db}{'avg'} = 'NaN';
-        }
-
-        push @perfdata, (
-            "'$db max'=$stats{$db}{'max'}s;$w_limit;$c_limit",
-            "'$db avg'=$stats{$db}{'avg'}s;$w_limit;$c_limit",
-            "'$db # idle xact'=$stats{$db}{'num'}"
-        );
-
-        if ( $stats{$db}{'max'} > $c_limit ) {
-            push @msg => "oldest idle xact on $db: ". to_interval($stats{$db}{'max'});
-            next DB_LOOP;
-        }
-
-        if ( $stats{$db}{'max'} > $w_limit ) {
-            push @msg => "oldest idle xact on $db: ". to_interval($stats{$db}{'max'});
-        }
-    }
-
-    unshift @msg => "$nb_idle idle transaction(s)";
-
-    return critical( $me, \@msg, \@perfdata )
-        if $oldest_idle > $c_limit;
-
-    return warning( $me, \@msg, \@perfdata )
-        if $oldest_idle > $w_limit;
-
-    return ok( $me, \@msg, \@perfdata );
-}
-
-
-=item B<longest_query> (all)
-
-Check the longest running query in the cluster.
-
-Perfdata contains the max/avg/min running time and the number of queries per
-database.
-
-Critical and Warning thresholds only accept an interval.
-
-This service supports both C<--dbexclude> and C<--dbinclude> parameters.
-
-It also supports argument C<--exclude REGEX> to exclude queries matching the
-given regular expression from the check.
-
-You can use multiple C<--exclude REGEX> parameters.
-
-=cut
-
-sub check_longest_query {
-    my @rs;
-    my @perfdata;
-    my @msg;
-    my @hosts;
-    my $c_limit;
-    my $w_limit;
-    my %args          = %{ $_[0] };
-    my @dbinclude     = @{ $args{'dbinclude'} };
-    my @dbexclude     = @{ $args{'dbexclude'} };
-    my $me            = 'POSTGRES_LONGEST_QUERY';
-    my $longest_query = 0;
-    my $nb_query      = 0;
-    my %stats         = ();
-    my %queries       = (
-       $PG_VERSION_74 => q{SELECT d.datname,
-                COALESCE(elapsed, -1),
-                COALESCE(query, '')
-            FROM pg_database AS d
-            LEFT JOIN (
-                SELECT datname, current_query AS query,
-                    extract('epoch' FROM
-                        date_trunc('second', current_timestamp-query_start)
-                    ) AS elapsed
-                FROM pg_stat_activity
-                WHERE current_query NOT LIKE '<IDLE>%'
-            ) AS s ON (d.datname=s.datname)
-            WHERE d.datallowconn
-        },
-        $PG_VERSION_92 => q{SELECT d.datname,
-                COALESCE(elapsed, 0),
-                COALESCE(query, '')
-            FROM pg_database AS d
-            LEFT JOIN (
-                SELECT datname, query,
-                    extract('epoch' FROM
-                        date_trunc('second', current_timestamp-state_change)
-                    ) AS elapsed
-                FROM pg_stat_activity
-                WHERE state = 'active'
-            ) AS s ON (d.datname=s.datname)
-            WHERE d.datallowconn
-        }
-    );
-
-    # warning and critical are mandatory.
-    pod2usage(
-        -message => "FATAL: you must specify critical and warning thresholds.",
-        -exitval => 127
-    ) unless defined $args{'warning'} and defined $args{'critical'} ;
-
-    pod2usage(
-        -message => "FATAL: critical and warning thresholds only acccepts interval.",
-        -exitval => 127
-    ) unless ( is_time( $args{'warning'} ) and is_time( $args{'critical'} ) );
-
-
-    $c_limit = get_time( $args{'critical'} );
-    $w_limit = get_time( $args{'warning'} );
-
-
-    @hosts = @{ parse_hosts %args };
-
-    pod2usage(
-        -message => 'FATAL: you must give only one host with service "longest_query".',
-        -exitval => 127
-    ) if @hosts != 1;
-
-
-    @rs = @{ query_ver( $hosts[0], %queries ) };
-
-    REC_LOOP: foreach my $r (@rs) {
-
-        # exclude/include on db name
-        next REC_LOOP if grep { $r->[0] =~ /$_/ } @dbexclude;
-        next REC_LOOP if @dbinclude and not grep { $r->[0] =~ /$_/ } @dbinclude;
-
-        # exclude on query text
-        foreach my $exclude_re ( @{ $args{'exclude'} } ) {
-            next REC_LOOP if $r->[2] =~ /$exclude_re/;
-        }
-
-        $stats{$r->[0]} = {
-            'num' => 0,
-            'max' => -1,
-            'avg' => 0,
-        } unless exists $stats{$r->[0]};
-
-        next REC_LOOP unless $r->[2] ne '';
-
-        $longest_query = $r->[1] if $r->[1] > $longest_query;
-        $nb_query++;
-
-        $stats{$r->[0]}{'num'}++;
-        $stats{$r->[0]}{'max'} = $r->[1] if $stats{$r->[0]}{'max'} < $r->[1];
-        $stats{$r->[0]}{'avg'} = (
-            $stats{$r->[0]}{'avg'} * ($stats{$r->[0]}{'num'} -1) + $r->[1])
-            / $stats{$r->[0]}{'num'};
-    }
-
-    DB_LOOP: foreach my $db (keys %stats) {
-
-        unless($stats{$db}{'max'} > -1) {
-            $stats{$db}{'max'} = 'NaN';
-            $stats{$db}{'avg'} = 'NaN';
-        }
-
-        push @perfdata, (
-            "'$db max'=$stats{$db}{'max'}s;$w_limit;$c_limit",
-            "'$db avg'=$stats{$db}{'avg'}s;$w_limit;$c_limit",
-            "'$db #queries'=$stats{$db}{'num'}"
-        );
-
-        if ( $stats{$db}{'max'} > $c_limit ) {
-            push @msg => "$db: ". to_interval($stats{$db}{'max'});
-            next DB_LOOP;
-        }
-
-        if ( $stats{$db}{'max'} > $w_limit ) {
-            push @msg => "$db: ". to_interval($stats{$db}{'max'});
-        }
-    }
-
-    return critical( $me, \@msg, \@perfdata )
-        if $longest_query > $c_limit;
-
-    return warning( $me, \@msg, \@perfdata )
-        if $longest_query > $w_limit;
-
-    return ok( $me, [ "$nb_query running querie(s)" ], \@perfdata );
-}
-
-=item B<connection> (all)
-
-Perform a simple connection test.
-
-No perfdata is returned.
-
-This service ignore critical and warning arguments.
-
-=cut
-
-sub check_connection {
-    my @rs;
-    my @hosts;
-    my %args = %{ $_[0] };
-    my $me   = 'POSTGRES_CONNECTION';
-    my $sql  = q{SELECT now(), version()};
-
-    @hosts = @{ parse_hosts %args };
-
-    pod2usage(
-        -message => 'FATAL: you must give only one host with service "connection".',
-        -exitval => 127
-    ) if @hosts != 1;
-
-    @rs = @{ query( $hosts[0], $sql ) };
-
-    return ok( $me, [ "Connection successful at $rs[0][0], on $rs[0][1]" ] );
-}
-
-=item B<custom_query> (all)
-
-Perform the given user query.
-
-The query is specified with the C<--query parameter>. The first column will be
-used to perform the test for the status if warning and critical are provided.
-
-The warning and critical arguments are optional. They can be of format integer
-(default), size or time depending on the C<--type> argument.
-Warning and Critical will be raised if they are greater than the first column,
-or less if the C<--reverse> option is used.
-
-All other columns will be used to generate the perfdata. The query must
-display them in the perfdata format, with unit if required (eg. "size=35B").
-If a field contains multiple values, they must be separated by a space.
-
-=cut
-
-sub check_custom_query {
-    my %args    = %{ $_[0] };
-    my $me      = 'POSTGRES_CUSTOM_QUERY';
-    my $sql     = $args{'query'};
-    my $type    = $args{'type'} || 'integer';
-    my $reverse = $args{'reverse'};
-    my $bounded = undef;
-    my @rs;
-    my @perfdata;
-    my @hosts;
-    my @msg_crit;
-    my @msg_warn;
-    my $c_limit;
-    my $w_limit;
-    my $perf;
-    my $value;
-
-    # FIXME: add warn/crit threshold in perfdata
-
-    # query must be given
-    pod2usage(
-        -message => 'FATAL: you must set parameter "--query" with "custom_query" service.',
-        -exitval => 127
-    ) unless defined $args{'query'} ;
-
-    # Critical and Warning must be given with --type argument
-    pod2usage(
-        -message => 'FATAL: you must specify critical and warning thresholds with "--type" parameter.',
-        -exitval => 127
-    ) unless ( not defined $args{'type'} ) or
-        ( defined $args{'type'} and $args{'warning'} and $args{'critical'} );
-
-
-    @hosts = @{ parse_hosts %args };
-
-    pod2usage(
-        -message => 'FATAL: you must give only one host with service "custom_query".',
-        -exitval => 127
-    ) if @hosts != 1;
-
-
-    # Handle warning and critical type
-    if ( $type eq 'size' ) {
-        $w_limit = get_size( $args{'warning'} );
-        $c_limit = get_size( $args{'critical'} );
-    }
-    elsif ( $type eq 'time' ) {
-        pod2usage(
-                -message => "FATAL: critical and warning thresholds only acccepts interval with --type time.",
-                -exitval => 127
-                ) unless ( is_time( $args{'warning'} ) and is_time( $args{'critical'} ) );
-
-        $w_limit = get_time( $args{'warning'} );
-        $c_limit = get_time( $args{'critical'} );
-    }
-    elsif (defined $args{'warning'} ) {
-        pod2usage(
-            -message => 'FATAL: given critical and/or warning are not numeric. Please, set "--type" parameter if needed.',
-            -exitval => 127
-        ) if $args{'warning'} !~ m/^[0-9.]+$/
-            or $args{'critical'} !~ m/^[0-9.]+$/;
-        $w_limit = $args{'warning'};
-        $c_limit = $args{'critical'};
-    }
-
-    @rs = @{ query( $hosts[0], $sql ) };
-
-    pod2usage(
-        -message => 'FATAL: First column of your query is not numeric!',
-        -exitval => 127
-    ) unless looks_like_number($rs[0][0]);
-
-    DB_LOOP: foreach my $rec ( @rs ) {
-        $bounded = $rec->[0] unless $bounded;
-
-        $bounded = $rec->[0] if ( !$reverse and $rec->[0] > $bounded )
-            or ( $reverse and $rec->[0] < $bounded );
-
-        $value = shift( @{$rec} );
-        if ( @{$rec} > 0 ) {
-            $perf = join(';',@{$rec});
-        } else{
-            $perf = undef;
-        }
-
-        push @perfdata, $perf if defined $perf;
-
-        if ( ( defined $c_limit )
-            and (
-                ( !$reverse and ( $value > $c_limit ) )
-                or ( $reverse and ( $value < $c_limit ) )
-            )
-        ) {
-            push @msg_crit =>
-                "value: $value ".( defined $perf ? "($perf)" : "" );
-            next DB_LOOP;
-        }
-
-        if ( ( defined $w_limit )
-            and (
-                ( !$reverse and ( $value > $w_limit ) )
-                or ( $reverse  and ( $value < $w_limit ) )
-            )
-        ) {
-            push @msg_warn =>
-                "value: $value ".( defined $perf ? "($perf)" : "" );
-            next DB_LOOP;
-        }
-    }
-
-    return critical( $me, [ @msg_crit, @msg_warn ], \@perfdata )
-        if defined $c_limit and
-            ( ( !$reverse and $bounded > $c_limit)
-            or ( $reverse and $bounded < $c_limit) );
-
-    return warning( $me, [ @msg_warn ], \@perfdata )
-        if defined $w_limit and
-            ( ( !$reverse and $bounded > $w_limit)
-            or ( $reverse and $bounded < $w_limit) );
-
-    return ok( $me, [ "Custom query ok" ], \@perfdata );
-}
-
-=item B<configuration> (8.0+)
-
-Check the most important settings.
-
-Warning and Critical thresholds are ignored.
-
-Specific parameters are :
-C<--work_mem>, C<--maintenance_work_mem>, C<--shared_buffers>,C<-- wal_buffers>,
-C<--checkpoint_segments>, C<--effective_cache_size>, C<--no_check_autovacuum>,
-C<--no_check_fsync>, C<--no_check_enable>, C<--no_check_track_counts>.
-
-=cut
-
-sub check_configuration {
-    my @perfdata;
-    my @hosts;
-    my @msg_crit;
-    my %args = %{ $_[0] };
-    my $me   = 'POSTGRES_CONFIGURATION';
-    # This service is based on a probe by Marc Cousin (cousinmarc@gmail.com)
-    # Limit parameters. Have defaut values
-    my $work_mem             = $args{'work_mem'} || 4096; # At least 4MB
-    my $maintenance_work_mem = $args{'maintenance_work_mem'} || 65536; # At least 64MB
-    my $shared_buffers       = $args{'shared_buffers'} || 16384; # At least 128MB
-    my $wal_buffers          = $args{'wal_buffers'} || 64; # At least 512k. Or -1 for 9.1
-    my $checkpoint_segments  = $args{'checkpoint_segments'} || 10;
-    my $effective_cache_size = $args{'effective_cache_size'} || 131072; # At least 1GB. No way a modern server has less than 2GB of ram
-    # These will be checked to verify they are still the default values (no parameter, for now)
-    # autovacuum, fsync, enable*,track_counts/stats_row_level
-    my $no_check_autovacuum   = $args{'no_check_autovacuum'} || 0;
-    my $no_check_fsync        = $args{'no_check_fsync'} || 0;
-    my $no_check_enable       = $args{'no_check_enable'} || 0;
-    my $no_check_track_counts = $args{'no_check_track_counts'} || 0;
-
-    my $sql = "SELECT name,setting FROM pg_settings
-        WHERE ( ( name='work_mem' and setting::bigint < $work_mem )
-            or ( name='maintenance_work_mem' and setting::bigint < $maintenance_work_mem )
-            or ( name='shared_buffers' and setting::bigint < $shared_buffers )
-            or ( name='wal_buffers' and ( setting::bigint < $wal_buffers or setting = '-1') )
-            or ( name='checkpoint_segments' and setting::bigint < $checkpoint_segments )
-            or ( name='effective_cache_size' and setting::bigint < $effective_cache_size )
-            or ( name='autovacuum' and setting='off' and $no_check_autovacuum = 0)
-            or ( name='fsync' and setting='off' and $no_check_fsync=0  )
-            or ( name~'^enable.*' and setting='off' and $no_check_enable=0)
-            or (name='stats_row_level' and setting='off' and $no_check_track_counts=0)
-            or (name='track_counts' and setting='off' and $no_check_track_counts=0)
-        )";
-
-    # FIXME make one parameter --ignore to rules 'em all.
-
-    @hosts = @{ parse_hosts %args };
-
-    pod2usage(
-        -message => 'FATAL: you must give only one host with service "configuration".',
-        -exitval => 127
-    ) if @hosts != 1;
-
-    is_compat $hosts[0], 'configuration', $PG_VERSION_80 or exit 1;
-
-    my @rc = @{ query( $hosts[0], $sql ) };
-
-DB_LOOP:    foreach my $setting (@rc) {
-        push @msg_crit => ( $setting->[0] . "=" . $setting->[1] );
-    }
-
-    # All the entries in $result are an error. If the array isn't empty, we return ERROR, and the list of errors
-    return critical( $me, \@msg_crit )
-        if ( @msg_crit > 0 );
-
-    return ok( $me, [ "PostgreSQL configuration ok" ] );
-}
-
-
-=item B<max_freeze_age> (all)
-
-Checks oldest database by transaction age.
-
-Critical and Warning thresholds are optional. They accept either a raw number
-or percentage for PostgreSQL 8.2 and more. If percentage is given, the
-thresholds are computed based on the "autovacuum_freeze_max_age" parameter.
-100% means some table(s) reached the maximum age and will trigger an autovacuum
-freeze. Percentage thresholds should therefore be greater than 100%.
-
-Even with no threshold, this service will raise a critical alert if one database
-has a negative age.
-
-Perfdata return the age of each database.
-
-This service supports both C<--dbexclude> and C<--dbinclude> parameters.
-
-=cut
-
-sub check_max_freeze_age {
-    my @rs;
-    my @perfdata;
-    my @msg;
-    my @msg_crit;
-    my @msg_warn;
-    my @hosts;
-    my $c_limit;
-    my $w_limit;
-    my $oldestdb;
-    my $oldestage     = -1;
-    my %args          = %{ $_[0] };
-    my @dbinclude     = @{ $args{'dbinclude'} };
-    my @dbexclude     = @{ $args{'dbexclude'} };
-    my $me            = 'POSTGRES_MAX_FREEZE_AGE';
-    my %queries       = (
-       $PG_VERSION_74 => q{SELECT datname, age(datfrozenxid)
-            FROM pg_database
-            WHERE datname <> 'template0'
-       },
-        $PG_VERSION_82 => q{SELECT datname, age(datfrozenxid),
-                current_setting('autovacuum_freeze_max_age')
-            FROM pg_database
-            WHERE datname <> 'template0'
-        }
-    );
-
-    @hosts = @{ parse_hosts %args };
-
-    pod2usage(
-        -message => 'FATAL: you must give only one host with service "max_freeze_age".',
-        -exitval => 127
-    ) if @hosts != 1;
-
-    # warning and critical must be raw or %.
-    if ( defined $args{'warning'} and defined $args{'critical'} ) {
-        # warning and critical must be raw
-        pod2usage(
-            -message => "FATAL: critical and warning thresholds only accept raw numbers or % (for 8.2+).",
-            -exitval => 127
-        ) unless $args{'warning'}  =~ m/^([0-9]+)%?$/
-            and  $args{'critical'} =~ m/^([0-9]+)%?$/;
-
-        $w_limit = $args{'warning'};
-        $c_limit = $args{'critical'};
-
-        set_pgversion($hosts[0]);
-
-        pod2usage(
-            -message => "FATAL: only raw thresholds are compatible with PostgreSQL 8.1 and below.",
-            -exitval => 127
-        ) if $hosts[0]->{'version_num'} < $PG_VERSION_82
-            and ($args{'warning'} =~ m/%\s*$/ or $args{'critical'} =~ m/%\s*$/);
-    }
-
-    @rs = @{ query_ver( $hosts[0], %queries ) };
-
-    if ( scalar @rs and defined $args{'critical'} ) {
-        $c_limit = int($1 * $rs[0][2]/100) if $args{'critical'} =~ /^([0-9.]+)%$/;
-        $w_limit = int($1 * $rs[0][2]/100) if $args{'warning'}  =~ /^([0-9.]+)%$/;
-    }
-
-    REC_LOOP: foreach my $r (@rs) {
-        my $perfdata_value;
-
-        next REC_LOOP if grep { $r->[0] =~ /$_/ } @dbexclude;
-        next REC_LOOP if @dbinclude and not grep { $r->[0] =~ /$_/ } @dbinclude;
-
-        if ($oldestage < $r->[1]) {
-            $oldestdb = $r->[0];
-            $oldestage = $r->[1];
-        }
-
-        $perfdata_value = "'$r->[0]'=$r->[1]";
-
-        $perfdata_value .= ";$w_limit;$c_limit"
-            if defined $c_limit;
-
-        push @perfdata => $perfdata_value;
-
-        if ( $r->[1] < 0 ) {
-            push @msg_crit => "$r->[0] has a negative age" ;
-            next REC_LOOP;
-        }
-
-        if ( defined $c_limit ) {
-            if ( $r->[1] > $c_limit ) {
-                push @msg_crit => "$r->[0]";
-                next REC_LOOP;
-            }
-
-            push @msg_warn => "$r->[0]"
-                if defined $w_limit and $r->[1] > $w_limit;
-        }
-    }
-
-    return critical( $me, [
-        'Critical: '. join(',', @msg_crit)
-        . (scalar @msg_warn? 'Warning: '. join(',', @msg_warn):'')
-    ], \@perfdata ) if scalar @msg_crit;
-
-    return warning( $me,
-        [ 'Warning: '. join(',', @msg_warn) ], \@perfdata
-    ) if scalar @msg_warn;
-
-    return ok( $me, [ "oldest database is $oldestdb with age of $oldestage" ], \@perfdata );
-}
-
-=item B<is_master> (all)
-
-Checks if the cluster accepts read and/or write queries. This state is reported
-as "in production" by pg_controldata.
-
-This service ignores critical and warning arguments.
-
-No perfdata is returned.
-
-=cut
-
-sub check_is_master {
-    my @rs;
-    my @hosts;
-    my %args          = %{ $_[0] };
-    my $me            = 'POSTGRES_IS_MASTER';
-    #For PostgreSQL 9.0+, the "pg_is_in_recovery()" function is used, for previous
-    #versions the ability to connect is enough.
-    my %queries       = (
-       $PG_VERSION_74 => q{SELECT false
-       },
-        $PG_VERSION_90 => q{SELECT pg_is_in_recovery()
-        }
-    );
-
-    @hosts = @{ parse_hosts %args };
-
-    pod2usage(
-        -message => 'FATAL: you must give only one host with service "is_master".',
-        -exitval => 127
-    ) if @hosts != 1;
-
-    @rs = @{ query_ver( $hosts[0], %queries )->[0] };
-
-    return critical( $me, [ "Cluster is not master" ] ) if ( $rs[0] eq "t" );
-    return ok( $me, [ "Cluster is master" ] );
-}
-
-=item B<is_hot_standby> (9.0+)
-
-Checks if the cluster is in recovery and accepts read only queries.
-
-This service ignores critical and warning arguments.
-
-No perfdata is returned.
-
-=cut
-
-sub check_is_hot_standby {
-    my @rs;
-    my @hosts;
-    my %args          = %{ $_[0] };
-    my $me            = 'POSTGRES_IS_HOT_STANDBY';
-    my %queries       = (
-        $PG_VERSION_90 => q{SELECT pg_is_in_recovery()}
-    );
-
-    @hosts = @{ parse_hosts %args };
-
-    pod2usage(
-        -message => 'FATAL: you must give only one host with service "is_hot_standby".',
-        -exitval => 127
-    ) if @hosts != 1;
-
-    is_compat $hosts[0], 'is_hot_standby', $PG_VERSION_90 or exit 1;
-    @rs = @{ query_ver( $hosts[0], %queries )->[0] };
-
-    return critical( $me, [ "Cluster is not hot standby" ] ) if ( $rs[0] eq "f" );
-    return ok( $me, [ "Cluster is hot standby" ] );
-}
-
-=item B<pga_version>
-
-Checks if this script is running the given version of check_pgactivity.
-You must provide the expected version using either C<--warning> OR
-C<--critical>.
-
-No perfdata is returned.
-
-=cut
-
-sub check_pga_version {
-    my @rs;
-    my @hosts;
-    my %args = %{ $_[0] };
-    my $me   = 'PGACTIVITY_VERSION';
-    my $msg  = "check_pgactivity $VERSION %s, Perl %vd";
-
-    pod2usage(
-        -message => 'FATAL: you must provide a warning or a critical threshold for service pga_version!',
-        -exitval => 127
-    ) if (defined $args{'critical'} and defined $args{'warning'})
-        or (not defined $args{'critical'} and not defined $args{'warning'});
-
-    pod2usage(
-        -message => "FATAL: given version does not look like a check_pgactivity version!",
-        -exitval => 127
-    ) if ( defined $args{'critical'} and $args{'critical'} !~ m/^\d\.\d+(?:beta\d*)?$/ )
-        or (defined $args{'warning'} and $args{'warning'} !~ m/^\d\.\d+(?:beta\d*)?$/ );
-
-    return critical( $me,
-        [ sprintf($msg, "(should be $args{'critical'}!)", $^V) ]
-    ) if defined $args{'critical'} and $VERSION ne $args{'critical'};
-
-    return warning( $me,
-        [ sprintf($msg, "(should be $args{'warning'}!)", $^V) ]
-    ) if defined $args{'warning'} and $VERSION ne $args{'warning'};
-
-    return ok( $me, [ sprintf($msg, "", $^V) ] );
-}
-
-=item B<is_replay_paused> (9.1+)
-
-Checks if the replication is paused. The service will return UNKNOWN if
-executed on a master server.
-
-Thresholds are optional. They must be specified as interval. OK will always be
-returned if the standby is not paused, even if replication delta time hits the
-thresholds.
-
-Critical or warning are raised if last reported replayed timestamp is greater
-than given threshold AND some data received from the master are not applied yet.
-OK will always be returned if the standby is paused, or if the standby has
-already replayed everything from master and until some write activity happens
-on the master.
-
-Perfdata returned:
-  * paused status (0 no, 1 yes, NaN if master)
-  * lag time (in second)
-  * data delta with master (0 no, 1 yes)
-
-=cut
-
-sub check_is_replay_paused {
-    my @perfdata;
-    my @rs;
-    my @hosts;
-    my $w_limit = -1;
-    my $c_limit = -1;
-    my %args    = %{ $_[0] };
-    my $me      = 'POSTGRES_REPLICATION_PAUSED';
-    my $query   = q{
-        SELECT pg_is_in_recovery()::int AS is_in_recovery,
-        CASE pg_is_in_recovery()
-            WHEN 't' THEN pg_is_xlog_replay_paused()::int
-            ELSE 0::int
-        END AS is_paused,
-        CASE pg_is_in_recovery()
-            WHEN 't' THEN extract('epoch' FROM now()-pg_last_xact_replay_timestamp())::int
-            ELSE NULL::int
-        END AS lag,
-        CASE
-            WHEN pg_is_in_recovery() AND pg_last_xlog_replay_location() <> pg_last_xlog_receive_location()
-                THEN 1::int
-            WHEN pg_is_in_recovery() THEN 0::int
-            ELSE NULL
-        END AS delta
-    };
-
-    if ( defined $args{'warning'} and defined $args{'critical'} ) {
-        # warning and critical must be interval if provided.
-        pod2usage(
-            -message => "FATAL: critical and warning thresholds only accept interval.",
-            -exitval => 127
-        ) unless ( is_time( $args{'warning'} ) and  is_time( $args{'critical'} ) );
-
-        $c_limit = get_time $args{'critical'};
-        $w_limit = get_time $args{'warning'};
-    }
-
-    @hosts = @{ parse_hosts %args };
-
-    pod2usage(
-        -message => 'FATAL: you must give only one host with service "is_replay_paused".',
-        -exitval => 127
-    ) if @hosts != 1;
-
-    is_compat $hosts[0], "is_replay_paused", $PG_VERSION_91 or exit 1;
-
-    @rs = @{ query( $hosts[0], $query )->[0] };
-
-    return unknown ( $me,
-        [ "Server is not standby." ],
-        [ "is_paused=NaN", "lag_time=NaNs", "has_data_delta=NaNs" ]
-    ) if not $rs[0];
-
-    push @perfdata, "is_paused=". $rs[1];
-    push @perfdata, "lag_time=". $rs[2] . "s";
-    push @perfdata, "has_data_delta=". $rs[3];
-
-    # Always return ok if replay is not paused
-    return ok( $me, [ ' replay is not paused' ], \@perfdata ) if not $rs[1];
-
-    # Do we have thresholds ?
-    if ( $c_limit != -1 ) {
-        return critical( $me, [' replay lag time: ' . to_interval( $rs[2] ) ], \@perfdata )
-            if $rs[3] and $rs[2] > $c_limit;
-        return warning( $me, [' replay lag time: ' . to_interval( $rs[2] ) ], \@perfdata )
-            if $rs[3] and $rs[2] > $w_limit;
-    }
-
-    return ok( $me, [ ' replay is paused.' ], \@perfdata );
-
-}
-
 
 
 =item B<btree_bloat>
@@ -4562,6 +2167,2318 @@ sub check_btree_bloat {
 }
 
 
+=item B<commit_ratio> (all)
+
+Check the commit and rollback rate per second since last call.
+
+This service uses the status file (see --status-file parameter).
+
+Perfdata contains the commit rate, rollback rate, transaction rate and rollback
+ratio for each database since last call.
+
+Critical and Warning thresholds are optional. They accept a list of coma
+separated 'label=value'. Available label are B<rollbacks>, B<rollback_rate>
+and B<rollback_ratio>, which will be compared to the number of rollback, the
+rollback rate and the rollback ratio of each database. Warning or critical will
+be raised if reported value is greater than B<rollbacks>, B<rollback_rate> or
+B<rollback_ratio>.
+
+=cut
+
+sub check_commit_ratio {
+    my @rs;
+    my @msg_warn;
+    my @msg_crit;
+    my @perfdata;
+    my @hosts;
+    my %xacts;
+    my %new_xacts;
+    my $global_commits;
+    my $global_rollbacks;
+    my $ratio;
+    my %warn;
+    my %crit;
+    my %args = %{ $_[0] };
+    my $me   = 'POSTGRES_COMMIT_RATIO';
+    my $sql  = q{
+        SELECT floor(extract(EPOCH from now())), s.datname,
+            s.xact_commit, s.xact_rollback
+        FROM pg_stat_database s
+          JOIN pg_database d ON s.datid = d.oid
+        WHERE d.datallowconn
+    };
+
+    if ( defined $args{'warning'} ) {
+        my $thresholds_re = qr/(rollbacks|rollback_rate|rollback_ratio)\s*=\s*(\d+)/i;
+
+        # warning and critical must be list of status=value
+        pod2usage(
+            -message => "FATAL: critical and warning thresholds only accept a list of 'label=value' separated by comma.\n"
+                . "See documentation for more information about accepted labels.",
+            -exitval => 127
+        ) unless $args{'warning'} =~ m/^$thresholds_re(\s*,\s*$thresholds_re)*$/
+            and $args{'critical'} =~ m/^$thresholds_re(\s*,\s*$thresholds_re)*$/ ;
+
+        while ( $args{'warning'} =~ /$thresholds_re/g ) {
+            my ($threshold, $value) = ($1, $2);
+            $warn{$threshold} = $value if $1 and defined $2;
+        }
+
+        while ( $args{'critical'} =~ /$thresholds_re/g ) {
+            my ($threshold, $value) = ($1, $2);
+            $crit{$threshold} = $value if $1 and defined $2;
+        }
+    }
+
+    @hosts = @{ parse_hosts %args };
+
+    pod2usage(
+        -message => 'FATAL: you must give only one host with service "database_size".',
+        -exitval => 127
+    ) if @hosts != 1;
+
+    %xacts = %{ load( $hosts[0], 'commit_ratio', $args{'status-file'} ) || {} };
+
+    @rs = @{ query( $hosts[0], $sql ) };
+
+    $new_xacts{$_->[1]} = {
+        'ts'       => $_->[0],
+        'commit'   => $_->[2],
+        'rollback' => $_->[3]
+    } foreach @rs;
+
+    save $hosts[0], 'commit_ratio', \%new_xacts, $args{'status-file'};
+
+    return ok( $me, ['First call'] ) unless keys %xacts;
+
+    foreach my $db (keys %new_xacts) {
+
+        my $commits   = $new_xacts{$db}{'commit'} - $xacts{$db}{'commit'};
+        my $rollbacks = $new_xacts{$db}{'rollback'} - $xacts{$db}{'rollback'};
+
+        # default to 1 sec if called twice in the same second
+        my $sec = ( $new_xacts{$db}{'ts'} - $xacts{$db}{'ts'} ) || 1;
+
+        my $commit_rate   = $commits   / $sec;
+        my $rollback_rate = $rollbacks / $sec;
+        my $xact_rate     = ($commits + $rollbacks ) / $sec;
+
+        $global_commits   += $commits;
+        $global_rollbacks += $rollbacks;
+
+        push @perfdata, sprintf "'%s_commit_rate'=%.2ftps",   $db, $commit_rate;
+        push @perfdata, sprintf "'%s_rollback_rate'=%.2ftps", $db, $rollback_rate;
+        push @perfdata, sprintf "'%s_xact_rate'=%.2ftps",     $db, $xact_rate;
+
+        if ( $rollbacks == 0) {
+            $ratio = 0;
+        } else {
+            $ratio = $rollbacks * 100 / ($commits + $rollbacks);
+        }
+
+        push @perfdata,  sprintf("'%s_rollback_ratio'=%.2f%%", $db, $ratio );
+
+        THRESHOLD_LOOP: foreach my $val ( ('rollbacks', 'rollback_rate', 'rollback_ratio') ) {
+            my $prefix = "${db}_${val}";
+            # Criticals
+            if ( exists $crit{$val} ) {
+                if ( $val eq "rollbacks" and $crit{$val} < $rollbacks ) {
+                    push @msg_crit => "'$prefix'=$rollbacks";
+                    next THRESHOLD_LOOP;
+                }
+                if ( $val eq "rollback_rate" and $crit{$val} < $rollback_rate ) {
+                    push @msg_crit => sprintf "'%s'=%.2ftps", $prefix, $rollback_rate;
+                    next THRESHOLD_LOOP;
+                }
+                if ( $val eq "rollback_ratio" and $crit{$val} < $ratio ) {
+                    push @msg_crit => sprintf "'%s'=%.2f%%", $prefix, $ratio;
+                    next THRESHOLD_LOOP;
+                }
+            }
+            # Warnings
+            if ( exists $warn{$val} ) {
+                if ( $val eq "rollbacks" and $warn{$val} < $rollbacks ) {
+                    push @msg_warn => "'$prefix'=$rollbacks";
+                    next THRESHOLD_LOOP;
+                }
+                if ( $val eq "rollback_rate" and $warn{$val} < $rollback_rate ) {
+                    push @msg_warn => sprintf("'%s'=%.2ftps", $prefix, $rollback_rate );
+                    next THRESHOLD_LOOP;
+                }
+                if ( $val eq "rollback_ratio" and $warn{$val} < $ratio ) {
+                    push @msg_warn => sprintf("'%s'=%.2f%%", $prefix, $ratio );
+                    next THRESHOLD_LOOP;
+                }
+            }
+        }
+    }
+
+    return critical( $me, [ "Commits: $global_commits - Rollbacks: $global_rollbacks", @msg_crit, @msg_warn ], \@perfdata )
+        if scalar @msg_crit > 0;
+
+    return warning( $me, [ "Commits: $global_commits - Rollbacks: $global_rollbacks", @msg_warn ], \@perfdata )
+        if scalar @msg_warn > 0;
+
+    return ok( $me, ["Commits: $global_commits - Rollbacks: $global_rollbacks"], \@perfdata );
+
+}
+
+
+=item B<configuration> (8.0+)
+
+Check the most important settings.
+
+Warning and Critical thresholds are ignored.
+
+Specific parameters are :
+C<--work_mem>, C<--maintenance_work_mem>, C<--shared_buffers>,C<-- wal_buffers>,
+C<--checkpoint_segments>, C<--effective_cache_size>, C<--no_check_autovacuum>,
+C<--no_check_fsync>, C<--no_check_enable>, C<--no_check_track_counts>.
+
+=cut
+
+sub check_configuration {
+    my @perfdata;
+    my @hosts;
+    my @msg_crit;
+    my %args = %{ $_[0] };
+    my $me   = 'POSTGRES_CONFIGURATION';
+    # This service is based on a probe by Marc Cousin (cousinmarc@gmail.com)
+    # Limit parameters. Have defaut values
+    my $work_mem             = $args{'work_mem'} || 4096; # At least 4MB
+    my $maintenance_work_mem = $args{'maintenance_work_mem'} || 65536; # At least 64MB
+    my $shared_buffers       = $args{'shared_buffers'} || 16384; # At least 128MB
+    my $wal_buffers          = $args{'wal_buffers'} || 64; # At least 512k. Or -1 for 9.1
+    my $checkpoint_segments  = $args{'checkpoint_segments'} || 10;
+    my $effective_cache_size = $args{'effective_cache_size'} || 131072; # At least 1GB. No way a modern server has less than 2GB of ram
+    # These will be checked to verify they are still the default values (no parameter, for now)
+    # autovacuum, fsync, enable*,track_counts/stats_row_level
+    my $no_check_autovacuum   = $args{'no_check_autovacuum'} || 0;
+    my $no_check_fsync        = $args{'no_check_fsync'} || 0;
+    my $no_check_enable       = $args{'no_check_enable'} || 0;
+    my $no_check_track_counts = $args{'no_check_track_counts'} || 0;
+
+    my $sql = "SELECT name,setting FROM pg_settings
+        WHERE ( ( name='work_mem' and setting::bigint < $work_mem )
+            or ( name='maintenance_work_mem' and setting::bigint < $maintenance_work_mem )
+            or ( name='shared_buffers' and setting::bigint < $shared_buffers )
+            or ( name='wal_buffers' and ( setting::bigint < $wal_buffers or setting = '-1') )
+            or ( name='checkpoint_segments' and setting::bigint < $checkpoint_segments )
+            or ( name='effective_cache_size' and setting::bigint < $effective_cache_size )
+            or ( name='autovacuum' and setting='off' and $no_check_autovacuum = 0)
+            or ( name='fsync' and setting='off' and $no_check_fsync=0  )
+            or ( name~'^enable.*' and setting='off' and $no_check_enable=0)
+            or (name='stats_row_level' and setting='off' and $no_check_track_counts=0)
+            or (name='track_counts' and setting='off' and $no_check_track_counts=0)
+        )";
+
+    # FIXME make one parameter --ignore to rules 'em all.
+
+    @hosts = @{ parse_hosts %args };
+
+    pod2usage(
+        -message => 'FATAL: you must give only one host with service "configuration".',
+        -exitval => 127
+    ) if @hosts != 1;
+
+    is_compat $hosts[0], 'configuration', $PG_VERSION_80 or exit 1;
+
+    my @rc = @{ query( $hosts[0], $sql ) };
+
+DB_LOOP:    foreach my $setting (@rc) {
+        push @msg_crit => ( $setting->[0] . "=" . $setting->[1] );
+    }
+
+    # All the entries in $result are an error. If the array isn't empty, we return ERROR, and the list of errors
+    return critical( $me, \@msg_crit )
+        if ( @msg_crit > 0 );
+
+    return ok( $me, [ "PostgreSQL configuration ok" ] );
+}
+
+
+=item B<connection> (all)
+
+Perform a simple connection test.
+
+No perfdata is returned.
+
+This service ignore critical and warning arguments.
+
+=cut
+
+sub check_connection {
+    my @rs;
+    my @hosts;
+    my %args = %{ $_[0] };
+    my $me   = 'POSTGRES_CONNECTION';
+    my $sql  = q{SELECT now(), version()};
+
+    @hosts = @{ parse_hosts %args };
+
+    pod2usage(
+        -message => 'FATAL: you must give only one host with service "connection".',
+        -exitval => 127
+    ) if @hosts != 1;
+
+    @rs = @{ query( $hosts[0], $sql ) };
+
+    return ok( $me, [ "Connection successful at $rs[0][0], on $rs[0][1]" ] );
+}
+
+
+=item B<custom_query> (all)
+
+Perform the given user query.
+
+The query is specified with the C<--query parameter>. The first column will be
+used to perform the test for the status if warning and critical are provided.
+
+The warning and critical arguments are optional. They can be of format integer
+(default), size or time depending on the C<--type> argument.
+Warning and Critical will be raised if they are greater than the first column,
+or less if the C<--reverse> option is used.
+
+All other columns will be used to generate the perfdata. The query must
+display them in the perfdata format, with unit if required (eg. "size=35B").
+If a field contains multiple values, they must be separated by a space.
+
+=cut
+
+sub check_custom_query {
+    my %args    = %{ $_[0] };
+    my $me      = 'POSTGRES_CUSTOM_QUERY';
+    my $sql     = $args{'query'};
+    my $type    = $args{'type'} || 'integer';
+    my $reverse = $args{'reverse'};
+    my $bounded = undef;
+    my @rs;
+    my @perfdata;
+    my @hosts;
+    my @msg_crit;
+    my @msg_warn;
+    my $c_limit;
+    my $w_limit;
+    my $perf;
+    my $value;
+
+    # FIXME: add warn/crit threshold in perfdata
+
+    # query must be given
+    pod2usage(
+        -message => 'FATAL: you must set parameter "--query" with "custom_query" service.',
+        -exitval => 127
+    ) unless defined $args{'query'} ;
+
+    # Critical and Warning must be given with --type argument
+    pod2usage(
+        -message => 'FATAL: you must specify critical and warning thresholds with "--type" parameter.',
+        -exitval => 127
+    ) unless ( not defined $args{'type'} ) or
+        ( defined $args{'type'} and $args{'warning'} and $args{'critical'} );
+
+
+    @hosts = @{ parse_hosts %args };
+
+    pod2usage(
+        -message => 'FATAL: you must give only one host with service "custom_query".',
+        -exitval => 127
+    ) if @hosts != 1;
+
+
+    # Handle warning and critical type
+    if ( $type eq 'size' ) {
+        $w_limit = get_size( $args{'warning'} );
+        $c_limit = get_size( $args{'critical'} );
+    }
+    elsif ( $type eq 'time' ) {
+        pod2usage(
+                -message => "FATAL: critical and warning thresholds only acccepts interval with --type time.",
+                -exitval => 127
+                ) unless ( is_time( $args{'warning'} ) and is_time( $args{'critical'} ) );
+
+        $w_limit = get_time( $args{'warning'} );
+        $c_limit = get_time( $args{'critical'} );
+    }
+    elsif (defined $args{'warning'} ) {
+        pod2usage(
+            -message => 'FATAL: given critical and/or warning are not numeric. Please, set "--type" parameter if needed.',
+            -exitval => 127
+        ) if $args{'warning'} !~ m/^[0-9.]+$/
+            or $args{'critical'} !~ m/^[0-9.]+$/;
+        $w_limit = $args{'warning'};
+        $c_limit = $args{'critical'};
+    }
+
+    @rs = @{ query( $hosts[0], $sql ) };
+
+    pod2usage(
+        -message => 'FATAL: First column of your query is not numeric!',
+        -exitval => 127
+    ) unless looks_like_number($rs[0][0]);
+
+    DB_LOOP: foreach my $rec ( @rs ) {
+        $bounded = $rec->[0] unless $bounded;
+
+        $bounded = $rec->[0] if ( !$reverse and $rec->[0] > $bounded )
+            or ( $reverse and $rec->[0] < $bounded );
+
+        $value = shift( @{$rec} );
+        if ( @{$rec} > 0 ) {
+            $perf = join(';',@{$rec});
+        } else{
+            $perf = undef;
+        }
+
+        push @perfdata, $perf if defined $perf;
+
+        if ( ( defined $c_limit )
+            and (
+                ( !$reverse and ( $value > $c_limit ) )
+                or ( $reverse and ( $value < $c_limit ) )
+            )
+        ) {
+            push @msg_crit =>
+                "value: $value ".( defined $perf ? "($perf)" : "" );
+            next DB_LOOP;
+        }
+
+        if ( ( defined $w_limit )
+            and (
+                ( !$reverse and ( $value > $w_limit ) )
+                or ( $reverse  and ( $value < $w_limit ) )
+            )
+        ) {
+            push @msg_warn =>
+                "value: $value ".( defined $perf ? "($perf)" : "" );
+            next DB_LOOP;
+        }
+    }
+
+    return critical( $me, [ @msg_crit, @msg_warn ], \@perfdata )
+        if defined $c_limit and
+            ( ( !$reverse and $bounded > $c_limit)
+            or ( $reverse and $bounded < $c_limit) );
+
+    return warning( $me, [ @msg_warn ], \@perfdata )
+        if defined $w_limit and
+            ( ( !$reverse and $bounded > $w_limit)
+            or ( $reverse and $bounded < $w_limit) );
+
+    return ok( $me, [ "Custom query ok" ], \@perfdata );
+}
+
+=item B<database_size> (8.1+)
+
+Check the variation of database sizes.
+
+This service uses the status file (see C<--status-file> parameter).
+
+Perfdata contains the size difference for each database since the last
+execution.
+
+Critical and Warning thresholds accept either a raw number, a percentage, or a
+size (eg. 2.5G).
+
+This service supports both C<--dbexclude> and C<--dbinclude> parameters.
+
+=cut
+
+sub check_database_size {
+    my @msg_crit;
+    my @msg_warn;
+    my @rs;
+    my @perfdata;
+    my @hosts;
+    my %new_db_sizes;
+    my %db_sizes;
+    my %args       = %{ $_[0] };
+    my @dbinclude  = @{ $args{'dbinclude'} };
+    my @dbexclude  = @{ $args{'dbexclude'} };
+    my $me         = 'POSTGRES_DB_SIZE';
+    my $db_checked = 0;
+    my $sql        = q{SELECT datname, pg_database_size(datname)
+        FROM pg_database};
+
+    # warning and critical are mandatory.
+    pod2usage(
+        -message => "FATAL: you must specify critical and warning thresholds.",
+        -exitval => 127
+    ) unless defined $args{'warning'} and defined $args{'critical'} ;
+
+
+    @hosts = @{ parse_hosts %args };
+
+    pod2usage(
+        -message => 'FATAL: you must give only one host with service "database_size".',
+        -exitval => 127
+    ) if @hosts != 1;
+
+    is_compat $hosts[0], 'database_size', $PG_VERSION_81 or exit 1;
+
+
+    %db_sizes = %{ load( $hosts[0], 'db_size', $args{'status-file'} ) || {} };
+
+    @rs = @{ query( $hosts[0], $sql ) };
+
+    DB_LOOP: foreach my $db (@rs) {
+        my $delta;
+        my $w_limit;
+        my $c_limit;
+
+        $new_db_sizes{ $db->[0] } = $db->[1];
+
+        next DB_LOOP if grep { $db->[0] =~ /$_/ } @dbexclude;
+        next DB_LOOP if @dbinclude and not grep { $db->[0] =~ /$_/ } @dbinclude;
+
+        $db_checked++;
+
+        next DB_LOOP unless defined $db_sizes{ $db->[0] };
+
+        $w_limit = get_size( $args{'warning'},  $db->[1] );
+        $c_limit = get_size( $args{'critical'}, $db->[1] );
+        $delta = $db->[1] - $db_sizes{ $db->[0] };
+
+        push @perfdata => "$db->[0]=$db->[1]B;$w_limit;$c_limit";
+
+        if ( abs($delta) >= $c_limit ) {
+            push @msg_crit => "$db->[0] ($delta, now: $db->[1])";
+            next DB_LOOP;
+        }
+
+        if ( abs($delta) >= $w_limit ) {
+            push @msg_warn => "$db->[0] ($delta, now: $db->[1])";
+            next DB_LOOP;
+        }
+    }
+
+    save $hosts[0], 'db_size', \%new_db_sizes, $args{'status-file'};
+
+    return critical( $me, [ @msg_crit, @msg_warn ], \@perfdata )
+        if scalar @msg_crit > 0;
+
+    return warning( $me, \@msg_warn, \@perfdata ) if scalar @msg_warn > 0;
+
+    return ok( $me, [ "$db_checked database(s) checked" ], \@perfdata );
+}
+
+
+=item B<hit_ratio> (all)
+
+Check the cache hit ratio on the cluster.
+
+Perfdata returns the cache hit ratio per database. Template databases and
+databases that do not allow connections will not be checked, nor will the
+databases which have never been accessed.
+
+Critical and Warning thresholds are optional. They only accept a percentage.
+
+This service supports both C<--dbexclude> and C<--dbinclude> parameters.
+
+=cut
+
+sub check_hit_ratio {
+    my @rs;
+    my @perfdata;
+    my @msg_crit;
+    my @msg_warn;
+    my @hosts;
+    my %db_hitratio;
+    my %new_db_hitratio;
+    my %args       = %{ $_[0] };
+    my @dbinclude  = @{ $args{'dbinclude'} };
+    my @dbexclude  = @{ $args{'dbexclude'} };
+    my $me         = 'POSTGRES_HIT_RATIO';
+    my $db_checked = 0;
+    my $sql        = q{SELECT d.datname, blks_hit, blks_read
+        FROM pg_stat_database sd
+          JOIN pg_database d ON d.oid = sd.datid
+        WHERE d.datallowconn AND NOT d.datistemplate
+        ORDER BY datname};
+
+    # warning and critical must be %.
+    if ( defined $args{'warning'} and defined $args{'critical'} ) {
+        pod2usage(
+            -message => "FATAL: critical and warning thresholds only accept percentages.",
+            -exitval => 127
+        ) unless $args{'warning'} =~ m/^([0-9.]+)%$/
+            and $args{'critical'} =~ m/^([0-9.]+)%$/;
+
+        $args{'warning'}  = substr $args{'warning'}, 0, -1;
+        $args{'critical'} = substr $args{'critical'}, 0, -1;
+    }
+
+
+    @hosts = @{ parse_hosts %args };
+
+    pod2usage(
+        -message => 'FATAL: you must give only one host with service "hit_ratio".',
+        -exitval => 127
+    ) if @hosts != 1;
+
+
+    %db_hitratio = %{ load( $hosts[0], 'db_hitratio', $args{'status-file'} ) || {} };
+
+    @rs = @{ query( $hosts[0], $sql ) };
+
+    DB_LOOP: foreach my $db (@rs) {
+        my $ratio;
+        my $hit_delta;
+        my $read_delta;
+        my $perfdata_value;
+
+        $new_db_hitratio{ $db->[0] } = [ $db->[1], $db->[2], 'NaN' ];
+
+        next DB_LOOP if grep { $db->[0] =~ /$_/ } @dbexclude;
+        next DB_LOOP if @dbinclude and not grep { $db->[0] =~ /$_/ } @dbinclude;
+
+        $db_checked++;
+
+        next DB_LOOP unless defined $db_hitratio{ $db->[0] };
+
+        $hit_delta  = $new_db_hitratio{ $db->[0] }[0] - $db_hitratio{ $db->[0] }[0];
+        $read_delta = $new_db_hitratio{ $db->[0] }[1] - $db_hitratio{ $db->[0] }[1];
+
+        # metrics moved since last run
+        if ( $hit_delta + $read_delta > 0 ) {
+            $ratio = 100 * $hit_delta / ( $hit_delta + $read_delta );
+            $ratio = int($ratio*100+0.05)/100;
+            $new_db_hitratio{ $db->[0] }[2] = $ratio;
+
+            $perfdata_value = sprintf "'%s'=%s%%", $db->[0], $ratio;
+        }
+        # no activity since last run, use previous hit ratio
+        # this should not happen as the query itself hit/read.
+        elsif ( $db->[1] + $db->[2] > 0 ) {
+            $ratio = $db_hitratio{ $db->[0] }[2];
+            $perfdata_value = sprintf "'%s'=%s%%", $db->[0], $ratio;
+        }
+        # this database has no reported activity yet
+        else {
+            $new_db_hitratio{ $db->[0] }[2] = 'NaN';
+            $perfdata_value = sprintf "'%s'=NaN%%", $db->[0];
+        }
+
+        $perfdata_value .= ";$args{'warning'};$args{'critical'}"
+            if defined $args{'critical'};
+
+        push @perfdata => $perfdata_value;
+
+        if ( defined $args{'critical'} ) {
+            if ( $db->[1] < $args{'critical'} ) {
+                push @msg_crit => sprintf "%s: %s%%", $db->[0], $ratio;
+                next DB_LOOP;
+            }
+
+            if ( defined $args{'warning'} and $db->[1] < $args{'warning'} ) {
+                push @msg_warn => sprintf "%s: %s%%", $db->[0], $ratio;
+            }
+        }
+    }
+
+    save $hosts[0], 'db_hitratio', \%new_db_hitratio, $args{'status-file'};
+
+    if ( defined $args{'critical'} ) {
+        return critical( $me, [ @msg_crit, @msg_warn ], \@perfdata )
+            if scalar @msg_crit;
+
+        return warning( $me, \@msg_warn, \@perfdata )
+            if scalar @msg_warn;
+    }
+
+    return ok( $me, [ "$db_checked database(s) checked" ], \@perfdata );
+}
+
+
+=item B<hot_standby_delta> (9.0)
+
+Check the data delta between a cluster and its Hot standbys.
+
+You must give the connection parameters for two or more clusters.
+
+Perfdata returns the data delta in bytes between the master and each Hot
+standby cluster listed.
+
+Critical and Warning thresholds can take one or two values separated by a
+comma. If only one value given, it applies to both received and replayed data.
+If two values are given, the first one applies to received data, the second one
+to replayed ones. These thresholds only accept a size (eg. 2.5G).
+
+This service raise a Critical if it doesn't find exactly ONE valid master
+cluster (ie. critical when 0 or 2 and more masters).
+
+=cut
+
+sub check_hot_standby_delta {
+    my @perfdata;
+    my @msg;
+    my @msg_crit;
+    my @msg_warn;
+    my $w_limit_received;
+    my $c_limit_received;
+    my $w_limit_replayed;
+    my $c_limit_replayed;
+    my @hosts;
+    my %args  = %{ $_[0] };
+    my $master_location = '';
+    my $num_clusters = 0;
+    my $me    = 'POSTGRES_HOT_STANDBY_DELTA';
+    # we need to coalesce on pg_last_xlog_receive_location because it returns
+    # NULL during WAL Shipping
+    my $query = "
+        SELECT (NOT pg_is_in_recovery())::int,
+            CASE pg_is_in_recovery()
+                WHEN 't' THEN coalesce(
+                    pg_last_xlog_receive_location(),
+                    pg_last_xlog_replay_location()
+                )
+                ELSE pg_current_xlog_location()
+            END,
+            CASE pg_is_in_recovery()
+                WHEN 't' THEN pg_last_xlog_replay_location()
+                ELSE NULL::text
+            END
+    ";
+
+    # warning and critical are mandatory.
+    pod2usage(
+        -message => "FATAL: you must specify critical and warning thresholds.",
+        -exitval => 127
+    ) unless defined $args{'warning'} and defined $args{'critical'} ;
+
+
+    @hosts = @{ parse_hosts %args };
+
+    pod2usage(
+        -message => 'FATAL: you must give two or more hosts with service "hot_standby_delta".',
+        -exitval => 127
+    ) if @hosts < 2;
+
+    is_compat $hosts[0], 'hot_standby_delta', $PG_VERSION_90 or exit 1;
+    is_compat $hosts[1], 'hot_standby_delta', $PG_VERSION_90 or exit 1;
+
+    # fetch LSNs
+    foreach my $host (@hosts) {
+        $host->{'rs'} = \@{ query( $host, $query )->[0] };
+        $num_clusters += $host->{'rs'}[0];
+        $master_location = $host->{'rs'}[1] if $host->{'rs'}[0];
+    }
+
+    return critical($me, ["PostgreSQL major versions differ amongst clusters ($hosts[0]{'version_num'} vs. $hosts[1]{'version_num'})."] )
+        if $hosts[0]{'version'} != $hosts[1]{'version'};
+
+    return critical($me, ['No cluster in production.'])
+        if $num_clusters == 0;
+
+    return critical($me, ['More than one cluster in production.'])
+        if $num_clusters != 1;
+
+    ($w_limit_received, $w_limit_replayed) = split /,/, $args{'warning'};
+    ($c_limit_received, $c_limit_replayed) = split /,/, $args{'critical'};
+
+    if (!defined($w_limit_replayed)) {
+        $w_limit_replayed = $w_limit_received;
+    }
+    if (!defined($c_limit_replayed)) {
+        $c_limit_replayed = $c_limit_received;
+    }
+
+    $w_limit_received = get_size( $w_limit_received );
+    $c_limit_received = get_size( $c_limit_received );
+    $w_limit_replayed = get_size( $w_limit_replayed );
+    $c_limit_replayed = get_size( $c_limit_replayed );
+
+    # we recycle this one to count the number of slave
+    $num_clusters = 0;
+
+    $master_location =~ m{^([0-9A-F]+)/([0-9A-F]+)$};
+    $master_location = (hex('ff000000') * hex($1)) + hex($2);
+
+    # compute deltas
+    foreach my $host (@hosts) {
+        next if $host->{'rs'}[0];
+        my ($a, $b) = split(/\//, $host->{'rs'}[1]);
+        $host->{'receive_delta'} = $master_location - (hex('ff000000') * hex($a)) - hex($b);
+
+        ($a, $b) = split(/\//, $host->{'rs'}[2]);
+        $host->{'replay_delta'} = $master_location - (hex('ff000000') * hex($a)) - hex($b);
+
+        $host->{'name'} =~ s/ db=.*$//;
+
+        push @perfdata => "'receive delta $host->{'name'}'=".
+            ($host->{'receive_delta'} > 0 ? $host->{'receive_delta'}:0).
+            "B;$w_limit_received;$c_limit_received; 'replay delta $host->{'name'}'=".
+            ($host->{'replay_delta'} > 0 ? $host->{'replay_delta'}:0) .
+            "B;$w_limit_replayed;$c_limit_replayed"
+        ;
+
+        if ($host->{'receive_delta'} > $c_limit_received) {
+            push @msg_crit, "critical receive lag for $host->{'name'}";
+            next;
+        }
+
+        if ($host->{'replay_delta'} > $c_limit_replayed) {
+            push @msg_crit, "critical replay lag for $host->{'name'}";
+            next;
+        }
+
+        if ($host->{'receive_delta'} > $w_limit_received) {
+            push @msg_warn, "warning receive lag for $host->{'name'}";
+            next;
+        }
+
+        if ($host->{'replay_delta'} > $w_limit_replayed) {
+            push @msg_warn, "warning replay lag for $host->{'name'}";
+            next;
+        }
+
+        $num_clusters++;
+    }
+
+    return critical( $me, [ @msg_crit, @msg_warn ], \@perfdata )
+        if @msg_crit > 0;
+
+    return warning( $me, \@msg_warn, \@perfdata ) if @msg_warn > 0;
+
+    return ok($me, [ "$num_clusters Hot standby checked" ], \@perfdata);
+}
+
+
+=item B<is_hot_standby> (9.0+)
+
+Checks if the cluster is in recovery and accepts read only queries.
+
+This service ignores critical and warning arguments.
+
+No perfdata is returned.
+
+=cut
+
+sub check_is_hot_standby {
+    my @rs;
+    my @hosts;
+    my %args          = %{ $_[0] };
+    my $me            = 'POSTGRES_IS_HOT_STANDBY';
+    my %queries       = (
+        $PG_VERSION_90 => q{SELECT pg_is_in_recovery()}
+    );
+
+    @hosts = @{ parse_hosts %args };
+
+    pod2usage(
+        -message => 'FATAL: you must give only one host with service "is_hot_standby".',
+        -exitval => 127
+    ) if @hosts != 1;
+
+    is_compat $hosts[0], 'is_hot_standby', $PG_VERSION_90 or exit 1;
+    @rs = @{ query_ver( $hosts[0], %queries )->[0] };
+
+    return critical( $me, [ "Cluster is not hot standby" ] ) if ( $rs[0] eq "f" );
+    return ok( $me, [ "Cluster is hot standby" ] );
+}
+
+
+=item B<is_master> (all)
+
+Checks if the cluster accepts read and/or write queries. This state is reported
+as "in production" by pg_controldata.
+
+This service ignores critical and warning arguments.
+
+No perfdata is returned.
+
+=cut
+
+sub check_is_master {
+    my @rs;
+    my @hosts;
+    my %args          = %{ $_[0] };
+    my $me            = 'POSTGRES_IS_MASTER';
+    #For PostgreSQL 9.0+, the "pg_is_in_recovery()" function is used, for previous
+    #versions the ability to connect is enough.
+    my %queries       = (
+       $PG_VERSION_74 => q{SELECT false
+       },
+        $PG_VERSION_90 => q{SELECT pg_is_in_recovery()
+        }
+    );
+
+    @hosts = @{ parse_hosts %args };
+
+    pod2usage(
+        -message => 'FATAL: you must give only one host with service "is_master".',
+        -exitval => 127
+    ) if @hosts != 1;
+
+    @rs = @{ query_ver( $hosts[0], %queries )->[0] };
+
+    return critical( $me, [ "Cluster is not master" ] ) if ( $rs[0] eq "t" );
+    return ok( $me, [ "Cluster is master" ] );
+}
+
+
+=item B<is_replay_paused> (9.1+)
+
+Checks if the replication is paused. The service will return UNKNOWN if
+executed on a master server.
+
+Thresholds are optional. They must be specified as interval. OK will always be
+returned if the standby is not paused, even if replication delta time hits the
+thresholds.
+
+Critical or warning are raised if last reported replayed timestamp is greater
+than given threshold AND some data received from the master are not applied yet.
+OK will always be returned if the standby is paused, or if the standby has
+already replayed everything from master and until some write activity happens
+on the master.
+
+Perfdata returned:
+  * paused status (0 no, 1 yes, NaN if master)
+  * lag time (in second)
+  * data delta with master (0 no, 1 yes)
+
+=cut
+
+sub check_is_replay_paused {
+    my @perfdata;
+    my @rs;
+    my @hosts;
+    my $w_limit = -1;
+    my $c_limit = -1;
+    my %args    = %{ $_[0] };
+    my $me      = 'POSTGRES_REPLICATION_PAUSED';
+    my $query   = q{
+        SELECT pg_is_in_recovery()::int AS is_in_recovery,
+        CASE pg_is_in_recovery()
+            WHEN 't' THEN pg_is_xlog_replay_paused()::int
+            ELSE 0::int
+        END AS is_paused,
+        CASE pg_is_in_recovery()
+            WHEN 't' THEN extract('epoch' FROM now()-pg_last_xact_replay_timestamp())::int
+            ELSE NULL::int
+        END AS lag,
+        CASE
+            WHEN pg_is_in_recovery() AND pg_last_xlog_replay_location() <> pg_last_xlog_receive_location()
+                THEN 1::int
+            WHEN pg_is_in_recovery() THEN 0::int
+            ELSE NULL
+        END AS delta
+    };
+
+    if ( defined $args{'warning'} and defined $args{'critical'} ) {
+        # warning and critical must be interval if provided.
+        pod2usage(
+            -message => "FATAL: critical and warning thresholds only accept interval.",
+            -exitval => 127
+        ) unless ( is_time( $args{'warning'} ) and  is_time( $args{'critical'} ) );
+
+        $c_limit = get_time $args{'critical'};
+        $w_limit = get_time $args{'warning'};
+    }
+
+    @hosts = @{ parse_hosts %args };
+
+    pod2usage(
+        -message => 'FATAL: you must give only one host with service "is_replay_paused".',
+        -exitval => 127
+    ) if @hosts != 1;
+
+    is_compat $hosts[0], "is_replay_paused", $PG_VERSION_91 or exit 1;
+
+    @rs = @{ query( $hosts[0], $query )->[0] };
+
+    return unknown ( $me,
+        [ "Server is not standby." ],
+        [ "is_paused=NaN", "lag_time=NaNs", "has_data_delta=NaNs" ]
+    ) if not $rs[0];
+
+    push @perfdata, "is_paused=". $rs[1];
+    push @perfdata, "lag_time=". $rs[2] . "s";
+    push @perfdata, "has_data_delta=". $rs[3];
+
+    # Always return ok if replay is not paused
+    return ok( $me, [ ' replay is not paused' ], \@perfdata ) if not $rs[1];
+
+    # Do we have thresholds ?
+    if ( $c_limit != -1 ) {
+        return critical( $me, [' replay lag time: ' . to_interval( $rs[2] ) ], \@perfdata )
+            if $rs[3] and $rs[2] > $c_limit;
+        return warning( $me, [' replay lag time: ' . to_interval( $rs[2] ) ], \@perfdata )
+            if $rs[3] and $rs[2] > $w_limit;
+    }
+
+    return ok( $me, [ ' replay is paused.' ], \@perfdata );
+
+}
+
+
+# Agnostic check vacuum or analyze sub
+sub check_last_maintenance {
+    my $rs;
+    my $c_limit;
+    my $w_limit;
+    my @perfdata;
+    my @msg_crit;
+    my @msg_warn;
+    my @msg;
+    my @hosts;
+    my @all_db;
+    my %counts;
+    my %new_counts;
+    my $dbchecked  = 0;
+    my $type       = $_[0];
+    my %args       = %{ $_[1] };
+    my @dbinclude  = @{ $args{'dbinclude'} };
+    my @dbexclude  = @{ $args{'dbexclude'} };
+    my $me         = 'POSTGRES_LAST_' . uc($type);
+    my %queries    = (
+        $PG_VERSION_82 => qq{
+            SELECT coalesce(min(
+                extract(epoch FROM current_timestamp -
+                    greatest(last_${type}, last_auto${type})
+                )), 'NaN'::float)
+            FROM pg_stat_user_tables
+        },
+        $PG_VERSION_91 => qq{
+            SELECT coalesce(min(
+                extract(epoch FROM current_timestamp -
+                    greatest(last_${type}, last_auto${type})
+                )), 'NaN'::float),
+                coalesce(sum(${type}_count), 0) AS ${type}_count,
+                coalesce(sum(auto${type}_count), 0) AS auto${type}_count
+            FROM pg_stat_user_tables
+        }
+    );
+
+    # warning and critical are mandatory.
+    pod2usage(
+        -message => "FATAL: you must specify critical and warning thresholds.",
+        -exitval => 127
+    ) unless defined $args{'warning'} and defined $args{'critical'} ;
+
+    pod2usage(
+        -message => "FATAL: critical and warning thresholds only acccepts interval.",
+        -exitval => 127
+    ) unless ( is_time( $args{'warning'} ) and is_time( $args{'critical'} ) );
+
+    $c_limit = get_time $args{'critical'};
+    $w_limit = get_time $args{'warning'};
+
+
+    @hosts = @{ parse_hosts %args };
+
+    pod2usage(
+        -message => "FATAL: you must give only one host with service \"last_$type\".",
+        -exitval => 127
+    ) if @hosts != 1;
+
+    is_compat $hosts[0], "last_$type", $PG_VERSION_82 or exit 1;
+
+
+    @all_db = @{ get_all_dbname( $hosts[0] ) };
+
+    %counts = %{ load( $hosts[0], "${type}_counts", $args{'status-file'} ) || {} }
+        if $hosts[0]->{'version_num'} >= $PG_VERSION_91;
+
+LOOP_DB: foreach my $db (@all_db) {
+        my $perfdata;
+        my $rs;
+
+        next LOOP_DB if grep { $db =~ /$_/ } @dbexclude;
+        next LOOP_DB if @dbinclude and not grep { $db =~ /$_/ } @dbinclude;
+
+        $dbchecked++;
+
+        $rs = query_ver( $hosts[0], %queries, $db )->[0];
+        $db =~ s/=//g;
+
+        $perfdata = "'$db'=$rs->[0]s;$w_limit;$c_limit";
+
+        if ($hosts[0]->{'version_num'} >= $PG_VERSION_91 ) {
+            $new_counts{$db} = [$rs->[1], $rs->[2]];
+
+            if ( defined $counts{$db} ) {
+                my $delta      = $rs->[1] - $counts{$db}[0];
+                my $delta_auto = $rs->[2] - $counts{$db}[1];
+
+                $perfdata .= " '$db $type'=$delta"
+                    ." '$db auto$type'=$delta_auto";
+            }
+        }
+
+        push @perfdata => $perfdata;
+
+        if ( $rs->[0] =~ /^-inf/i or $rs->[0] >= $c_limit ) {
+            push @msg_crit => "$db: " . to_interval($rs->[0]);
+            next LOOP_DB;
+        }
+
+        if ( $rs->[0] >= $w_limit ) {
+            push @msg_warn => "$db: " . to_interval($rs->[0]);
+            next LOOP_DB;
+        }
+    }
+
+    save $hosts[0], "${type}_counts", \%new_counts, $args{'status-file'}
+        if $hosts[0]->{'version_num'} >= $PG_VERSION_91;
+
+    return critical( $me, [ @msg_crit, @msg_warn ], \@perfdata )
+        if scalar @msg_crit > 0;
+
+    return warning( $me, \@msg_warn, \@perfdata ) if scalar @msg_warn > 0;
+
+    return ok( $me, [ "$dbchecked database(s) checked" ], \@perfdata );
+}
+
+
+=item B<last_analyze> (8.2+)
+
+Check on each databases that the oldest C<analyze> (from autovacuum or not) is not
+older than the given threshold.
+
+This service uses the status file (see C<--status-file> parameter) with
+PostgreSQL 9.1+.
+
+Perfdata returns oldest C<analyze> per database in seconds. With PostgreSQL
+9.1+, the number of [auto]analyses per database since last call is also
+returned.
+
+Critical and Warning thresholds only accept an interval (eg. 1h30m25s)
+and apply to the oldest execution of analyse.
+
+This service supports both C<--dbexclude> and C<--dbinclude> parameters.
+
+=cut
+
+sub check_last_analyze {
+    return check_last_maintenance( 'analyze', @_ );
+}
+
+
+=item B<last_vacuum> (8.2+)
+
+Check that the oldest vacuum (from autovacuum or otherwise) in each database
+in the cluster is not older than the given threshold.
+
+This service uses the status file (see C<--status-file> parameter) with
+PostgreSQL 9.1+.
+
+Perfdata returns oldest vacuum per database in seconds. With PostgreSQL
+9.1+, it also returns the number of [auto]vacuums per database since last
+execution.
+
+Critical and Warning thresholds only accept an interval (eg. 1h30m25s)
+and apply to the oldest vacuum.
+
+This service supports both C<--dbexclude> and C<--dbinclude> parameters.
+
+=cut
+
+sub check_last_vacuum {
+    return check_last_maintenance( 'vacuum', @_ );
+}
+
+
+=item B<locks> (all)
+
+Check the number of locks on the hosts.
+
+Perfdata returns the number of locks, by type.
+
+Critical and Warning thresholds accept either a raw number of locks or a
+percentage. For percentage, it is computed using the following limits
+for 7.4 to 8.1:
+
+  max_locks_per_transaction * max_connections
+
+for 8.2+:
+
+  max_locks_per_transaction * (max_connections + max_prepared_transactions)
+
+for 9.1+, regarding lockmode :
+
+  max_locks_per_transaction * (max_connections + max_prepared_transactions)
+or max_pred_locks_per_transaction * (max_connections + max_prepared_transactions)
+
+=cut
+
+sub check_locks {
+    my @rs;
+    my @perfdata;
+    my @msg;
+    my @hosts;
+    my %args          = %{ $_[0] };
+    my $total_locks   = 0;
+    my $total_pred_locks   = 0;
+    my $waiting_locks = 0;
+    my $me            = 'POSTGRES_LOCKS';
+    my %queries       = (
+        $PG_VERSION_74 => q{
+            SELECT count(l.*), ref.mode,
+                current_setting('max_locks_per_transaction')::integer
+                * current_setting('max_connections')::integer, 0, ref.granted
+            FROM (
+                SELECT 'AccessShareLock',                't'::boolean
+                UNION SELECT 'RowShareLock',             't'
+                UNION SELECT 'RowExclusiveLock',         't'
+                UNION SELECT 'ShareUpdateExclusiveLock', 't'
+                UNION SELECT 'ShareLock',                't'
+                UNION SELECT 'ShareRowExclusiveLock',    't'
+                UNION SELECT 'ExclusiveLock',            't'
+                UNION SELECT 'AccessExclusiveLock',      't'
+                UNION SELECT 'AccessShareLock',          'f'
+                UNION SELECT 'RowShareLock',             'f'
+                UNION SELECT 'RowExclusiveLock',         'f'
+                UNION SELECT 'ShareUpdateExclusiveLock', 'f'
+                UNION SELECT 'ShareLock',                'f'
+                UNION SELECT 'ShareRowExclusiveLock',    'f'
+                UNION SELECT 'ExclusiveLock',            'f'
+                UNION SELECT 'AccessExclusiveLock',      'f'
+            ) ref (mode, granted)
+            LEFT JOIN pg_locks l
+                ON (ref.mode, ref.granted) = (l.mode, l.granted)
+            GROUP BY 2,3,4,5
+            ORDER BY ref.granted, ref.mode
+        },
+        $PG_VERSION_82 => q{
+            SELECT count(l.*), ref.mode,
+                current_setting('max_locks_per_transaction')::integer * (
+                    current_setting('max_prepared_transactions')::integer
+                    + current_setting('max_connections')::integer), 0, ref.granted
+            FROM (SELECT * FROM ( VALUES
+                ('AccessShareLock',          't'::boolean),
+                ('RowShareLock',             't'),
+                ('RowExclusiveLock',         't'),
+                ('ShareUpdateExclusiveLock', 't'),
+                ('ShareLock',                't'),
+                ('ShareRowExclusiveLock',    't'),
+                ('ExclusiveLock',            't'),
+                ('AccessExclusiveLock',      't'),
+                ('AccessShareLock',          'f'),
+                ('RowShareLock',             'f'),
+                ('RowExclusiveLock',         'f'),
+                ('ShareUpdateExclusiveLock', 'f'),
+                ('ShareLock',                'f'),
+                ('ShareRowExclusiveLock',    'f'),
+                ('ExclusiveLock',            'f'),
+                ('AccessExclusiveLock',      'f')
+                ) lockmode (mode, granted)
+            ) ref
+            LEFT JOIN pg_locks l
+                ON (ref.mode, ref.granted) = (l.mode, l.granted)
+            GROUP BY 2,3,4,5
+            ORDER BY ref.granted, ref.mode
+        },
+        $PG_VERSION_91 => q{
+            SELECT count(l.*), ref.mode,
+                current_setting('max_locks_per_transaction')::integer * (
+                    current_setting('max_prepared_transactions')::integer
+                    + current_setting('max_connections')::integer),
+                current_setting('max_pred_locks_per_transaction')::integer * (
+                    current_setting('max_prepared_transactions')::integer
+                    + current_setting('max_connections')::integer), ref.granted
+            FROM (SELECT * FROM ( VALUES
+                ('AccessShareLock',          't'::boolean),
+                ('RowShareLock',             't'),
+                ('RowExclusiveLock',         't'),
+                ('ShareUpdateExclusiveLock', 't'),
+                ('ShareLock',                't'),
+                ('ShareRowExclusiveLock',    't'),
+                ('ExclusiveLock',            't'),
+                ('AccessExclusiveLock',      't'),
+                ('AccessShareLock',          'f'),
+                ('RowShareLock',             'f'),
+                ('RowExclusiveLock',         'f'),
+                ('ShareUpdateExclusiveLock', 'f'),
+                ('ShareLock',                'f'),
+                ('ShareRowExclusiveLock',    'f'),
+                ('ExclusiveLock',            'f'),
+                ('AccessExclusiveLock',      'f'),
+                ('SIReadLock',               't')
+                ) lockmode (mode, granted)
+            ) ref
+            LEFT JOIN pg_locks l
+                ON (ref.mode, ref.granted) = (l.mode, l.granted)
+            GROUP BY 2,3,4,5
+            ORDER BY ref.granted, ref.mode
+        }
+    );
+
+    # warning and critical are mandatory.
+    pod2usage(
+        -message => "FATAL: you must specify critical and warning thresholds.",
+        -exitval => 127
+    ) unless defined $args{'warning'} and defined $args{'critical'} ;
+
+    # warning and critical must be raw or %.
+    pod2usage(
+        -message => "FATAL: critical and warning thresholds only accept raw numbers or %.",
+        -exitval => 127
+    ) unless $args{'warning'}  =~ m/^([0-9.]+)%?$/
+        and  $args{'critical'} =~ m/^([0-9.]+)%?$/;
+
+
+    @hosts = @{ parse_hosts %args };
+
+    pod2usage(
+        -message => 'FATAL: you must give only one host with service "locks".',
+        -exitval => 127
+    ) if @hosts != 1;
+
+
+    @rs = @{ query_ver $hosts[0], %queries };
+
+    $args{'predcritical'} = $args{'critical'};
+    $args{'predwarning'} = $args{'warning'};
+
+    $args{'critical'} = int($1 * $rs[0][2]/100) if $args{'critical'} =~ /^([0-9.]+)%$/;
+    $args{'warning'}  = int($1 * $rs[0][2]/100) if $args{'warning'}  =~ /^([0-9.]+)%$/;
+    $args{'predcritical'} = int($1 * $rs[0][3]/100) if $args{'predcritical'} =~ /^([0-9.]+)%$/;
+    $args{'predwarning'}  = int($1 * $rs[0][3]/100) if $args{'predwarning'}  =~ /^([0-9.]+)%$/;
+
+    map {
+        $total_locks += $_->[0] if $_->[1] ne 'SIReadLock';
+        $total_pred_locks += $_->[0] if $_->[1] eq 'SIReadLock';
+        if ($_->[4] eq 't') {
+            if ($_->[1] ne 'SIReadLock') {
+                push @perfdata =>
+                    ( "$_->[1]=$_->[0];$args{'warning'};$args{'critical'}" );
+            } else {
+                push @perfdata =>
+                    ( "$_->[1]=$_->[0];$args{'predwarning'};$args{'predcritical'}" );
+            }
+        }
+        else {
+            $waiting_locks += $_->[0];
+            push @perfdata =>
+                ( "'Waiting $_->[1]'=$_->[0];$args{'warning'};$args{'critical'}" );
+        }
+    } @rs;
+
+    push @msg => "$total_locks locks, $total_pred_locks predicate locks, $waiting_locks waiting locks";
+
+    return critical( $me, \@msg, \@perfdata )
+        if $total_locks >= $args{'critical'} or ( $hosts[0]->{'version_num'} >= $PG_VERSION_91 and $total_pred_locks >= $args{'predcritical'} );
+
+    return warning( $me, \@msg, \@perfdata )
+        if $total_locks >= $args{'warning'} or ( $hosts[0]->{'version_num'} >= $PG_VERSION_91 and $total_pred_locks >= $args{'predwarning'});
+
+    return ok( $me, \@msg, \@perfdata );
+}
+
+
+=item B<longest_query> (all)
+
+Check the longest running query in the cluster.
+
+Perfdata contains the max/avg/min running time and the number of queries per
+database.
+
+Critical and Warning thresholds only accept an interval.
+
+This service supports both C<--dbexclude> and C<--dbinclude> parameters.
+
+It also supports argument C<--exclude REGEX> to exclude queries matching the
+given regular expression from the check.
+
+You can use multiple C<--exclude REGEX> parameters.
+
+=cut
+
+sub check_longest_query {
+    my @rs;
+    my @perfdata;
+    my @msg;
+    my @hosts;
+    my $c_limit;
+    my $w_limit;
+    my %args          = %{ $_[0] };
+    my @dbinclude     = @{ $args{'dbinclude'} };
+    my @dbexclude     = @{ $args{'dbexclude'} };
+    my $me            = 'POSTGRES_LONGEST_QUERY';
+    my $longest_query = 0;
+    my $nb_query      = 0;
+    my %stats         = ();
+    my %queries       = (
+       $PG_VERSION_74 => q{SELECT d.datname,
+                COALESCE(elapsed, -1),
+                COALESCE(query, '')
+            FROM pg_database AS d
+            LEFT JOIN (
+                SELECT datname, current_query AS query,
+                    extract('epoch' FROM
+                        date_trunc('second', current_timestamp-query_start)
+                    ) AS elapsed
+                FROM pg_stat_activity
+                WHERE current_query NOT LIKE '<IDLE>%'
+            ) AS s ON (d.datname=s.datname)
+            WHERE d.datallowconn
+        },
+        $PG_VERSION_92 => q{SELECT d.datname,
+                COALESCE(elapsed, 0),
+                COALESCE(query, '')
+            FROM pg_database AS d
+            LEFT JOIN (
+                SELECT datname, query,
+                    extract('epoch' FROM
+                        date_trunc('second', current_timestamp-state_change)
+                    ) AS elapsed
+                FROM pg_stat_activity
+                WHERE state = 'active'
+            ) AS s ON (d.datname=s.datname)
+            WHERE d.datallowconn
+        }
+    );
+
+    # warning and critical are mandatory.
+    pod2usage(
+        -message => "FATAL: you must specify critical and warning thresholds.",
+        -exitval => 127
+    ) unless defined $args{'warning'} and defined $args{'critical'} ;
+
+    pod2usage(
+        -message => "FATAL: critical and warning thresholds only acccepts interval.",
+        -exitval => 127
+    ) unless ( is_time( $args{'warning'} ) and is_time( $args{'critical'} ) );
+
+
+    $c_limit = get_time( $args{'critical'} );
+    $w_limit = get_time( $args{'warning'} );
+
+
+    @hosts = @{ parse_hosts %args };
+
+    pod2usage(
+        -message => 'FATAL: you must give only one host with service "longest_query".',
+        -exitval => 127
+    ) if @hosts != 1;
+
+
+    @rs = @{ query_ver( $hosts[0], %queries ) };
+
+    REC_LOOP: foreach my $r (@rs) {
+
+        # exclude/include on db name
+        next REC_LOOP if grep { $r->[0] =~ /$_/ } @dbexclude;
+        next REC_LOOP if @dbinclude and not grep { $r->[0] =~ /$_/ } @dbinclude;
+
+        # exclude on query text
+        foreach my $exclude_re ( @{ $args{'exclude'} } ) {
+            next REC_LOOP if $r->[2] =~ /$exclude_re/;
+        }
+
+        $stats{$r->[0]} = {
+            'num' => 0,
+            'max' => -1,
+            'avg' => 0,
+        } unless exists $stats{$r->[0]};
+
+        next REC_LOOP unless $r->[2] ne '';
+
+        $longest_query = $r->[1] if $r->[1] > $longest_query;
+        $nb_query++;
+
+        $stats{$r->[0]}{'num'}++;
+        $stats{$r->[0]}{'max'} = $r->[1] if $stats{$r->[0]}{'max'} < $r->[1];
+        $stats{$r->[0]}{'avg'} = (
+            $stats{$r->[0]}{'avg'} * ($stats{$r->[0]}{'num'} -1) + $r->[1])
+            / $stats{$r->[0]}{'num'};
+    }
+
+    DB_LOOP: foreach my $db (keys %stats) {
+
+        unless($stats{$db}{'max'} > -1) {
+            $stats{$db}{'max'} = 'NaN';
+            $stats{$db}{'avg'} = 'NaN';
+        }
+
+        push @perfdata, (
+            "'$db max'=$stats{$db}{'max'}s;$w_limit;$c_limit",
+            "'$db avg'=$stats{$db}{'avg'}s;$w_limit;$c_limit",
+            "'$db #queries'=$stats{$db}{'num'}"
+        );
+
+        if ( $stats{$db}{'max'} > $c_limit ) {
+            push @msg => "$db: ". to_interval($stats{$db}{'max'});
+            next DB_LOOP;
+        }
+
+        if ( $stats{$db}{'max'} > $w_limit ) {
+            push @msg => "$db: ". to_interval($stats{$db}{'max'});
+        }
+    }
+
+    return critical( $me, \@msg, \@perfdata )
+        if $longest_query > $c_limit;
+
+    return warning( $me, \@msg, \@perfdata )
+        if $longest_query > $w_limit;
+
+    return ok( $me, [ "$nb_query running querie(s)" ], \@perfdata );
+}
+
+
+=item B<max_freeze_age> (all)
+
+Checks oldest database by transaction age.
+
+Critical and Warning thresholds are optional. They accept either a raw number
+or percentage for PostgreSQL 8.2 and more. If percentage is given, the
+thresholds are computed based on the "autovacuum_freeze_max_age" parameter.
+100% means some table(s) reached the maximum age and will trigger an autovacuum
+freeze. Percentage thresholds should therefore be greater than 100%.
+
+Even with no threshold, this service will raise a critical alert if one database
+has a negative age.
+
+Perfdata return the age of each database.
+
+This service supports both C<--dbexclude> and C<--dbinclude> parameters.
+
+=cut
+
+sub check_max_freeze_age {
+    my @rs;
+    my @perfdata;
+    my @msg;
+    my @msg_crit;
+    my @msg_warn;
+    my @hosts;
+    my $c_limit;
+    my $w_limit;
+    my $oldestdb;
+    my $oldestage     = -1;
+    my %args          = %{ $_[0] };
+    my @dbinclude     = @{ $args{'dbinclude'} };
+    my @dbexclude     = @{ $args{'dbexclude'} };
+    my $me            = 'POSTGRES_MAX_FREEZE_AGE';
+    my %queries       = (
+       $PG_VERSION_74 => q{SELECT datname, age(datfrozenxid)
+            FROM pg_database
+            WHERE datname <> 'template0'
+       },
+        $PG_VERSION_82 => q{SELECT datname, age(datfrozenxid),
+                current_setting('autovacuum_freeze_max_age')
+            FROM pg_database
+            WHERE datname <> 'template0'
+        }
+    );
+
+    @hosts = @{ parse_hosts %args };
+
+    pod2usage(
+        -message => 'FATAL: you must give only one host with service "max_freeze_age".',
+        -exitval => 127
+    ) if @hosts != 1;
+
+    # warning and critical must be raw or %.
+    if ( defined $args{'warning'} and defined $args{'critical'} ) {
+        # warning and critical must be raw
+        pod2usage(
+            -message => "FATAL: critical and warning thresholds only accept raw numbers or % (for 8.2+).",
+            -exitval => 127
+        ) unless $args{'warning'}  =~ m/^([0-9]+)%?$/
+            and  $args{'critical'} =~ m/^([0-9]+)%?$/;
+
+        $w_limit = $args{'warning'};
+        $c_limit = $args{'critical'};
+
+        set_pgversion($hosts[0]);
+
+        pod2usage(
+            -message => "FATAL: only raw thresholds are compatible with PostgreSQL 8.1 and below.",
+            -exitval => 127
+        ) if $hosts[0]->{'version_num'} < $PG_VERSION_82
+            and ($args{'warning'} =~ m/%\s*$/ or $args{'critical'} =~ m/%\s*$/);
+    }
+
+    @rs = @{ query_ver( $hosts[0], %queries ) };
+
+    if ( scalar @rs and defined $args{'critical'} ) {
+        $c_limit = int($1 * $rs[0][2]/100) if $args{'critical'} =~ /^([0-9.]+)%$/;
+        $w_limit = int($1 * $rs[0][2]/100) if $args{'warning'}  =~ /^([0-9.]+)%$/;
+    }
+
+    REC_LOOP: foreach my $r (@rs) {
+        my $perfdata_value;
+
+        next REC_LOOP if grep { $r->[0] =~ /$_/ } @dbexclude;
+        next REC_LOOP if @dbinclude and not grep { $r->[0] =~ /$_/ } @dbinclude;
+
+        if ($oldestage < $r->[1]) {
+            $oldestdb = $r->[0];
+            $oldestage = $r->[1];
+        }
+
+        $perfdata_value = "'$r->[0]'=$r->[1]";
+
+        $perfdata_value .= ";$w_limit;$c_limit"
+            if defined $c_limit;
+
+        push @perfdata => $perfdata_value;
+
+        if ( $r->[1] < 0 ) {
+            push @msg_crit => "$r->[0] has a negative age" ;
+            next REC_LOOP;
+        }
+
+        if ( defined $c_limit ) {
+            if ( $r->[1] > $c_limit ) {
+                push @msg_crit => "$r->[0]";
+                next REC_LOOP;
+            }
+
+            push @msg_warn => "$r->[0]"
+                if defined $w_limit and $r->[1] > $w_limit;
+        }
+    }
+
+    return critical( $me, [
+        'Critical: '. join(',', @msg_crit)
+        . (scalar @msg_warn? 'Warning: '. join(',', @msg_warn):'')
+    ], \@perfdata ) if scalar @msg_crit;
+
+    return warning( $me,
+        [ 'Warning: '. join(',', @msg_warn) ], \@perfdata
+    ) if scalar @msg_warn;
+
+    return ok( $me, [ "oldest database is $oldestdb with age of $oldestage" ], \@perfdata );
+}
+
+
+=item B<minor_version> (all)
+
+Check if the cluster is running the most recent minor version of PostgreSQL.
+
+Latest version of PostgreSQL can be fetched from PostgreSQL official
+website if check_pgactivity can access it, or is given as a parameter.
+
+Without C<--critical> or C<--warning> parameters, this service attempts
+to fetch the latest version online. You can optionally set the path to
+your prefered program using the parameter C<--path> (eg.
+C<--path '/usr/bin/wget'>). Supported programs are: GET, wget, curl,
+fetch, lynx, links, links2.
+
+For the online version, a critical alert is raised if the minor version is not
+the most recent.
+
+If you do not want to (or cannot) query the PostgreSQL website, you
+must provide the expected version using either C<--warning> OR
+C<--critical>. The given format must be one or more MINOR versions
+seperated by anything but a '.'.
+
+For instance, the following parameters are all equivalent:
+
+  --critical "9.3.2 9.2.6 9.1.11 9.0.15 8.4.19"
+  --critical "9.3.2, 9.2.6, 9.1.11, 9.0.15, 8.4.19"
+  --critical 9.3.2,9.2.6,9.1.11,9.0.15,8.4.19
+  --critical 9.3.2/9.2.6/9.1.11/9.0.15/8.4.19
+
+Any value other than 3 numbers separated by dots will be ignored.
+if the running PostgreSQL major version is not found, the service raises an
+unknown status.
+
+Using the offline version raises either a critical or a warning depending
+on which one has been set.
+
+Perfdata returns the numerical version of PostgreSQL.
+
+=cut
+
+sub check_minor_version {
+    my @perfdata;
+    my @msg;
+    my %latest_versions;
+    my $rss;
+    my @hosts;
+    my $major_version;
+    my %args    = %{ $_[0] };
+    my $me      = 'POSTGRES_MINOR_VERSION';
+    my $timeout = get_time($args{'timeout'});
+    my $url     = 'http://www.postgresql.org/versions.rss';
+
+    @hosts = @{ parse_hosts %args };
+
+    pod2usage(
+        -message => 'FATAL: you must give only one host with service "minor_version".',
+        -exitval => 127
+    ) if @hosts != 1;
+
+    set_pgversion($hosts[0]);
+
+    if (not defined $args{'warning'}
+        and not defined $args{'critical'}
+    ) {
+        # These methods comes from check_postgres,
+        # by Greg Sabino Mullane <greg@endpoint.com>,
+        # licenced under BSD
+        our %get_methods = (
+            'GET'    => "GET -t $timeout -H 'Pragma: no-cache' $url",
+            'wget'   => "wget --quiet --timeout=$timeout --no-cache -O - $url",
+            'curl'   => "curl --silent --max-time $timeout -H 'Pragma: no-cache' $url",
+            'fetch'  => "fetch -q -T $timeout -o - $url",
+            'lynx'   => "lynx --connect-timeout=$timeout --dump $url",
+            'links'  => 'links -dump $url',
+            'links2' => 'links2 -dump $url'
+        );
+
+        # Force the fetching method
+        if ($args{'path'}) {
+            my $meth = basename $args{'path'};
+
+            pod2usage(
+                -message => "FATAL: \"$args{'path'}\" is not a valid program.",
+                -exitval => 127
+            ) unless -x $args{'path'};
+
+            pod2usage(
+                -message => "FATAL: \"$args{'path'}\" is not a supported program.",
+                -exitval => 127
+            ) unless $meth =~ 'GET|wget|curl|fetch|lynx|links|links2';
+        }
+
+        # fetch the latest versions
+        foreach my $exe (values %get_methods) {
+            $rss = qx{$exe 2>/dev/null};
+
+            last if $rss =~ 'PostgreSQL latest versions';
+        }
+
+        return unknown($me, [ 'Could not fetch PostgreSQL latest versions' ])
+            unless $rss;
+
+        $latest_versions{"$1.$2"} = [$1 * 10000 + $2 * 100 + $3, "$1.$2.$3"]
+            while $rss =~ m/<title>(\d+)\.(\d+)\.(\d+)/g;
+    }
+    else {
+        pod2usage(
+            -message => 'FATAL: you must provide a warning OR a critical threshold for service minor_version!',
+            -exitval => 127
+        ) if defined $args{'critical'} and defined $args{'warning'};
+
+        my $given_version = defined $args{'critical'} ?
+            $args{'critical'}
+            : $args{'warning'};
+
+        while ( $given_version =~ m/(\d+)\.(\d+)\.(\d+)/g ) {
+            $latest_versions{"$1.$2"} = [$1 * 10000 + $2 * 100 + $3, "$1.$2.$3"];
+        }
+    }
+
+    $hosts[0]{'version'} =~ '^(\d+\.\d+).*$';
+    $major_version = $1;
+
+    unless ( defined $latest_versions{$major_version} ) {
+        push @msg => "Unknown major PostgreSQL version $major_version";
+        return unknown( $me, \@msg );
+    }
+
+    push @perfdata => "version=". $hosts[0]{'version_num'} . "PGNUMVER";
+
+    if ( $hosts[0]{'version_num'} != $latest_versions{$major_version}[0] ) {
+        push @msg => "PostgreSQL version ". $hosts[0]{'version'}
+            ." (should be $latest_versions{$major_version}[1])";
+
+        return warning( $me, \@msg, \@perfdata )
+            if defined $args{'warning'};
+        return critical( $me, \@msg, \@perfdata );
+    }
+
+    push @msg => "PostgreSQL version ". $hosts[0]{'version'};
+
+    return ok( $me, \@msg, \@perfdata );
+}
+
+
+=item B<oldest_2pc> (8.1+)
+
+Check the oldest I<two phase commit transaction> (aka. prepared transaction) in
+the cluster.
+
+Perfdata contains the max/avg age time and the number of prepared
+transaction per databases.
+
+Critical and Warning thresholds only accept an interval.
+
+=cut
+
+sub check_oldest_2pc {
+    my @rs;
+    my @perfdata;
+    my @msg;
+    my @hosts;
+    my $c_limit;
+    my $w_limit;
+    my $me          = 'POSTGRES_OLDEST_2PC';
+    my $oldest_2pc = 0;
+    my $nb_2pc      = 0;
+    my %stats       = ();
+    my $query         = q{SELECT transaction, gid,
+            coalesce(extract('epoch' FROM
+                    date_trunc('second', current_timestamp-prepared)
+                ), -1),
+            owner, d.datname
+        FROM pg_database AS d
+        LEFT JOIN pg_prepared_xacts AS x
+            ON d.datname=x.database
+        WHERE d.datallowconn
+    };
+
+
+    # warning and critical are mandatory.
+    pod2usage(
+        -message => "FATAL: you must specify critical and warning thresholds.",
+        -exitval => 127
+    ) unless defined $args{'warning'} and defined $args{'critical'} ;
+
+    pod2usage(
+        -message => "FATAL: critical and warning thresholds only acccepts interval.",
+        -exitval => 127
+    ) unless ( is_time( $args{'warning'} ) and is_time( $args{'critical'} ) );
+
+
+    $c_limit = get_time $args{'critical'};
+    $w_limit = get_time $args{'warning'};
+
+
+    @hosts = @{ parse_hosts %args };
+
+    pod2usage(
+        -message => 'FATAL: you must give only one host with service "oldest_2pc".',
+        -exitval => 127
+    ) if @hosts != 1;
+
+    is_compat $hosts[0], 'postgres_oldest_2pc', $PG_VERSION_81 or exit 1;
+
+
+    @rs = @{ query( $hosts[0], $query ) };
+
+    REC_LOOP: foreach my $r (@rs) {
+
+        $stats{$r->[4]} = {
+            'num' => 0,
+            'max' => -1,
+            'avg' => 0,
+        } unless exists $stats{$r->[4]};
+
+        $oldest_2pc = $r->[2] if $r->[2] > $oldest_2pc;
+
+        $stats{$r->[4]}{'num'}++ if $r->[0];
+        $stats{$r->[4]}{'max'} = $r->[2] if $stats{$r->[4]}{'max'} < $r->[2];
+        $stats{$r->[4]}{'avg'} = (
+            $stats{$r->[4]}{'avg'} * ($stats{$r->[4]}{'num'} -1) + $r->[2])
+            / $stats{$r->[4]}{'num'} if $stats{$r->[4]}{'num'};
+    }
+
+    DB_LOOP: foreach my $db (sort keys %stats) {
+
+        $nb_2pc += $stats{$db}{'num'};
+
+        unless($stats{$db}{'max'} > -1) {
+            $stats{$db}{'max'} = 'NaN';
+            $stats{$db}{'avg'} = 'NaN';
+        }
+
+        push @perfdata, (
+            "'$db max'=$stats{$db}{'max'}s;$w_limit;$c_limit",
+            "'$db avg'=$stats{$db}{'avg'}s;$w_limit;$c_limit",
+            "'$db # prep. xact'=$stats{$db}{'num'}"
+        );
+
+        if ( $stats{$db}{'max'} > $c_limit ) {
+            push @msg => "oldest 2pc on $db: ". to_interval($stats{$db}{'max'});
+            next DB_LOOP;
+        }
+
+        if ( $stats{$db}{'max'} > $w_limit ) {
+            push @msg => "oldest 2pc on $db: ". to_interval($stats{$db}{'max'});
+        }
+    }
+
+    unshift @msg => "$nb_2pc prepared transaction(s)";
+
+    return critical( $me, \@msg, \@perfdata )
+        if $oldest_2pc > $c_limit;
+
+    return warning( $me, \@msg, \@perfdata )
+        if $oldest_2pc > $w_limit;
+
+    return ok( $me, \@msg, \@perfdata );
+}
+
+
+=item B<oldest_idlexact> (8.3+)
+
+Check the oldest I<idle> transaction.
+
+Perfdata contains the max/avg age and the number of idle transactions
+per databases.
+
+Critical and Warning thresholds only accept an interval.
+
+This service supports both C<--dbexclude> and C<--dbinclude> parameters.
+
+=cut
+
+sub check_oldest_idlexact {
+    my @rs;
+    my @perfdata;
+    my @msg;
+    my @hosts;
+    my $c_limit;
+    my $w_limit;
+    my %args        = %{ $_[0] };
+    my @dbinclude   = @{ $args{'dbinclude'} };
+    my @dbexclude   = @{ $args{'dbexclude'} };
+    my $me          = 'POSTGRES_OLDEST_IDLEXACT';
+    my $oldest_idle = 0;
+    my $nb_idle     = 0;
+    my %stats       = ( );
+    my %queries     = (
+        $PG_VERSION_83 => q{SELECT d.datname,
+            coalesce(extract('epoch' FROM
+                    date_trunc('second', current_timestamp-xact_start)
+                ), -1)
+            FROM pg_database AS d
+            LEFT JOIN pg_stat_activity AS a ON (a.datid = d.oid AND current_query = '<IDLE> in transaction')},
+        $PG_VERSION_92 => q{SELECT d.datname,
+            coalesce(extract('epoch' FROM
+                    date_trunc('second', current_timestamp-xact_start)
+                ), -1)
+            FROM pg_database AS d
+            LEFT JOIN pg_stat_activity AS a ON (a.datid = d.oid AND state='idle in transaction')
+        }
+    );
+
+    # warning and critical are mandatory.
+    pod2usage(
+        -message => "FATAL: you must specify critical and warning thresholds.",
+        -exitval => 127
+    ) unless defined $args{'warning'} and defined $args{'critical'} ;
+
+    pod2usage(
+        -message => "FATAL: critical and warning thresholds only acccepts interval.",
+        -exitval => 127
+    ) unless ( is_time( $args{'warning'} ) and is_time( $args{'critical'} ) );
+
+
+    $c_limit = get_time $args{'critical'};
+    $w_limit = get_time $args{'warning'};
+
+
+    @hosts = @{ parse_hosts %args };
+
+    pod2usage(
+        -message => 'FATAL: you must give only one host with service "oldest_idlexact".',
+        -exitval => 127
+    ) if @hosts != 1;
+
+    is_compat $hosts[0], 'oldest_idlexact', $PG_VERSION_83 or exit 1;
+
+
+    @rs = @{ query_ver( $hosts[0], %queries ) };
+
+    REC_LOOP: foreach my $r (@rs) {
+
+        $stats{$r->[0]} = {
+            'num' => 0,
+            'max' => -1,
+            'avg' => 0,
+        } unless exists $stats{$r->[0]};
+
+        $oldest_idle = $r->[1] if $r->[1] > $oldest_idle;
+
+        $stats{$r->[0]}{'num'}++ if $r->[1] > -1;
+        $stats{$r->[0]}{'max'} = $r->[1] if $stats{$r->[0]}{'max'} < $r->[1];
+        $stats{$r->[0]}{'avg'} = (
+            $stats{$r->[0]}{'avg'} * ($stats{$r->[0]}{'num'} -1) + $r->[1])
+            / $stats{$r->[0]}{'num'} if $stats{$r->[0]}{'num'};
+    }
+
+    DB_LOOP: foreach my $db (sort keys %stats) {
+
+        next DB_LOOP if grep { $db =~ /$_/ } @dbexclude;
+        next DB_LOOP if @dbinclude and not grep { $db =~ /$_/ } @dbinclude;
+
+        $nb_idle += $stats{$db}{'num'};
+
+        unless($stats{$db}{'max'} > -1) {
+            $stats{$db}{'max'} = 'NaN';
+            $stats{$db}{'avg'} = 'NaN';
+        }
+
+        push @perfdata, (
+            "'$db max'=$stats{$db}{'max'}s;$w_limit;$c_limit",
+            "'$db avg'=$stats{$db}{'avg'}s;$w_limit;$c_limit",
+            "'$db # idle xact'=$stats{$db}{'num'}"
+        );
+
+        if ( $stats{$db}{'max'} > $c_limit ) {
+            push @msg => "oldest idle xact on $db: ". to_interval($stats{$db}{'max'});
+            next DB_LOOP;
+        }
+
+        if ( $stats{$db}{'max'} > $w_limit ) {
+            push @msg => "oldest idle xact on $db: ". to_interval($stats{$db}{'max'});
+        }
+    }
+
+    unshift @msg => "$nb_idle idle transaction(s)";
+
+    return critical( $me, \@msg, \@perfdata )
+        if $oldest_idle > $c_limit;
+
+    return warning( $me, \@msg, \@perfdata )
+        if $oldest_idle > $w_limit;
+
+    return ok( $me, \@msg, \@perfdata );
+}
+
+
+=item B<pga_version>
+
+Checks if this script is running the given version of check_pgactivity.
+You must provide the expected version using either C<--warning> OR
+C<--critical>.
+
+No perfdata is returned.
+
+=cut
+
+sub check_pga_version {
+    my @rs;
+    my @hosts;
+    my %args = %{ $_[0] };
+    my $me   = 'PGACTIVITY_VERSION';
+    my $msg  = "check_pgactivity $VERSION %s, Perl %vd";
+
+    pod2usage(
+        -message => 'FATAL: you must provide a warning or a critical threshold for service pga_version!',
+        -exitval => 127
+    ) if (defined $args{'critical'} and defined $args{'warning'})
+        or (not defined $args{'critical'} and not defined $args{'warning'});
+
+    pod2usage(
+        -message => "FATAL: given version does not look like a check_pgactivity version!",
+        -exitval => 127
+    ) if ( defined $args{'critical'} and $args{'critical'} !~ m/^\d\.\d+(?:beta\d*)?$/ )
+        or (defined $args{'warning'} and $args{'warning'} !~ m/^\d\.\d+(?:beta\d*)?$/ );
+
+    return critical( $me,
+        [ sprintf($msg, "(should be $args{'critical'}!)", $^V) ]
+    ) if defined $args{'critical'} and $VERSION ne $args{'critical'};
+
+    return warning( $me,
+        [ sprintf($msg, "(should be $args{'warning'}!)", $^V) ]
+    ) if defined $args{'warning'} and $VERSION ne $args{'warning'};
+
+    return ok( $me, [ sprintf($msg, "", $^V) ] );
+}
+
+
+=item B<ready_archives> (8.1+)
+
+Check the number of WAL files ready to archive.
+
+Perfdata returns the number of WAL files waiting to be archived.
+
+Critical and Warning thresholds only accept a raw number of files.
+
+=cut
+
+sub check_ready_archives {
+    my @rs;
+    my @perfdata;
+    my @msg;
+    my @hosts;
+    my %args  = %{ $_[0] };
+    my $me    = 'POSTGRES_READY_ARCHIVES';
+    my $query = q{
+         SELECT count(*) AS count
+         FROM pg_ls_dir('pg_xlog/archive_status') as file
+         WHERE file ~ '^[0-9A-F]{24}.ready$' };
+
+    # warning and critical are mandatory.
+    pod2usage(
+        -message => "FATAL: you must specify critical and warning thresholds.",
+        -exitval => 127
+    ) unless defined $args{'warning'} and defined $args{'critical'} ;
+
+    # warning and critical must be raw
+    pod2usage(
+        -message => "FATAL: critical and warning thresholds only accept raw numbers.",
+        -exitval => 127
+    ) unless $args{'warning'}  =~ m/^([0-9]+)$/
+        and  $args{'critical'} =~ m/^([0-9]+)$/;
+
+    @hosts = @{ parse_hosts %args };
+
+    pod2usage(
+        -message => 'FATAL: you must give only one host with service "ready_archives".',
+        -exitval => 127
+    ) if @hosts != 1;
+
+    is_compat $hosts[0], 'ready_archives', $PG_VERSION_81 or exit 1;
+
+    @rs = @{ query( $hosts[0], $query )->[0] };
+
+    push @perfdata => "ready_archives=$rs[0];$args{'warning'};$args{'critical'}";
+
+    push @msg => "$rs[0] WAL files ready to archive";
+
+    return critical( $me, \@msg, \@perfdata ) if $rs[0] >= $args{'critical'};
+    return warning( $me, \@msg, \@perfdata ) if $rs[0] >= $args{'warning'};
+    return ok( $me, \@msg, \@perfdata );
+}
+
+
+=item B<replication_slots> (9.4+)
+
+Check the WAL retained by each replication slots.
+
+Perfdata returns the number of WAL that each replication slot has to keep.
+
+Critical and Warning thresholds are optional. If provided, the number of WAL
+kept by each replication slot will be compared to the threshold.
+These thresholds only accept a raw number.
+
+=cut
+
+sub check_replication_slots {
+    my $me  = 'POSTGRES_REPLICATION_SLOTS';
+    my @msg_crit;
+    my @msg_warn;
+    my @perfdata;
+    my @hosts;
+    my @rs;
+    my %args = %{ $_[0] };
+
+    my $query   = q{
+        WITH wal_size AS (
+            SELECT current_setting('wal_block_size')::int * setting::int AS val
+            FROM pg_settings
+            WHERE name = 'wal_segment_size'
+        )
+        SELECT slot.slot_name,
+        COALESCE(
+            floor(
+                (pg_xlog_location_diff(pg_current_xlog_location(), slot.restart_lsn)
+                - (pg_xlogfile_name_offset(restart_lsn)).file_offset
+                )
+                / (s.val)
+            ),0
+        )
+        FROM pg_replication_slots slot
+        CROSS JOIN wal_size s
+    };
+
+    @hosts = @{ parse_hosts %args };
+
+    is_compat $hosts[0], 'replication_slots', $PG_VERSION_94 or exit 1;
+
+    pod2usage(
+        -message => 'FATAL: you must give only one host with service "replication_slots".',
+        -exitval => 127
+    ) if @hosts != 1;
+
+    if ( defined $args{'warning'} and defined $args{'critical'} ) {
+        # warning and critical must be raw
+        pod2usage(
+            -message => "FATAL: critical and warning thresholds only accept raw numbers.",
+            -exitval => 127
+        ) unless $args{'warning'}  =~ m/^([0-9]+)$/
+            and  $args{'critical'} =~ m/^([0-9]+)$/;
+    }
+
+    @rs = @{ query( $hosts[0], $query ) };
+
+SLOTS_LOOP: foreach my $row (@rs) {
+        push @perfdata => "$row->[0]=$row->[1]";
+        if ( defined $args{'warning'} ) {
+            if ( $row->[1] >= $args{'critical'} ){
+                push @msg_crit => "$row->[0]: $row->[1] WAL";
+                next SLOTS_LOOP;
+                }
+            if ( $row->[1] >= $args{'warning'} ){
+                push @msg_warn => "$row->[0]: $row->[1] WAL";
+                }
+        }
+    }
+
+
+    return critical( $me, [ @msg_crit, @msg_warn ], \@perfdata )
+        if scalar @msg_crit > 0;
+
+    return warning( $me, [ @msg_warn ], \@perfdata )
+        if scalar @msg_warn > 0;
+
+    return ok( $me, [ "Replication slots OK" ], \@perfdata );
+}
+
+
+=item B<streaming_delta> (9.1+)
+
+Check the data delta between a cluster and its standbys in Streaming Replication.
+
+Optional argument C<--slave> allows you to specify some slaves that MUST be
+connected. This argument can be used as many times as desired to check multiple
+slave connections, or you can specify multiple slaves connections at one time,
+using comma separated values. Both methods can be used in a single call. The
+given value must be of the form "APPLICATION_NAME IP".
+Either of the two following examples will check for the presence of two slaves:
+
+  --slave 'slave1 192.168.1.11' --slave 'slave2 192.168.1.12'
+  --slave 'slave1 192.168.1.11','slave2 192.168.1.12'
+
+Perfdata returns the data delta in bytes between the master and all standbys
+found and the number of slaves connected.
+
+Critical and Warning thresholds can take one or two values separated by a
+comma. If only one value is supplied, it applies to both flushed and replayed
+data. If two values are supplied, the first one applies to flushed data,
+the second one to replayed data.
+These thresholds only accept a size (eg. 2.5G).
+
+=cut
+
+sub check_streaming_delta {
+    my @perfdata;
+    my @msg;
+    my @msg_crit;
+    my @msg_warn;
+    my @rs;
+    my $w_limit_flushed;
+    my $c_limit_flushed;
+    my $w_limit_replayed;
+    my $c_limit_replayed;
+    my @hosts;
+    my %slaves;
+    my %args            = %{ $_[0] };
+    my $me              = 'POSTGRES_STREAMING_DELTA';
+    my $master_location = '';
+    my $num_clusters    = 0;
+    my %queries         = (
+        $PG_VERSION_92 => q{SELECT application_name, client_addr, pid,
+            sent_location, write_location, flush_location, replay_location,
+            CASE pg_is_in_recovery() WHEN true THEN pg_last_xlog_receive_location() ELSE pg_current_xlog_location() END
+            FROM pg_stat_replication},
+        $PG_VERSION_91 => q{SELECT application_name, client_addr, procpid,
+            sent_location, write_location, flush_location, replay_location,
+            CASE pg_is_in_recovery() WHEN true THEN pg_last_xlog_receive_location() ELSE pg_current_xlog_location() END
+            FROM pg_stat_replication}
+    );
+    # FIXME this service should check for given slaves in opts!
+
+    # warning and critical are mandatory.
+    pod2usage(
+        -message => "FATAL: you must specify critical and warning thresholds.",
+        -exitval => 127
+    ) unless defined $args{'warning'} and defined $args{'critical'} ;
+
+
+    @hosts = @{ parse_hosts %args };
+
+    pod2usage(
+        -message => 'FATAL: you must give only one host with service "streaming_delta".',
+        -exitval => 127
+    ) if @hosts != 1;
+
+    is_compat $hosts[0], 'streaming_delta', $PG_VERSION_91 or exit 1;
+    if ( scalar @{ $args{'slave'} } ) {
+        $slaves{$_} = 0 foreach ( split ( /,/, join ( ',', @{ $args{'slave'} } ) ) );
+    }
+
+    @rs = @{ query_ver( $hosts[0], %queries ) };
+
+    return unknown($me, ['No slaves connected'], ["'# of slaves'=0"])
+        unless @rs;
+
+    $rs[0][7] =~ m{^([0-9A-F]+)/([0-9A-F]+)$};
+    $master_location = (hex('ff000000') * hex($1)) + hex($2);
+
+    ($w_limit_flushed, $w_limit_replayed) = split /,/, $args{'warning'};
+    ($c_limit_flushed, $c_limit_replayed) = split /,/, $args{'critical'};
+
+    if (!defined($w_limit_replayed)) {
+        $w_limit_replayed = $w_limit_flushed;
+    }
+    if (!defined($c_limit_replayed)) {
+        $c_limit_replayed = $c_limit_flushed;
+    }
+
+    $w_limit_flushed = get_size( $w_limit_flushed );
+    $c_limit_flushed = get_size( $c_limit_flushed );
+    $w_limit_replayed = get_size( $w_limit_replayed );
+    $c_limit_replayed = get_size( $c_limit_replayed );
+
+
+    push @perfdata => "'# of slaves'=". scalar @rs;
+
+    # compute deltas
+    foreach my $host (@rs) {
+        my $send_delta;
+        my $write_delta;
+        my $flush_delta;
+        my $replay_delta;
+        my $name;
+
+        $host->[3] =~ m{^([0-9A-F]+)/([0-9A-F]+)$};
+        $send_delta = $master_location - (hex('ff000000') * hex($1)) - hex($2);
+
+        $host->[4] =~ m{^([0-9A-F]+)/([0-9A-F]+)$};
+        $write_delta = $master_location - (hex('ff000000') * hex($1)) - hex($2);
+
+        $host->[5] =~ m{^([0-9A-F]+)/([0-9A-F]+)$};
+        $flush_delta = $master_location - (hex('ff000000') * hex($1)) - hex($2);
+
+        $host->[6] =~ m{^([0-9A-F]+)/([0-9A-F]+)$};
+        $replay_delta = $master_location - (hex('ff000000') * hex($1)) - hex($2);
+
+        $name = "$host->[0]\@$host->[1]";
+
+        push @perfdata => "'sent delta $name'=${send_delta}B ".
+            "'wrote delta $name'=${write_delta}B ".
+            "'flushed delta $name'=${flush_delta}B ".
+            "'replay delta $name'=${replay_delta}B ".
+            "'pid $name'=$host->[2]";
+
+        $num_clusters++;
+
+        $slaves{"$host->[0] $host->[1]"} = 1;
+
+        if ($flush_delta > $c_limit_flushed) {
+            push @msg_crit, "critical flush lag for $name";
+            next;
+        }
+
+        if ($replay_delta > $c_limit_replayed) {
+            push @msg_crit, "critical replay lag for $name";
+            next;
+        }
+
+        if ($flush_delta > $w_limit_flushed) {
+            push @msg_warn, "warning flush lag for $name";
+            next;
+        }
+
+        if ($replay_delta > $w_limit_replayed) {
+            push @msg_warn, "warning replay lag for $name";
+            next;
+        }
+    }
+
+    while ( my ( $host, $connected ) = each %slaves ) {
+        unshift @msg_crit => "$host not connected" unless $connected;
+    }
+
+    return critical( $me, [ @msg_crit, @msg_warn ], \@perfdata )
+        if @msg_crit > 0;
+
+    return warning( $me, \@msg_warn, \@perfdata ) if @msg_warn > 0;
+
+    return ok($me, [ "$num_clusters slaves checked" ], \@perfdata);
+}
+
 
 =item B<table_bloat>
 
@@ -4846,6 +4763,7 @@ sub check_table_bloat {
             if $w_count > 0;
     return ok $me, [ "Table bloat ok" ], \@perfdata;
 }
+
 
 =item B<temp_files> (8.1+)
 
@@ -5161,87 +5079,187 @@ DB_LOOP: foreach my $stat (@rs) {
     return ok( $me, [ scalar(@rs) . " $obj checked" ], \@perfdata );
 }
 
-=item B<replication_slots> (9.4+)
 
-Check the WAL retained by each replication slots.
+=item B<wal_files> (8.1+)
 
-Perfdata returns the number of WAL that each replication slot has to keep.
+Check the number of WAL files.
 
-Critical and Warning thresholds are optional. If provided, the number of WAL
-kept by each replication slot will be compared to the threshold.
-These thresholds only accept a raw number.
+Perfdata returns the total number of WAL files, current number of written WAL,
+the current number of recycled WAL and the rate of WAL written to disk since
+last execution on master clusters.
+
+Critical and Warning thresholds accept either a raw number of files or a
+percentage. In case of percentage, the limit is computed based on:
+
+  100% = 1 + checkpoint_segments * (2 + checkpoint_completion_target)
+
+For PostgreSQL 8.1 and 8.2:
+
+  100% = 1 + checkpoint_segments * 2
+
+If C<wal_keep_segments> is set for 9.0 and above, the limit is the greatest
+of the following formulas :
+
+  100% = 1 + checkpoint_segments * (2 + checkpoint_completion_target)
+  100% = 1 + wal_keep_segments + 2 * checkpoint_segments
 
 =cut
 
-sub check_replication_slots {
-    my $me  = 'POSTGRES_REPLICATION_SLOTS';
-    my @msg_crit;
-    my @msg_warn;
-    my @perfdata;
-    my @hosts;
+sub check_wal_files {
+    my $seg_written  = 0;
+    my $seg_recycled = 0;
+    my $seg_kept     = 0;
+    my $num_seg      = 0;
+    my $max_segs;
+    my $first_seg;
     my @rs;
-    my %args = %{ $_[0] };
+    my @perfdata;
+    my @msg;
+    my @hosts;
+    my %args    = %{ $_[0] };
+    my $me      = 'POSTGRES_WAL_FILES';
+    my %queries = (
+      $PG_VERSION_90 => q{
+        SELECT s.f,
+          greatest(
+            1 + current_setting('checkpoint_segments')::float4 *
+              (2 + current_setting('checkpoint_completion_target')::float4),
+            1 + current_setting('wal_keep_segments')::float4 +
+              2 * current_setting('checkpoint_segments')::float4
+          ),
+          CASE WHEN pg_is_in_recovery()
+            THEN NULL
+            ELSE pg_current_xlog_location()
+          END,
+          current_setting('wal_keep_segments')::integer
+        FROM pg_ls_dir('pg_xlog') AS s(f)
+        WHERE f ~ '^[0-9A-F]{24}$'
+        ORDER BY
+          (pg_stat_file('pg_xlog/'||s.f)).modification DESC,
+          f DESC},
+      $PG_VERSION_83 => q{
+        SELECT s.f,
+          1 + (
+            current_setting('checkpoint_segments')::float4
+            * ( 2 + current_setting('checkpoint_completion_target')::float4 )
+          ), pg_current_xlog_location()
+        FROM pg_ls_dir('pg_xlog') AS s(f)
+        WHERE f ~ '^[0-9A-F]{24}$'
+        ORDER BY
+          (pg_stat_file('pg_xlog/'||s.f)).modification DESC,
+          f DESC},
+      $PG_VERSION_82 => q{
+        SELECT s.f,
+          1 + (current_setting('checkpoint_segments')::integer * 2), pg_current_xlog_location()
+        FROM pg_ls_dir('pg_xlog') AS s(f)
+        WHERE f ~ '^[0-9A-F]{24}$'
+        ORDER BY
+          (pg_stat_file('pg_xlog/'||s.f)).modification DESC,
+          f DESC},
+      $PG_VERSION_81 => q{
+        SELECT s.f,
+          1 + (current_setting('checkpoint_segments')::integer * 2)
+        FROM pg_ls_dir('pg_xlog') AS s(f)
+        WHERE f ~ '^[0-9A-F]{24}$'
+        ORDER BY
+          (pg_stat_file('pg_xlog/'||s.f)).modification DESC,
+          f DESC}
+    );
 
-    my $query   = q{
-        WITH wal_size AS (
-            SELECT current_setting('wal_block_size')::int * setting::int AS val
-            FROM pg_settings
-            WHERE name = 'wal_segment_size'
-        )
-        SELECT slot.slot_name,
-        COALESCE(
-            floor(
-                (pg_xlog_location_diff(pg_current_xlog_location(), slot.restart_lsn)
-                - (pg_xlogfile_name_offset(restart_lsn)).file_offset
-                )
-                / (s.val)
-            ),0
-        )
-        FROM pg_replication_slots slot
-        CROSS JOIN wal_size s
-    };
+    if ( defined $args{'warning'} ) {
+        # warning and critical are mandatory.
+        pod2usage(
+            -message => "FATAL: you must specify critical and warning thresholds.",
+            -exitval => 127
+        ) unless defined $args{'warning'} and defined $args{'critical'} ;
+
+        # warning and critical must be raw or %.
+        pod2usage(
+            -message => "FATAL: critical and warning thresholds only accept raw numbers or %.",
+            -exitval => 127
+        ) unless $args{'warning'}  =~ m/^([0-9.]+)%?$/
+            and  $args{'critical'} =~ m/^([0-9.]+)%?$/;
+    }
 
     @hosts = @{ parse_hosts %args };
 
-    is_compat $hosts[0], 'replication_slots', $PG_VERSION_94 or exit 1;
-
     pod2usage(
-        -message => 'FATAL: you must give only one host with service "replication_slots".',
+        -message => 'FATAL: you must give only one host with service "wal_files".',
         -exitval => 127
     ) if @hosts != 1;
 
-    if ( defined $args{'warning'} and defined $args{'critical'} ) {
-        # warning and critical must be raw
-        pod2usage(
-            -message => "FATAL: critical and warning thresholds only accept raw numbers.",
-            -exitval => 127
-        ) unless $args{'warning'}  =~ m/^([0-9]+)$/
-            and  $args{'critical'} =~ m/^([0-9]+)$/;
+    is_compat $hosts[0], 'wal_files', $PG_VERSION_81 or exit 1;
+
+    @rs = @{ query_ver( $hosts[0], %queries ) };
+
+    $first_seg = $rs[0][0];
+    $max_segs  = $rs[0][1];
+
+    foreach my $r (@rs) {
+        $num_seg++;
+        $seg_recycled++ if $r->[0] gt $first_seg;
     }
 
-    @rs = @{ query( $hosts[0], $query ) };
+    $seg_written = $num_seg - $seg_recycled;
 
-SLOTS_LOOP: foreach my $row (@rs) {
-        push @perfdata => "$row->[0]=$row->[1]";
-        if ( defined $args{'warning'} ) {
-            if ( $row->[1] >= $args{'critical'} ){
-                push @msg_crit => "$row->[0]: $row->[1] WAL";
-                next SLOTS_LOOP;
-                }
-            if ( $row->[1] >= $args{'warning'} ){
-                push @msg_warn => "$row->[0]: $row->[1] WAL";
-                }
+    push @perfdata => "total_wal=$num_seg";
+    push @perfdata => "recycled_wal=$seg_recycled";
+
+    # pay attention to the wal_keep_segment in perfdata
+    if ( $hosts[0]{'version_num'} >= $PG_VERSION_90) {
+        $seg_kept = $rs[0][3];
+        if ($seg_kept > 0) {
+            # cheet with numbers if the keep_segment was just set and the
+            # number of wal doesn't match it yet.
+            if ($seg_kept > $seg_written) {
+                push @perfdata => "written_wal=1";
+                push @perfdata => "kept_wal=". ($seg_written - 1);
+            }
+            else {
+                push @perfdata => "written_wal=" . ($seg_written - $seg_kept);
+                push @perfdata => "kept_wal=$seg_kept";
+            }
+        }
+        else {
+            push @perfdata => "written_wal=$seg_written";
+            push @perfdata => "kept_wal=0";
         }
     }
+    else {
+        push @perfdata => "written_wal=$seg_written";
+    }
 
+    push @msg => "$num_seg WAL files";
 
-    return critical( $me, [ @msg_crit, @msg_warn ], \@perfdata )
-        if scalar @msg_crit > 0;
+    if ( $hosts[0]{'version_num'} >= $PG_VERSION_82 and $rs[0][2] ne '') {
+        my $now = time();
+        my $curr_lsn = $rs[0][2];
+        my @prev_lsn = @{ load( $hosts[0], 'last wal files LSN', $args{'status-file'} ) || [] };
 
-    return warning( $me, [ @msg_warn ], \@perfdata )
-        if scalar @msg_warn > 0;
+        $curr_lsn =~ m{^([0-9A-F]+)/([0-9A-F]+)$};
+        $curr_lsn = (hex('ff000000') * hex($1)) + hex($2);
 
-    return ok( $me, [ "Replication slots OK" ], \@perfdata );
+        unless ( @prev_lsn == 0 ) {
+            my $rate = ($curr_lsn - $prev_lsn[1])/($now - $prev_lsn[0]);
+            $rate = int($rate*100+0.5)/100;
+
+            push @perfdata => "wal_rate=${rate}Bps";
+        }
+
+        save $hosts[0], 'last wal files LSN', [ $now, $curr_lsn ], $args{'status-file'};
+    }
+
+    if ( defined $args{'warning'} ) {
+        my $w_limit = get_size( $args{'warning'},  $max_segs );
+        my $c_limit = get_size( $args{'critical'}, $max_segs );
+
+        $perfdata[0] .= ";$w_limit;$c_limit;1;$max_segs";
+
+        return critical( $me, \@msg, \@perfdata ) if $num_seg >= $c_limit;
+        return warning( $me, \@msg, \@perfdata )  if $num_seg >= $w_limit;
+    }
+
+    return ok( $me, \@msg, \@perfdata );
 }
 
 # End of SERVICE section in pod doc
