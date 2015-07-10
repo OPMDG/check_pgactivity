@@ -4234,7 +4234,7 @@ sub check_ready_archives {
 
 =item B<replication_slots> (9.4+)
 
-Check the WAL retained by each replication slots.
+Check the number of WAL retained by each replication slots.
 
 Perfdata returns the number of WAL that each replication slot has to keep.
 
@@ -4294,14 +4294,17 @@ sub check_replication_slots {
 
 SLOTS_LOOP: foreach my $row (@rs) {
         push @perfdata => "$row->[0]=$row->[1]";
+
         if ( defined $args{'warning'} ) {
-            if ( $row->[1] >= $args{'critical'} ){
+
+            if ( $row->[1] >= $args{'critical'} ) {
                 push @msg_crit => "$row->[0]: $row->[1] WAL";
                 next SLOTS_LOOP;
-                }
-            if ( $row->[1] >= $args{'warning'} ){
+            }
+
+            if ( $row->[1] >= $args{'warning'} ) {
                 push @msg_warn => "$row->[0]: $row->[1] WAL";
-                }
+            }
         }
     }
 
