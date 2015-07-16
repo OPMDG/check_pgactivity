@@ -482,15 +482,17 @@ Descriptions and parameters of available services.
 
 \ **database_size**\  (8.1+)
 
- Check the variation of database sizes.
+ \ **Check the variation**\  of database sizes, and \ **return the size**\  of every
+ databases.
 
  This service uses the status file (see \ ``--status-file``\  parameter).
 
- Perfdata contains the size difference for each database since the last
- execution.
+ Perfdata contains the size of each database.
 
  Critical and Warning thresholds accept either a raw number, a percentage, or a
- size (eg. 2.5G).
+ size (eg. 2.5G).  They are applied on the size différence for each database
+ since the last execution. The aim is to detect unexpected database size
+ variation.
 
  This service supports both \ ``--dbexclude``\  and \ ``--dbinclude``\  parameters.
 
@@ -772,7 +774,7 @@ Descriptions and parameters of available services.
 
 \ **replication_slots**\  (9.4+)
 
- Check the WAL retained by each replication slots.
+ Check the number of WAL retained by each replication slots.
 
  Perfdata returns the number of WAL that each replication slot has to keep.
 
