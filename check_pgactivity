@@ -2829,38 +2829,22 @@ sub check_hot_standby_delta {
     my $master_location = '';
     my $num_clusters = 0;
     my $me    = 'POSTGRES_HOT_STANDBY_DELTA';
-    # we need to coalesce on pg_last_xlog_receive_location because it returns
+    # we need to coalesce on pg_last_xlog_receive_location because it returns
     # NULL during WAL Shipping
-    my %queries = (
-        $PG_VERSION_90 => q{
-            SELECT (NOT pg_is_in_recovery())::int,
-                CASE pg_is_in_recovery()
-                    WHEN 't' THEN coalesce(
-                        pg_last_xlog_receive_location(),
-                        pg_last_xlog_replay_location()
-                    )
-                    ELSE pg_current_xlog_location()
-                END,
-                CASE pg_is_in_recovery()
-                    WHEN 't' THEN pg_last_xlog_replay_location()
-                    ELSE NULL::text
-                END
-        },
-        $PG_VERSION_94 => q{
-            SELECT (NOT pg_is_in_recovery())::int,
-                CASE pg_is_in_recovery()
-                    WHEN 't' THEN coalesce(
-                        pg_last_xlog_receive_location(),
-                        pg_last_xlog_replay_location()
-                    )
-                    ELSE pg_current_xlog_location()
-                END,
-                CASE pg_is_in_recovery()
-                    WHEN 't' THEN pg_last_xlog_replay_location()
-                    ELSE NULL::pg_lsn
-                END
-        }
-    );
+    my $query = "
+        SELECT (NOT pg_is_in_recovery())::int,
+            CASE pg_is_in_recovery()
+                WHEN 't' THEN coalesce(
+                    pg_last_xlog_receive_location(),
+                    pg_last_xlog_replay_location()
+                )
+                ELSE pg_current_xlog_location()
+            END,
+            CASE pg_is_in_recovery()
+                WHEN 't' THEN pg_last_xlog_replay_location()
+                ELSE NULL
+            END
+    ";
 
     # warning and critical are mandatory.
     pod2usage(
@@ -2881,7 +2865,7 @@ sub check_hot_standby_delta {
 
     # fetch LSNs
     foreach my $host (@hosts) {
-        $host->{'rs'} = \@{ query_ver( $host, %queries )->[0] };
+        $host->{'rs'} = \@{ query( $host, $query )->[0] };
         $num_clusters += $host->{'rs'}[0];
         $master_location = $host->{'rs'}[1] if $host->{'rs'}[0];
     }
