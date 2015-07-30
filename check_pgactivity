@@ -2831,20 +2831,36 @@ sub check_hot_standby_delta {
     my $me    = 'POSTGRES_HOT_STANDBY_DELTA';
     # we need to coalesce on pg_last_xlog_receive_location because it returns
     # NULL during WAL Shipping
-    my $query = "
-        SELECT (NOT pg_is_in_recovery())::int,
-            CASE pg_is_in_recovery()
-                WHEN 't' THEN coalesce(
-                    pg_last_xlog_receive_location(),
-                    pg_last_xlog_replay_location()
-                )
-                ELSE pg_current_xlog_location()
-            END,
-            CASE pg_is_in_recovery()
-                WHEN 't' THEN pg_last_xlog_replay_location()
-                ELSE NULL::text
-            END
-    ";
+    my %queries = (
+        $PG_VERSION_90 => q{
+            SELECT (NOT pg_is_in_recovery())::int,
+                CASE pg_is_in_recovery()
+                    WHEN 't' THEN coalesce(
+                        pg_last_xlog_receive_location(),
+                        pg_last_xlog_replay_location()
+                    )
+                    ELSE pg_current_xlog_location()
+                END,
+                CASE pg_is_in_recovery()
+                    WHEN 't' THEN pg_last_xlog_replay_location()
+                    ELSE NULL::text
+                END
+        },
+        $PG_VERSION_94 => q{
+            SELECT (NOT pg_is_in_recovery())::int,
+                CASE pg_is_in_recovery()
+                    WHEN 't' THEN coalesce(
+                        pg_last_xlog_receive_location(),
+                        pg_last_xlog_replay_location()
+                    )
+                    ELSE pg_current_xlog_location()
+                END,
+                CASE pg_is_in_recovery()
+                    WHEN 't' THEN pg_last_xlog_replay_location()
+                    ELSE NULL::pg_lsn
+                END
+        }
+    );
 
     # warning and critical are mandatory.
     pod2usage(
@@ -2865,13 +2881,13 @@ sub check_hot_standby_delta {
 
     # fetch LSNs
     foreach my $host (@hosts) {
-        $host->{'rs'} = \@{ query( $host, $query )->[0] };
+        $host->{'rs'} = \@{ query_ver( $host, %queries )->[0] };
         $num_clusters += $host->{'rs'}[0];
         $master_location = $host->{'rs'}[1] if $host->{'rs'}[0];
     }
 
-    return critical($me, ["PostgreSQL major versions differ amongst clusters ($hosts[0]{'version_num'} vs. $hosts[1]{'version_num'})."] )
-        if $hosts[0]{'version'} != $hosts[1]{'version'};
+    return critical($me, ["PostgreSQL major versions differ amongst clusters ($hosts[0]{'version'} vs. $hosts[1]{'version'})."] )
+        if substr($hosts[0]{'version_num'}, 0, -2) != substr($hosts[1]{'version_num'}, 0, -2);
 
     return critical($me, ['No cluster in production.'])
         if $num_clusters == 0;
