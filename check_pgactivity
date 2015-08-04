@@ -2237,7 +2237,7 @@ sub check_commit_ratio {
     @hosts = @{ parse_hosts %args };
 
     pod2usage(
-        -message => 'FATAL: you must give only one host with service "database_size".',
+        -message => 'FATAL: you must give only one host with service "commit_ratio".',
         -exitval => 127
     ) if @hosts != 1;
 
