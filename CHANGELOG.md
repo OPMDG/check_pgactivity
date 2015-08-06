@@ -2,6 +2,7 @@ Changelog
 =========
 
 WIP 1.24:
+  - improve message for streaming_delta and hot_standby_delta services
   - add replication_slot service
   - enhane table_bloat queries
   - add -l option, aliased for --list

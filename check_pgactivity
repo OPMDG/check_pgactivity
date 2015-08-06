@@ -2919,22 +2919,26 @@ sub check_hot_standby_delta {
         ;
 
         if ($host->{'receive_delta'} > $c_limit_received) {
-            push @msg_crit, "critical receive lag for $host->{'name'}";
+            push @msg_crit, "critical receive lag: "
+            . to_size($host->{'receive_delta'}) . " for $host->{'name'}";
             next;
         }
 
         if ($host->{'replay_delta'} > $c_limit_replayed) {
-            push @msg_crit, "critical replay lag for $host->{'name'}";
+            push @msg_crit, "critical replay lag: "
+           . to_size($host->{'replay_delta'}) . " for $host->{'name'}";
             next;
         }
 
         if ($host->{'receive_delta'} > $w_limit_received) {
-            push @msg_warn, "warning receive lag for $host->{'name'}";
+            push @msg_warn, "warning receive lag: "
+           . to_size($host->{'receive_delta'}) . " for $host->{'name'}";
             next;
         }
 
         if ($host->{'replay_delta'} > $w_limit_replayed) {
-            push @msg_warn, "warning replay lag for $host->{'name'}";
+            push @msg_warn, "warning replay lag: "
+           . to_size($host->{'replay_delta'}) . " for $host->{'name'}";
             next;
         }
 
@@ -4456,22 +4460,26 @@ sub check_streaming_delta {
         $slaves{"$host->[0] $host->[1]"} = 1;
 
         if ($flush_delta > $c_limit_flushed) {
-            push @msg_crit, "critical flush lag for $name";
+            push @msg_crit, "critical flush lag: " . to_size($flush_delta)
+            . " for $name";
             next;
         }
 
         if ($replay_delta > $c_limit_replayed) {
-            push @msg_crit, "critical replay lag for $name";
+            push @msg_crit, "critical replay lag: " . to_size($replay_delta)
+           . " for $name";
             next;
         }
 
         if ($flush_delta > $w_limit_flushed) {
-            push @msg_warn, "warning flush lag for $name";
+            push @msg_warn, "warning flush lag: ". to_size($flush_delta)
+           . " for $name";
             next;
         }
 
         if ($replay_delta > $w_limit_replayed) {
-            push @msg_warn, "warning replay lag for $name";
+            push @msg_warn, "warning replay lag: " . to_size($replay_delta)
+           . " for $name";
             next;
         }
     }
