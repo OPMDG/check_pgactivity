@@ -4,7 +4,8 @@ Changelog
 WIP 1.24:
   - improve message for streaming_delta and hot_standby_delta services
   - add replication_slot service
-  - enhane table_bloat queries
+  - enhance table_bloat queries
+  - enhance btree_bloat queries
   - add -l option, aliased for --list
   - backends service has a new maximum_connections perfdata
   - backends service now consider the maximum connections as max_connections - superuser_reserved_connections
@@ -27,6 +28,7 @@ WIP 1.24:
 2014-12-30 1.22:
   - fix pga_version service to accept non-decimal only versions
   - fix temp_files service bug, leading to "ERROR:   set-valued function called in context that cannot accept a set" errors
+
 2014-12-24 1.21:
   - fix temp_files service
 
