@@ -1940,7 +1940,8 @@ sub check_btree_bloat {
                   AND s.staattnum = ANY (
                     string_to_array(pg_catalog.textin(pg_catalog.int2vectorout(i.indkey)), ' ')::smallint[]
                   )
-              ) AS sub
+              WHERE ci.relpages > 0
+            ) AS sub
               JOIN pg_catalog.pg_attribute AS a ON sub.starelid = a.attrelid
                   AND sub.staattnum = a.attnum
               JOIN pg_catalog.pg_type AS t ON a.atttypid = t.oid
@@ -2000,6 +2001,7 @@ sub check_btree_bloat {
                 JOIN pg_catalog.pg_class AS ci ON ci.oid = i.indexrelid
                 JOIN pg_catalog.pg_class AS ct ON i.indrelid = ct.oid
                 JOIN pg_catalog.pg_statistic AS s ON i.indexrelid = s.starelid
+              WHERE ci.relpages > 0
               UNION
               SELECT ct.relnamespace, ct.relname AS tblname,
                 ci.relname AS idxname, ci.reltuples, ci.relpages, ci.relam,
@@ -2011,7 +2013,8 @@ sub check_btree_bloat {
                   AND s.staattnum = ANY (
                     string_to_array(pg_catalog.textin(pg_catalog.int2vectorout(i.indkey)), ' ')::smallint[]
                   )
-              ) AS sub
+              WHERE ci.relpages > 0
+            ) AS sub
               JOIN pg_catalog.pg_attribute AS a ON sub.starelid = a.attrelid
                   AND sub.staattnum = a.attnum
               JOIN pg_catalog.pg_type AS t ON a.atttypid = t.oid
@@ -2071,6 +2074,7 @@ sub check_btree_bloat {
                 JOIN pg_catalog.pg_class AS ci ON ci.oid = i.indexrelid
                 JOIN pg_catalog.pg_class AS ct ON i.indrelid = ct.oid
                 JOIN pg_catalog.pg_statistic AS s ON i.indexrelid = s.starelid
+              WHERE ci.relpages > 0
               UNION
               SELECT ct.relnamespace, ct.relname AS tblname,
                 ci.relname AS idxname, ci.reltuples, ci.relpages, ci.relam,
@@ -2080,7 +2084,8 @@ sub check_btree_bloat {
                 JOIN pg_catalog.pg_class AS ct ON ct.oid = i.indrelid
                 JOIN pg_catalog.pg_statistic AS s ON s.starelid = i.indrelid
                   AND s.staattnum = ANY ( i.indkey )
-              ) AS sub
+              WHERE ci.relpages > 0
+            ) AS sub
               JOIN pg_catalog.pg_attribute AS a ON sub.starelid = a.attrelid
                   AND sub.staattnum = a.attnum
               JOIN pg_catalog.pg_type AS t ON a.atttypid = t.oid
@@ -2146,6 +2151,7 @@ sub check_btree_bloat {
                 JOIN pg_catalog.pg_class AS ci ON ci.oid = i.indexrelid
                 JOIN pg_catalog.pg_class AS ct ON i.indrelid = ct.oid
                 JOIN pg_catalog.pg_statistic AS s ON i.indexrelid = s.starelid
+              WHERE ci.relpages > 0
               UNION
               SELECT ct.relnamespace, ct.relname AS tblname,
                 ci.relname AS idxname, ci.reltuples, ci.relpages, ci.relam,
@@ -2158,7 +2164,8 @@ sub check_btree_bloat {
                 JOIN pg_catalog.pg_class AS ct ON ct.oid = i.indrelid
                 JOIN pg_catalog.pg_statistic AS s ON s.starelid = i.indrelid
                   AND s.staattnum = ANY ( i.indkey )
-              ) AS sub
+              WHERE ci.relpages > 0
+            ) AS sub
               JOIN pg_catalog.pg_attribute AS a ON sub.starelid = a.attrelid
                   AND sub.staattnum = a.attnum
               JOIN pg_catalog.pg_type AS t ON a.atttypid = t.oid
