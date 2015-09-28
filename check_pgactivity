@@ -1693,8 +1693,9 @@ Check the percentage of pages written by backends since last check.
 
 This service uses the status file (see C<--status-file> parameter).
 
-Perfdata contains the difference from the C<pg_stat_bgwriter> counters since
-last execution.
+Perfdata contains the ratio per second for each C<pg_stat_bgwriter> counters
+since last execution. Units Nps for checkpoints, max written clean and fsyncs
+are the number of "events" per second.
 
 Critical and Warning thresholds are optional. If set, they I<only> accept a
 percentage.
@@ -1707,6 +1708,7 @@ sub check_bgwriter {
     my @msg_warn;
     my @rs;
     my @perfdata;
+    my $delta_ts;
     my $delta_buff_total;
     my $delta_buff_backend;
     my $delta_buff_bgwriter;
@@ -1719,6 +1721,7 @@ sub check_bgwriter {
     my %new_bgw;
     my %bgw;
     my @hosts;
+    my $now     = time();
     my %args    = %{ $_[0] };
     my $me      = 'POSTGRES_BGWRITER';
     my %queries = (
@@ -1768,6 +1771,7 @@ sub check_bgwriter {
 
     @rs = @{ query_ver( $hosts[0], %queries )->[0] };
 
+    $new_bgw{'ts'}               = $now;
     $new_bgw{'checkpoint_timed'} = $rs[0];
     $new_bgw{'checkpoint_req'}   = $rs[1];
     $new_bgw{'buff_checkpoint'}  = $rs[2];
@@ -1780,7 +1784,10 @@ sub check_bgwriter {
 
     save $hosts[0], 'bgwriter', \%new_bgw, $args{'status-file'};
 
-    return ok( $me, ['First call'] ) unless keys %bgw;
+    return ok( $me, ['First call'] ) unless keys %bgw
+        and defined $bgw{'ts'}; # 'ts' was added in 1.25, check for existance
+                                # instead of raising some ugly perl errors
+                                # when upgrading.
 
     return ok( $me, ['Stats reseted since last call'] )
         if $new_bgw{'stat_reset'}       > $bgw{'stat_reset'}
@@ -1797,23 +1804,24 @@ sub check_bgwriter {
         + $rs[3] - $bgw{'buff_clean'}
         + $rs[5] - $bgw{'buff_backend'};
 
-    $delta_buff_backend      = $rs[5] - $bgw{'buff_backend'};
-    $delta_buff_bgwriter     = $rs[3] - $bgw{'buff_clean'};
-    $delta_buff_checkpointer = $rs[2] - $bgw{'buff_checkpoint'};
-    $delta_buff_alloc        = $rs[6] - $bgw{'buff_alloc'};
-    $delta_checkpoint_timed  = $rs[0] - $bgw{'checkpoint_timed'};
-    $delta_checkpoint_req    = $rs[1] - $bgw{'checkpoint_req'};
-    $delta_maxwritten_clean  = $rs[4] - $bgw{'maxwritten_clean'};
-    $delta_backend_fsync     = $rs[7] - $bgw{'backend_fsync'};
+    $delta_ts                = $now   - $bgw{'ts'};
+    $delta_buff_backend      = ($rs[5] - $bgw{'buff_backend'})     / $delta_ts;
+    $delta_buff_bgwriter     = ($rs[3] - $bgw{'buff_clean'})       / $delta_ts;
+    $delta_buff_checkpointer = ($rs[2] - $bgw{'buff_checkpoint'})  / $delta_ts;
+    $delta_buff_alloc        = ($rs[6] - $bgw{'buff_alloc'})       / $delta_ts;
+    $delta_checkpoint_timed  = ($rs[0] - $bgw{'checkpoint_timed'}) / $delta_ts;
+    $delta_checkpoint_req    = ($rs[1] - $bgw{'checkpoint_req'})   / $delta_ts;
+    $delta_maxwritten_clean  = ($rs[4] - $bgw{'maxwritten_clean'}) / $delta_ts;
+    $delta_backend_fsync     = ($rs[7] - $bgw{'backend_fsync'})    / $delta_ts;
 
-    push @perfdata, "buffers_backend=${delta_buff_backend}B".
-                    " checkpoint_timed=${delta_checkpoint_timed}".
-                    " checkpoint_req=${delta_checkpoint_req}".
-                    " buffers_checkpoint=${delta_buff_checkpointer}B".
-                    " buffers_clean=${delta_buff_bgwriter}B".
-                    " maxwritten_clean=${delta_maxwritten_clean}".
-                    " buffers_backend_fsync=${delta_backend_fsync}".
-                    " buffers_alloc=${delta_buff_alloc}B";
+    push @perfdata, "buffers_backend=${delta_buff_backend}Nps".
+                    " checkpoint_timed=${delta_checkpoint_timed}Nps".
+                    " checkpoint_req=${delta_checkpoint_req}Nps".
+                    " buffers_checkpoint=${delta_buff_checkpointer}Bps".
+                    " buffers_clean=${delta_buff_bgwriter}Bps".
+                    " maxwritten_clean=${delta_maxwritten_clean}Nps".
+                    " buffers_backend_fsync=${delta_backend_fsync}Nps".
+                    " buffers_alloc=${delta_buff_alloc}Bps";
 
     if ($delta_buff_total) {
 

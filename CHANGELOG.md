@@ -1,6 +1,9 @@
 Changelog
 =========
 
+WIP 1.25:
+  - change units of service bgwriter (github issue #29)
+
 2015-09-28 1.24:
   - improve message for streaming_delta and hot_standby_delta services
   - add replication_slot service
