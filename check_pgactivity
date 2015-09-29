@@ -201,6 +201,10 @@ my %services = (
     'replication_slots' => {
         'sub'  => \&check_replication_slots,
         'desc' => 'Check delta in bytes of the replication slots.'
+    },
+    'pg_dump_backup' => {
+        'sub'  => \&check_pg_dump_backup,
+        'desc' => 'Check pg_dump backups age and retention policy'
     }
 );
 
@@ -4287,6 +4291,276 @@ sub check_oldest_idlexact {
 }
 
 
+=item B<pg_dump_backup>
+
+Check the age and size of backups.
+
+This service uses the status file (see C<--status-file> parameter).
+
+The C<--path> argument contains the location to the backup folder. The supported
+format is a glob pattern to match every folder or file you need to check. If
+appropriate, the probe should be run as user with sufficient privileges to check
+for the existence of files.
+
+The C<--pattern> is required, and must contain a regular expression matching
+the backup file name, extracting the database name from the first matching
+group. For example, the pattern "(\w+)-\d+.dump" can be used to match dumps of
+the form:
+
+    mydb-20150803.dump
+    otherdb-20150803.dump
+    mydb-20150806.dump
+    otherdb-20150806.dump
+    mydb-20150807.dump
+
+Optionally, a C<--global-pattern> option can be supplied to check for an
+additional global file.
+
+The C<--critical> and C<--warning> thresholds are optional. They accept a list
+of 'metric=value' separated by a comma. Available metric are C<oldest> and
+C<newest>, respectively the age of the oldest and newest backups, and C<size>,
+which must be the maximum variation of size since the last check, expressed
+as a size or a percentage.
+
+This service supports the arguments C<--dbinclude> and C<--dbexclude>, to
+respectively test for the presence of include or exclude files.
+
+The argument C<--exclude> allows to exclude file younger than the given
+interval. This is useful to ignore files from a backup in progress. Eg., if
+your backup process takes 2h, set this to '125m'.
+
+Perfdata returns the age of the oldest and newest backups, as well as the size
+of the newest backups.
+
+=cut
+
+sub check_pg_dump_backup {
+
+    my @rs;
+    my @stat;
+    my @dirfiles;
+    my @perfdata;
+    my @msg_crit;
+    my @msg_warn;
+    my %db_sizes;
+    my %firsts;
+    my %lasts;
+    my %crit;
+    my %warn;
+    my $mtime;
+    my $size;
+    my $me             = 'POSTGRES_PGDUMP_BACKUP';
+    my $sql            = 'SELECT datname FROM pg_database';
+    my $now            = time();
+    my @hosts          = @{ parse_hosts %args };
+    my @dbinclude      = @{ $args{'dbinclude'} };
+    my @dbexclude      = @{ $args{'dbexclude'} };
+    my $min_age        = 0;
+    my $backup_path    = $args{'path'};
+    my $pattern        = $args{'pattern'};
+    my $thresholds_re  = qr/(oldest|newest|size)\s*=\s*(\d+[^,]*)/i;
+    my $global_pattern = $args{'global-pattern'};
+
+    pod2usage(
+        -message => "FATAL: you must specify a pattern for filenames",
+        -exitval => 127
+    ) unless $pattern;
+
+    pod2usage(
+        -message => "FATAL: you must specify a backup path",
+        -exitval => 127
+    ) unless $backup_path;
+
+    pod2usage(
+        -message => 'FATAL: you must give one (and only one) host with service "pg_dump_backup".',
+        -exitval => 127
+    ) if @hosts != 1;
+
+    pod2usage(
+        -message => "FATAL: to use a size threshold, a status-file is required",
+        -exitval => 127
+    ) unless $args{'status-file'};
+
+    # warning and critical must be raw
+    pod2usage(
+        -message => "FATAL: critical and warning thresholds only accept a list of 'label=value' separated by comma.\n"
+            . "See documentation for more information.",
+        -exitval => 127
+    ) unless ( not defined $args{'warning'} )
+        or (
+            $args{'warning'}      =~ m/^$thresholds_re(\s*,\s*$thresholds_re)*$/
+            and $args{'critical'} =~ m/^$thresholds_re(\s*,\s*$thresholds_re)*$/
+        );
+
+    $min_age = get_time( $args{'exclude'}[0] ) if defined $args{'exclude'}[0];
+
+    while ( $args{'warning'} and $args{'warning'} =~ /$thresholds_re/g ) {
+        my ( $threshold, $value ) = ($1, $2);
+
+        if( $threshold eq "oldest" or $threshold eq "newest" ) {
+            pod2usage(
+                -message => "FATAL: threshold for the oldest or newest backup age must be an interval: $threshold=$value",
+                -exitval => 127
+            ) unless is_time($value);
+
+            $value = get_time($value);
+        }
+
+        $warn{$threshold} = $value if $1 and defined $2;
+    }
+
+    while ( $args{'critical'} and $args{'critical'} =~ /$thresholds_re/g ) {
+        my ($threshold, $value) = ($1, $2);
+
+        if( $threshold eq "oldest" or $threshold eq "newest" ) {
+            pod2usage(
+                -message => "FATAL: threshold for the oldest or newest backup age must be an interval: $threshold=$value",
+                -exitval => 127
+            ) unless is_time($value);
+
+            $value = get_time($value);
+        }
+
+        $crit{$threshold} = $value if $1 and defined $2;
+    }
+
+    # Stat files in the backup directory
+    @dirfiles = glob $backup_path;
+
+    foreach my $file ( @dirfiles ) {
+        my $filename = $file;
+        my $dbname;
+        my $mtime;
+        my $size;
+
+        ( undef, undef, undef, undef, undef, undef, undef, $size,
+            undef, $mtime ) = stat $file;
+
+        next if $now - $mtime < $min_age;
+
+        if ( $global_pattern and $filename =~ $global_pattern ) {
+            $firsts{'globals_objects'} = [ $mtime, $size ];
+            $lasts{'globals_objects'}  = [ $mtime, $size ];
+        }
+
+        next unless $filename =~ $pattern and defined $1;
+
+        $dbname = $1;
+
+        $firsts{$dbname} = [ $mtime, $size ] if not exists $firsts{$dbname}
+            or $firsts{$dbname}[0] > $mtime;
+
+        $lasts{$dbname} = [ $mtime, $size ] if not defined $lasts{$dbname}
+            or $lasts{$dbname}[0] < $mtime;
+    }
+
+    # Check against databases queried from pg_database
+    @rs = @{ query( $hosts[0], $sql ) };
+
+    # If global_pattern is defined, add them to the list to check
+    push @rs => [ "globals_objects" ] if $global_pattern;
+
+    %db_sizes = %{ load( $hosts[0], 'pg_dump_backup', $args{'status-file'} ) || {} }
+        if exists $warn{'size'} or exists $crit{'size'};
+
+    ALLDB: foreach my $row ( @rs ) {
+        my $db = $row->[0];
+        my $perf_newest = '';
+        my $perf_oldest = '';
+        my $perf_delta  = '';
+        my $perf_size   = '';
+        my $last_age;
+        my $first_age;
+
+        next if grep { $db =~ /$_/ } @dbexclude;
+        next if @dbinclude and not grep { $db =~ /$_/ } @dbinclude
+            and $db ne 'globals_objects';
+
+        if ( not exists $lasts{$db}[0] ) {
+            push @msg_crit => sprintf("'%s_oldest'=NaNs", $db);
+            push @msg_crit => sprintf("'%s_newest'=NaNs", $db);
+            push @msg_crit => sprintf("'%s_size'=NaNB", $db);
+            next;
+        }
+
+        $last_age  = $now - $lasts{$db}[0];
+        $first_age = $now - $firsts{$db}[0];
+
+        $perf_oldest = sprintf "'%s_oldest'=%ss", $db, $first_age;
+        $perf_newest = sprintf "'%s_newest'=%ss", $db, $last_age;
+        $perf_size   = sprintf "'%s_size'=%sB", $db, $lasts{$db}[1];
+        $perf_delta  = sprintf "'%s_delta'=%sB", $db,
+            $lasts{$db}[1] - $db_sizes{$db}[1];
+
+        if ( exists $warn{'newest'} or exists $crit{'newest'} ) {
+            my $c_limit = $crit{'newest'};
+            my $w_limit = $warn{'newest'};
+
+            $perf_newest .= ( defined $w_limit ? ";$w_limit":";" );
+            $perf_newest .= ";$c_limit" if defined $c_limit;
+
+            if ( defined $c_limit and $last_age > $c_limit ) {
+                push @msg_crit => sprintf("'%s_newest'=%ds", $db, $last_age);
+            }
+            elsif ( defined $w_limit and $last_age > $w_limit ) {
+                push @msg_warn => sprintf("'%s_newest'=%ds", $db, $last_age);
+            }
+        }
+
+        if ( exists $warn{'oldest'} or exists $crit{'oldest'} ) {
+            my $c_limit = $crit{'oldest'};
+            my $w_limit = $warn{'oldest'};
+
+            $perf_oldest .= ( defined $w_limit ? ";$w_limit":";" );
+            $perf_oldest .= ";$c_limit" if defined $c_limit;
+
+            if ( defined $c_limit and $first_age > $c_limit ) {
+                push @msg_crit => sprintf("'%s_oldest'=%s", $db,
+                    to_interval( $first_age )
+                );
+            }
+            elsif ( defined $w_limit and $first_age > $w_limit ) {
+                push @msg_warn => sprintf( "'%s_oldest'=%s", $db,
+                    to_interval( $first_age )
+                );
+            }
+        }
+
+        if ( exists $warn{'size'} or exists $crit{'size'} ) {
+            next ALLDB unless exists $db_sizes{$db};
+
+            my $w_delta = get_size( $warn{'size'}, $db_sizes{$db}[1] )
+                if exists $warn{'size'};
+            my $c_delta = get_size( $crit{'size'}, $db_sizes{$db}[1] )
+                if exists $crit{'size'};
+            my $delta = abs( $lasts{$db}[1] - $db_sizes{$db}[1] );
+
+            $perf_delta .= ( defined $w_delta ? ";$w_delta":";" );
+            $perf_delta .= ";$c_delta" if defined $c_delta;
+
+            if ( defined $c_delta and $delta > $c_delta ) {
+                push @msg_crit => sprintf("'%s_delta'=%dB", $db, $lasts{$db}[1]);
+            }
+            elsif ( defined $w_delta and $delta > $w_delta ) {
+                push @msg_warn => sprintf("'%s_delta'=%dB", $db, $lasts{$db}[1]);
+            }
+        }
+
+        push @perfdata => ( $perf_newest, $perf_oldest, $perf_size, $perf_delta );
+    }
+
+    save $hosts[0], 'pg_dump_backup', \%lasts, $args{'status-file'}
+        if $args{'status-file'};
+
+    return critical( $me, [ @msg_crit, @msg_warn ], \@perfdata )
+        if scalar @msg_crit;
+
+    return warning( $me, \@msg_warn, \@perfdata )
+        if scalar @msg_warn;
+
+    return ok($me, [], \@perfdata);
+}
+
 =item B<pga_version>
 
 Checks if this script is running the given version of check_pgactivity.
@@ -5468,6 +5742,8 @@ GetOptions(
         'version|V!',
         'help|?!',
         'debug!',
+        'pattern=s',
+        'global-pattern=s',
         'timeout|t=s',
         'dbexclude=s',
         'dbinclude=s'
@@ -5553,7 +5829,9 @@ unless ($args{'psql'}) {
 }
 
 # pre-compile given regexp
-$_ = qr/$_/ for ( @{ $args{'exclude'} } );
+unless ( $args{'service'} eq 'pg_dump_backup' ) {
+    $_ = qr/$_/ for @{ $args{'exclude'} } ;
+}
 $_ = qr/$_/ for ( @{ $args{'dbexclude'} } );
 $_ = qr/$_/ for ( @{ $args{'dbinclude'} } );
 
