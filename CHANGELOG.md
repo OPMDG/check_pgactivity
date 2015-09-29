@@ -10,6 +10,7 @@ WIP 1.25:
   - fix a harmless perl warning
   - fix wal_size service to support 9.5+
   - fix bad estimation in btree bloat query with mostly NULL columns
+  - fix corruption on status file on concurrent access
 
 2015-09-28 1.24:
   - improve message for streaming_delta and hot_standby_delta services
