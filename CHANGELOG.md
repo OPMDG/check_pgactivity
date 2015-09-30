@@ -5,6 +5,7 @@ WIP 1.25:
   - change units of service bgwriter (github issue #29)
   - remove autovacuum from the connection count for backends (github issue #14)
   - add walsenders to the connection count for backends (github issue #14)
+  - fix a harmless perl warning
 
 2015-09-28 1.24:
   - improve message for streaming_delta and hot_standby_delta services
