@@ -384,8 +384,9 @@ Descriptions and parameters of available services.
 
  This service uses the status file (see \ ``--status-file``\  parameter).
 
- Perfdata contains the difference from the \ ``pg_stat_bgwriter``\  counters since
- last execution.
+ Perfdata contains the ratio per second for each \ ``pg_stat_bgwriter``\  counters
+ since last execution. Units Nps for checkpoints, max written clean and fsyncs
+ are the number of "events" per second.
 
  Critical and Warning thresholds are optional. If set, they \ *only*\  accept a
  percentage.
