@@ -6,6 +6,7 @@ WIP 1.25:
   - fix: remove autovacuum from the connection count for backends (github issue #14)
   - fix: add walsenders to the connection count for backends (github issue #14)
   - fix: remove a harmless perl warning
+  - fix: btree bloat query bad estimation with mostly NULL columns
   - new: add service pg_dump_backup
 
 2015-09-28 1.24:

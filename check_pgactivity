@@ -1961,8 +1961,8 @@ sub check_btree_bloat {
                 END
             + nulldatawidth + maxalign - CASE
                 WHEN nulldatawidth = 0 THEN 0
-                WHEN nulldatawidth::integer%maxalign = 0 THEN maxalign
-                ELSE nulldatawidth::integer%maxalign
+                WHEN nulldatawidth::numeric%maxalign = 0 THEN maxalign
+                ELSE nulldatawidth::numeric%maxalign
                 END
             )::numeric AS nulldatahdrwidth, pagehdr, pageopqdata, is_na
           FROM (
@@ -2026,8 +2026,8 @@ sub check_btree_bloat {
                 END
             + nulldatawidth + maxalign - CASE
                 WHEN nulldatawidth = 0 THEN 0
-                WHEN nulldatawidth::integer%maxalign = 0 THEN maxalign
-                ELSE nulldatawidth::integer%maxalign
+                WHEN nulldatawidth::numeric%maxalign = 0 THEN maxalign
+                ELSE nulldatawidth::numeric%maxalign
                 END
             )::numeric AS nulldatahdrwidth, pagehdr, pageopqdata, is_na
           FROM (
@@ -2099,8 +2099,8 @@ sub check_btree_bloat {
                 END
             + nulldatawidth + maxalign - CASE
                 WHEN nulldatawidth = 0 THEN 0
-                WHEN nulldatawidth::integer%maxalign = 0 THEN maxalign
-                ELSE nulldatawidth::integer%maxalign
+                WHEN nulldatawidth::numeric%maxalign = 0 THEN maxalign
+                ELSE nulldatawidth::numeric%maxalign
                 END
             )::numeric AS nulldatahdrwidth, pagehdr, pageopqdata, is_na
           FROM (
@@ -2173,8 +2173,8 @@ sub check_btree_bloat {
                 END
             + nulldatawidth + maxalign - CASE
                 WHEN nulldatawidth = 0 THEN 0
-                WHEN nulldatawidth::integer%maxalign = 0 THEN maxalign
-                ELSE nulldatawidth::integer%maxalign
+                WHEN nulldatawidth::numeric%maxalign = 0 THEN maxalign
+                ELSE nulldatawidth::numeric%maxalign
                 END
             )::numeric AS nulldatahdrwidth, pagehdr, pageopqdata, is_na
           FROM (
@@ -4981,7 +4981,7 @@ sub check_table_bloat {
               SELECT
                 ( 4 + tpl_hdr_size + tpl_data_size + (2*ma)
                   - CASE WHEN tpl_hdr_size%ma = 0 THEN ma ELSE tpl_hdr_size%ma END
-                  - CASE WHEN ceil(tpl_data_size)::int%ma = 0 THEN ma ELSE ceil(tpl_data_size)::int%ma END
+                  - CASE WHEN tpl_data_size::numeric%ma = 0 THEN ma ELSE tpl_data_size::numeric%ma END
                 ) AS tpl_size, bs - page_hdr AS size_per_block, (heappages + coalesce(toast.relpages, 0)) AS tblpages, heappages,
                 coalesce(toast.relpages, 0) AS toastpages, s.reltuples,
                 coalesce(toast.reltuples, 0) AS toasttuples, bs, page_hdr, tblid, s.relnamespace, tblname, is_na
@@ -5036,7 +5036,7 @@ sub check_table_bloat {
               SELECT
                 ( 4 + tpl_hdr_size + tpl_data_size + (2*ma)
                   - CASE WHEN tpl_hdr_size%ma = 0 THEN ma ELSE tpl_hdr_size%ma END
-                  - CASE WHEN ceil(tpl_data_size)::int%ma = 0 THEN ma ELSE ceil(tpl_data_size)::int%ma END
+                  - CASE WHEN tpl_data_size::numeric%ma = 0 THEN ma ELSE tpl_data_size::numeric%ma END
                 ) AS tpl_size, bs - page_hdr AS size_per_block, (heappages + coalesce(toast.relpages, 0)) AS tblpages,
                 heappages, coalesce(toast.relpages, 0) AS toastpages,
                 s.reltuples, coalesce(toast.reltuples, 0) AS toasttuples,
@@ -5090,7 +5090,7 @@ sub check_table_bloat {
               SELECT
                 ( 4 + tpl_hdr_size + tpl_data_size + (2*ma)
                   - CASE WHEN tpl_hdr_size%ma = 0 THEN ma ELSE tpl_hdr_size%ma END
-                  - CASE WHEN ceil(tpl_data_size)::int%ma = 0 THEN ma ELSE ceil(tpl_data_size)::int%ma END
+                  - CASE WHEN tpl_data_size::numeric%ma = 0 THEN ma ELSE tpl_data_size::numeric%ma END
                 ) AS tpl_size, bs - page_hdr AS size_per_block, (heappages + coalesce(toast.relpages, 0)) AS tblpages,
                 heappages, coalesce(toast.relpages, 0) AS toastpages, s.reltuples,
                 coalesce(toast.reltuples, 0) toasttuples, bs, page_hdr, tblid, s.relnamespace, tblname, fillfactor, is_na
