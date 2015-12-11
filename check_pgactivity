@@ -57,6 +57,7 @@ my $PG_VERSION_91  = 90100;
 my $PG_VERSION_92  = 90200;
 my $PG_VERSION_93  = 90300;
 my $PG_VERSION_94  = 90400;
+my $PG_VERSION_95  = 90500;
 
 # Available services and descriptions.
 #
