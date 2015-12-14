@@ -3,9 +3,11 @@ Changelog
 
 WIP 1.25:
   - change units of service bgwriter (github issue #29)
-  - remove autovacuum from the connection count for backends (github issue #14)
-  - add walsenders to the connection count for backends (github issue #14)
+  - support PostgreSQL 9.5
+  - fix backends service to remove autovacuum from the connection count (github issue #14)
+  - fix backends service to add walsenders to the connection count (github issue #14)
   - fix a harmless perl warning
+  - fix wal_size service to support 9.5+
 
 2015-09-28 1.24:
   - improve message for streaming_delta and hot_standby_delta services
