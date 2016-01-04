@@ -36,7 +36,7 @@ use Getopt::Long qw(:config bundling no_ignore_case_always);
 use List::Util qw(max);
 use Pod::Usage;
 use Scalar::Util qw(looks_like_number);
-use Storable qw(store retrieve);
+use Storable qw(lock_store lock_retrieve);
 
 setlocale( LC_ALL, 'C' );
 
@@ -432,11 +432,11 @@ sub save($$$$) {
         ."Please, check its path or move away this wrong file"
         if -r $storage and not is_storable $storage;
 
-    $all = retrieve($storage) if -r $storage;
+    $all = lock_retrieve($storage) if -r $storage;
 
     $all->{$hostkey}{$name} = $ref;
 
-    store( $all, $storage )
+    lock_store( $all, $storage )
         or die "Can't store data in '$storage'!\n";
 }
 
@@ -467,7 +467,7 @@ sub load($$$) {
         ."Please, check its path or move away this wrong file"
         unless is_storable $storage;
 
-    $all = retrieve($storage);
+    $all = lock_retrieve($storage);
 
     return $all->{$hostkey}{$name};
 }
