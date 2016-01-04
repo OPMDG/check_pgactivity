@@ -2728,7 +2728,7 @@ This service uses the status file (see C<--status-file> parameter).
 Perfdata contains the size of each database.
 
 Critical and Warning thresholds accept either a raw number, a percentage, or a
-size (eg. 2.5G).  They are applied on the size différence for each database
+size (eg. 2.5G).  They are applied on the size difference for each database
 since the last execution. The aim is to detect unexpected database size
 variation.
 
@@ -5844,25 +5844,25 @@ __END__
 
 =over
 
-=item C<check_pgactivity -h localhost -p 5492 -s last_vacuum -w 30m -c 1h30m>
+=item Execute service "last_vacuum" on host "host=localhost port=5432":
 
-Execute service "last_vacuum" on host "host=localhost port=5432".
+  check_pgactivity -h localhost -p 5492 -s last_vacuum -w 30m -c 1h30m
 
-=item C<check_pgactivity --debug --dbservice pg92,pg92s --service streaming_delta -w 60 -c 90>
+=item Execute service "hot_standby_delta" between hosts "service=pg92" and "service=pg92s":
 
-Execute service "streaming_delta" between hosts "service=pg92" and "service=pg92s".
+  check_pgactivity --dbservice pg92,pg92s --service hot_standby_delta -w 32MB -c 160MB
 
-=item C<check_pgactivity --debug --dbservice pg92 -h slave -U supervisor --service streaming_delta -w 60 -c 90>
+=item Execute service "streaming_delta" on host "service=pg92" to check its slave "stby1" with the IP address "192.168.1.11":
 
-Execute service "streaming_delta" between hosts "service=pg92" and "host=slave user=supervisor".
+  check_pgactivity --dbservice pg92 --slave "stby1 192.168.1.11" --service streaming_delta -w 32MB -c 160MB
 
-=item C<check_pgactivity -p 5433 -h slave --service hit_ratio --dbexclude idelone --dbexclude "(?i:sleep)" -w 90% -c 80%>
+=item Execute service "hit_ratio" on host "slave" port "5433, excluding database matching the regexps "idelone" and "(?i:sleep)":
 
-Execute service "hit_ratio" on host "slave" port "5433, excluding database matching the regexps "idelone" and "(?i:sleep)".
+  check_pgactivity -p 5433 -h slave --service hit_ratio --dbexclude idelone --dbexclude "(?i:sleep)" -w 90% -c 80%
 
-=item C<check_pgactivity -p 5433 -h slave --service hit_ratio --dbinclude importantone -w 90% -c 80%>
+=item Execute service "hit_ratio" on host "slave" port "5433, only for databases matching the regexp "importantone":
 
-Execute service "hit_ratio" on host "slave" port "5433, only for databases matching the regexp "importantone".
+  check_pgactivity -p 5433 -h slave --service hit_ratio --dbinclude importantone -w 90% -c 80%
 
 =back
 
