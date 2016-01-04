@@ -1048,7 +1048,7 @@ Optional argument C<--ignore-wal-size> skips the WAL size check. This is useful
 if your archived WALs are compressed. Default behaviour is to check the WALs
 size.
 
-Optional argument C<--suffix> allows you define the prefix of your archived
+Optional argument C<--suffix> allows you define the suffix of your archived
 WALs. Useful if they are compressed with an extension (eg. .gz, .bz2, ...).
 Default is no suffix.
 
