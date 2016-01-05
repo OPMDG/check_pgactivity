@@ -1,12 +1,12 @@
-%global _tag REL1_19
+%global _tag REL1_25_BETA1
 
 Name: nagios-plugins-pgactivity
-Version: 1.19
+Version: 1.25beta1
 Release: 1
 Summary: PostgreSQL monitoring plugin for Nagios
 License: PostgreSQL
 Group: Applications/Databases
-Url: http://opm.io
+Url: https://github.com/OPMDG/check_pgactivity
 
 Source0: https://github.com/OPMDG/check_pgactivity/archive/%{_tag}.tar.gz
 BuildArch: noarch
@@ -29,9 +29,15 @@ install -D -p -m 0755 check_pgactivity %{buildroot}/%{_libdir}/nagios/plugins/ch
 %files
 %defattr(-,root,root,0755)
 %{_libdir}/nagios/plugins/check_pgactivity
-%doc README.md LICENSE
+%doc README.rst LICENSE
 
 %changelog
+* Tue Jan 05 2016 Jehan-Guillaume de Rorthais <jgdr@dalibo.com> 1.25beta1-1
+- update to release 1.25beta1
+
+* Mon Sep 28 2015 Jehan-Guillaume de Rorthais <jgdr@dalibo.com> 1.24-1
+- update to release 1.24
+
 * Wed Dec 10 2014 Nicolas Thauvin <nicolas.thauvin@dalibo.com> 1.19-1
 - update to release 1.19
 
