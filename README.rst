@@ -299,7 +299,7 @@ Descriptions and parameters of available services.
  if your archived WALs are compressed. Default behaviour is to check the WALs
  size.
 
- Optional argument \ ``--suffix``\  allows you define the prefix of your archived
+ Optional argument \ ``--suffix``\  allows you define the suffix of your archived
  WALs. Useful if they are compressed with an extension (eg. .gz, .bz2, ...).
  Default is no suffix.
 
@@ -492,7 +492,7 @@ Descriptions and parameters of available services.
  Perfdata contains the size of each database.
 
  Critical and Warning thresholds accept either a raw number, a percentage, or a
- size (eg. 2.5G).  They are applied on the size différence for each database
+ size (eg. 2.5G).  They are applied on the size difference for each database
  since the last execution. The aim is to detect unexpected database size
  variation.
 
@@ -754,6 +754,53 @@ Descriptions and parameters of available services.
 
 
 
+\ **pg_dump_backup**\
+
+ Check the age and size of backups.
+
+ This service uses the status file (see \ ``--status-file``\  parameter).
+
+ The \ ``--path``\  argument contains the location to the backup folder. The supported
+ format is a glob pattern to match every folder or file you need to check. If
+ appropriate, the probe should be run as user with sufficient privileges to check
+ for the existence of files.
+
+ The \ ``--pattern``\  is required, and must contain a regular expression matching
+ the backup file name, extracting the database name from the first matching
+ group. For example, the pattern "(\w+)-\d+.dump" can be used to match dumps of
+ the form:
+
+
+ .. code-block:: perl
+
+      mydb-20150803.dump
+      otherdb-20150803.dump
+      mydb-20150806.dump
+      otherdb-20150806.dump
+      mydb-20150807.dump
+
+
+ Optionally, a \ ``--global-pattern``\  option can be supplied to check for an
+ additional global file.
+
+ The \ ``--critical``\  and \ ``--warning``\  thresholds are optional. They accept a list
+ of 'metric=value' separated by a comma. Available metric are \ ``oldest``\  and
+ \ ``newest``\ , respectively the age of the oldest and newest backups, and \ ``size``\ ,
+ which must be the maximum variation of size since the last check, expressed
+ as a size or a percentage.
+
+ This service supports the arguments \ ``--dbinclude``\  and \ ``--dbexclude``\ , to
+ respectively test for the presence of include or exclude files.
+
+ The argument \ ``--exclude``\  allows to exclude file younger than the given
+ interval. This is useful to ignore files from a backup in progress. Eg., if
+ your backup process takes 2h, set this to '125m'.
+
+ Perfdata returns the age of the oldest and newest backups, as well as the size
+ of the newest backups.
+
+
+
 \ **pga_version**\
 
  Checks if this script is running the given version of check_pgactivity.
@@ -915,33 +962,53 @@ EXAMPLES
 
 
 
-\ ``check_pgactivity -h localhost -p 5492 -s last_vacuum -w 30m -c 1h30m``\
-
- Execute service "last_vacuum" on host "host=localhost port=5432".
+Execute service "last_vacuum" on host "host=localhost port=5432":
 
 
+ .. code-block:: perl
 
-\ ``check_pgactivity --debug --dbservice pg92,pg92s --service streaming_delta -w 60 -c 90``\
-
- Execute service "streaming_delta" between hosts "service=pg92" and "service=pg92s".
+    check_pgactivity -h localhost -p 5492 -s last_vacuum -w 30m -c 1h30m
 
 
 
-\ ``check_pgactivity --debug --dbservice pg92 -h slave -U supervisor --service streaming_delta -w 60 -c 90``\
 
- Execute service "streaming_delta" between hosts "service=pg92" and "host=slave user=supervisor".
-
+Execute service "hot_standby_delta" between hosts "service=pg92" and "service=pg92s":
 
 
-\ ``check_pgactivity -p 5433 -h slave --service hit_ratio --dbexclude idelone --dbexclude "(?i:sleep)" -w 90% -c 80%``\
+ .. code-block:: perl
 
- Execute service "hit_ratio" on host "slave" port "5433, excluding database matching the regexps "idelone" and "(?i:sleep)".
+    check_pgactivity --dbservice pg92,pg92s --service hot_standby_delta -w 32MB -c 160MB
 
 
 
-\ ``check_pgactivity -p 5433 -h slave --service hit_ratio --dbinclude importantone -w 90% -c 80%``\
 
- Execute service "hit_ratio" on host "slave" port "5433, only for databases matching the regexp "importantone".
+Execute service "streaming_delta" on host "service=pg92" to check its slave "stby1" with the IP address "192.168.1.11":
+
+
+ .. code-block:: perl
+
+    check_pgactivity --dbservice pg92 --slave "stby1 192.168.1.11" --service streaming_delta -w 32MB -c 160MB
+
+
+
+
+Execute service "hit_ratio" on host "slave" port "5433, excluding database matching the regexps "idelone" and "(?i:sleep)":
+
+
+ .. code-block:: perl
+
+    check_pgactivity -p 5433 -h slave --service hit_ratio --dbexclude idelone --dbexclude "(?i:sleep)" -w 90% -c 80%
+
+
+
+
+Execute service "hit_ratio" on host "slave" port "5433, only for databases matching the regexp "importantone":
+
+
+ .. code-block:: perl
+
+    check_pgactivity -p 5433 -h slave --service hit_ratio --dbinclude importantone -w 90% -c 80%
+
 
 
 
