@@ -2,12 +2,15 @@ Changelog
 =========
 
 WIP 1.25:
+  - add service pg_dump_backup
   - change units of service bgwriter (github issue #29)
   - support PostgreSQL 9.5
   - fix backends service to remove autovacuum from the connection count (github issue #14)
   - fix backends service to add walsenders to the connection count (github issue #14)
   - fix a harmless perl warning
   - fix wal_size service to support 9.5+
+  - fix corruption on status file on concurrent access
+  - fix bad estimation in btree bloat query with mostly NULL columns
 
 2015-09-28 1.24:
   - improve message for streaming_delta and hot_standby_delta services
