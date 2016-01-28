@@ -1,7 +1,7 @@
 Changelog
 =========
 
-2016-01-05 1.25:
+2016-01-28 1.25:
   - add service pg_dump_backup
   - change units of service bgwriter (github issue #29)
   - support PostgreSQL 9.5

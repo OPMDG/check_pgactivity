@@ -42,7 +42,7 @@ setlocale( LC_ALL, 'C' );
 
 $| = 1;
 
-$VERSION = '1.25beta1';
+$VERSION = '1.25';
 $PROGRAM = 'check_pgactivity';
 
 my $PG_VERSION_MIN = 70400;
@@ -5885,6 +5885,10 @@ __END__
   check_pgactivity -p 5433 -h slave --service hit_ratio --dbinclude importantone -w 90% -c 80%
 
 =back
+
+=head2 VERSION
+
+check_pgactivity version 1.25, released on Thu Jan 28 2016.
 
 =head2 LICENSING
 

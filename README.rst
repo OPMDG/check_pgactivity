@@ -1013,6 +1013,13 @@ Execute service "hit_ratio" on host "slave" port "5433, only for databases match
 
 
 
+VERSION
+=======
+
+
+check_pgactivity version 1.25, released on Thu Jan 28 2016.
+
+
 LICENSING
 =========
 
