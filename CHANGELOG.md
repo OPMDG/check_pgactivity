@@ -1,6 +1,9 @@
 Changelog
 =========
 
+WIP 1.26:
+  - force UTF8 encoding
+
 2016-01-28 1.25:
   - add service pg_dump_backup
   - change units of service bgwriter (github issue #29)

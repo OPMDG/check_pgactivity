@@ -828,7 +828,7 @@ sub query($$;$) {
     $ENV{PGHOST}     = $host->{'host'}      if defined $host->{'host'};
     $ENV{PGPORT}     = $host->{'port'}      if defined $host->{'port'};
     $ENV{PGUSER}     = $host->{'user'}      if defined $host->{'user'};
-    $ENV{PGOPTIONS}  = '-c client_min_messages=error -c statement_timeout=' . get_time($args{'timeout'}) * 1000;
+    $ENV{PGOPTIONS}  = '-c client_encoding=utf8 -c client_min_messages=error -c statement_timeout=' . get_time($args{'timeout'}) * 1000;
 
     dprint ("Query: $query\n");
     dprint ("Env. service: $ENV{PGSERVICE} \n") if defined $host->{'dbservice'};
