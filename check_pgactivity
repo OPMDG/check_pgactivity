@@ -38,6 +38,16 @@ use Pod::Usage;
 use Scalar::Util qw(looks_like_number);
 use Storable qw(lock_store lock_retrieve);
 
+use Config;
+use FindBin;
+
+# messing with PATH so pod2usage always find this script
+my @path = split /$Config{'path_sep'}/ => $ENV{'PATH'};
+push @path => $FindBin::Bin;
+$ENV{'PATH'} = join $Config{'path_sep'} => @path;
+undef @path;
+
+# force the env in english
 setlocale( LC_ALL, 'C' );
 
 $| = 1;

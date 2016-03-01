@@ -3,6 +3,7 @@ Changelog
 
 WIP 1.26:
   - force UTF8 encoding
+  - fix a bug where pod2usage couldn't find the original script
 
 2016-01-28 1.25:
   - add service pg_dump_backup
