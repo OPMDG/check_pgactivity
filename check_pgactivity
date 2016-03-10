@@ -2998,10 +2998,11 @@ sub check_hot_standby_delta {
     my $w_limit_replayed;
     my $c_limit_replayed;
     my @hosts;
-    my %args  = %{ $_[0] };
+    my %args            = %{ $_[0] };
     my $master_location = '';
-    my $num_clusters = 0;
-    my $me    = 'POSTGRES_HOT_STANDBY_DELTA';
+    my $num_clusters    = 0;
+    my $wal_size        = hex('ff000000');
+    my $me              = 'POSTGRES_HOT_STANDBY_DELTA';
     # we need to coalesce on pg_last_xlog_receive_location because it returns
     # NULL during WAL Shipping
     my $query = "
@@ -3062,6 +3063,8 @@ sub check_hot_standby_delta {
         $c_limit_replayed = $c_limit_received;
     }
 
+    $wal_size = hex('100000000') if $hosts[0]{'version_num'} >= $PG_VERSION_93;
+
     $w_limit_received = get_size( $w_limit_received );
     $c_limit_received = get_size( $c_limit_received );
     $w_limit_replayed = get_size( $w_limit_replayed );
@@ -3071,16 +3074,16 @@ sub check_hot_standby_delta {
     $num_clusters = 0;
 
     $master_location =~ m{^([0-9A-F]+)/([0-9A-F]+)$};
-    $master_location = (hex('ff000000') * hex($1)) + hex($2);
+    $master_location = ( $wal_size * hex($1) ) + hex($2);
 
     # compute deltas
     foreach my $host (@hosts) {
         next if $host->{'rs'}[0];
         my ($a, $b) = split(/\//, $host->{'rs'}[1]);
-        $host->{'receive_delta'} = $master_location - (hex('ff000000') * hex($a)) - hex($b);
+        $host->{'receive_delta'} = $master_location - ( $wal_size * hex($a) ) - hex($b);
 
         ($a, $b) = split(/\//, $host->{'rs'}[2]);
-        $host->{'replay_delta'} = $master_location - (hex('ff000000') * hex($a)) - hex($b);
+        $host->{'replay_delta'} = $master_location - ( $wal_size * hex($a) ) - hex($b);
 
         $host->{'name'} =~ s/ db=.*$//;
 
@@ -4810,6 +4813,7 @@ sub check_streaming_delta {
     my @hosts;
     my %slaves;
     my %args            = %{ $_[0] };
+    my $wal_size        = hex('ff000000');
     my $me              = 'POSTGRES_STREAMING_DELTA';
     my $master_location = '';
     my $num_clusters    = 0;
@@ -4840,6 +4844,9 @@ sub check_streaming_delta {
     ) if @hosts != 1;
 
     is_compat $hosts[0], 'streaming_delta', $PG_VERSION_91 or exit 1;
+
+    $wal_size = hex('100000000') if $hosts[0]{'version_num'} >= $PG_VERSION_93;
+
     if ( scalar @{ $args{'slave'} } ) {
         $slaves{$_} = 0 foreach ( split ( /,/, join ( ',', @{ $args{'slave'} } ) ) );
     }
@@ -4850,7 +4857,7 @@ sub check_streaming_delta {
         unless @rs;
 
     $rs[0][7] =~ m{^([0-9A-F]+)/([0-9A-F]+)$};
-    $master_location = (hex('ff000000') * hex($1)) + hex($2);
+    $master_location = ( $wal_size * hex($1) ) + hex($2);
 
     ($w_limit_flushed, $w_limit_replayed) = split /,/, $args{'warning'};
     ($c_limit_flushed, $c_limit_replayed) = split /,/, $args{'critical'};
@@ -4879,16 +4886,16 @@ sub check_streaming_delta {
         my $name;
 
         $host->[3] =~ m{^([0-9A-F]+)/([0-9A-F]+)$};
-        $send_delta = $master_location - (hex('ff000000') * hex($1)) - hex($2);
+        $send_delta = $master_location - ( $wal_size * hex($1) ) - hex($2);
 
         $host->[4] =~ m{^([0-9A-F]+)/([0-9A-F]+)$};
-        $write_delta = $master_location - (hex('ff000000') * hex($1)) - hex($2);
+        $write_delta = $master_location - ( $wal_size * hex($1) ) - hex($2);
 
         $host->[5] =~ m{^([0-9A-F]+)/([0-9A-F]+)$};
-        $flush_delta = $master_location - (hex('ff000000') * hex($1)) - hex($2);
+        $flush_delta = $master_location - ( $wal_size * hex($1) ) - hex($2);
 
         $host->[6] =~ m{^([0-9A-F]+)/([0-9A-F]+)$};
-        $replay_delta = $master_location - (hex('ff000000') * hex($1)) - hex($2);
+        $replay_delta = $master_location - ( $wal_size * hex($1) ) - hex($2);
 
         $name = "$host->[0]\@$host->[1]";
 
@@ -5580,9 +5587,10 @@ sub check_wal_files {
     my @perfdata;
     my @msg;
     my @hosts;
-    my %args    = %{ $_[0] };
-    my $me      = 'POSTGRES_WAL_FILES';
-    my %queries = (
+    my %args     = %{ $_[0] };
+    my $me       = 'POSTGRES_WAL_FILES';
+    my $wal_size = hex('ff000000');
+    my %queries  = (
     $PG_VERSION_95 => q{
         WITH wal_settings AS (
           SELECT setting::int + current_setting('wal_keep_segments')::int as max_nb_wal
@@ -5673,6 +5681,8 @@ sub check_wal_files {
 
     is_compat $hosts[0], 'wal_files', $PG_VERSION_81 or exit 1;
 
+    $wal_size = hex('100000000') if $hosts[0]{'version_num'} >= $PG_VERSION_93;
+
     @rs = @{ query_ver( $hosts[0], %queries ) };
 
     $first_seg = $rs[0][0];
@@ -5720,7 +5730,7 @@ sub check_wal_files {
         my @prev_lsn = @{ load( $hosts[0], 'last wal files LSN', $args{'status-file'} ) || [] };
 
         $curr_lsn =~ m{^([0-9A-F]+)/([0-9A-F]+)$};
-        $curr_lsn = (hex('ff000000') * hex($1)) + hex($2);
+        $curr_lsn = ( $wal_size * hex($1) ) + hex($2);
 
         unless ( @prev_lsn == 0 ) {
             my $rate = ($curr_lsn - $prev_lsn[1])/($now - $prev_lsn[0]);

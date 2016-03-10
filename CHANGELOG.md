@@ -4,6 +4,7 @@ Changelog
 WIP 1.26:
   - force UTF8 encoding
   - fix a bug where pod2usage couldn't find the original script
+  - fix wal size computation for 9.3+ (255 -vs- 256 seg of 16MB)
   - add argument --dump-status-file, useful for debugging
 
 2016-01-28 1.25:
