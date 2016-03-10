@@ -129,6 +129,12 @@ offers many options to measure and monitor useful performance metrics.
 
 
 
+\ **--dump-status-file**\
+
+ Dump the content of the status file and exit. This is useful for debug purpose.
+
+
+
 \ **-t**\ , \ **--timeout**\  TIMEOUT
 
  Timeout to use (default: "30s"). It can be specified as raw (in seconds) or as
