@@ -1039,6 +1039,6 @@ AUTHORS
 
 
 Author: Open PostgreSQL Monitoring Development Group
-Copyright: (C) 2012-2014 Open PostgreSQL Development Group
+Copyright: (C) 2012-2016 Open PostgreSQL Development Group
 
 
