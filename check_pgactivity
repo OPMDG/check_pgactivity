@@ -2508,7 +2508,7 @@ Check the most important settings.
 Warning and Critical thresholds are ignored.
 
 Specific parameters are :
-C<--work_mem>, C<--maintenance_work_mem>, C<--shared_buffers>,C<-- wal_buffers>,
+C<--work_mem>, C<--maintenance_work_mem>, C<--shared_buffers>,C<--wal_buffers>,
 C<--checkpoint_segments>, C<--effective_cache_size>, C<--no_check_autovacuum>,
 C<--no_check_fsync>, C<--no_check_enable>, C<--no_check_track_counts>.
 
@@ -2608,7 +2608,7 @@ sub check_connection {
 
 Perform the given user query.
 
-The query is specified with the C<--query parameter>. The first column will be
+The query is specified with the C<--query> parameter. The first column will be
 used to perform the test for the status if warning and critical are provided.
 
 The warning and critical arguments are optional. They can be of format integer
