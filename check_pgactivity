@@ -4515,8 +4515,14 @@ sub check_pg_dump_backup {
             or $lasts{$dbname}[0] < $mtime;
     }
 
-    # Check against databases queried from pg_database
-    @rs = @{ query( $hosts[0], $sql ) };
+    if ( scalar @dbinclude ) {
+        push @rs => [ $_ ] foreach @dbinclude;
+    }
+    else {
+        # Check against databases queried from pg_database
+        @rs = @{ query( $hosts[0], $sql ) };
+    }
+
 
     # If global_pattern is defined, add them to the list to check
     push @rs => [ "globals_objects" ] if $global_pattern;
@@ -4561,10 +4567,14 @@ sub check_pg_dump_backup {
             $perf_newest .= ";$c_limit" if defined $c_limit;
 
             if ( defined $c_limit and $last_age > $c_limit ) {
-                push @msg_crit => sprintf("'%s_newest'=%ds", $db, $last_age);
+                push @msg_crit => sprintf("'%s_newest'=%s", $db,
+                    to_interval( $last_age )
+                );
             }
             elsif ( defined $w_limit and $last_age > $w_limit ) {
-                push @msg_warn => sprintf("'%s_newest'=%ds", $db, $last_age);
+                push @msg_warn => sprintf("'%s_newest'=%s", $db,
+                    to_interval( $last_age )
+                );
             }
         }
 
@@ -5921,10 +5931,10 @@ unless ($args{'psql'}) {
 # pre-compile given regexp
 unless ( $args{'service'} eq 'pg_dump_backup' ) {
     $_ = qr/$_/ for @{ $args{'exclude'} } ;
+    $_ = qr/$_/ for @{ $args{'dbinclude'} };
 }
-$_ = qr/$_/ for ( @{ $args{'dbexclude'} } );
-$_ = qr/$_/ for ( @{ $args{'dbinclude'} } );
 
+$_ = qr/$_/ for @{ $args{'dbexclude'} };
 
 exit $services{ $args{'service'} }{'sub'}->( \%args );
 
