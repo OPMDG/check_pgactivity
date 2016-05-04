@@ -1091,17 +1091,22 @@ sub check_archive_folder {
     my @msg_crit;
     my @msg_warn;
     my @perfdata;
+    my @history_files;
     my @filelist;
     my @filelist_sorted;
+    my @branch_wals;
     my $w_limit;
     my $c_limit;
     my $timeline;
+    my $start_tl;
+    my $end_tl;
     my $wal;
     my $seg;
     my $latest_wal_age;
     my $dh;
     my $wal_version;
     my $filename_re;
+    my $history_re;
     my $suffix         = $args{'suffix'};
     my $check_size     = not $args{'ignore-wal-size'};
     my $me             = 'POSTGRES_ARCHIVES';
@@ -1150,6 +1155,11 @@ sub check_archive_folder {
     @filelist = map { [ $_ => (stat("$args{'path'}/$_"))[9,7] ] }
         grep( /$filename_re/, readdir($dh) );
 
+    seekdir( $dh, 0 );
+
+    $history_re = qr/^[0-9A-F]{8}.history$suffix$/;
+    @history_files = grep /$history_re/, readdir($dh) ;
+
     closedir($dh);
 
     return unknown $me, ['No archived WAL found.'] unless @filelist;
@@ -1164,12 +1174,12 @@ sub check_archive_folder {
     $latest_wal_age = time() - $filelist_sorted[-1][1];
 
     # We need to read the XLOG_PAGE_MAGIC to be able to guess $seg_per_wal
-    open FIRST_WAL, "<$args{'path'}/$filelist_sorted[-1][0]";
+    open FIRST_WAL, "<", "$args{'path'}/$filelist_sorted[-1][0]";
     read(FIRST_WAL, $wal_version, 2);
     close FIRST_WAL;
     $wal_version = unpack('S', $wal_version);
 
-    dprint ("wal version: $wal_version\n");
+    dprint ("wal version: $wal_version");
 
     # FIXME: As there is no consensus about XLOG_PAGE_MAGIC algo accros postrges
     # versions this piece of code should checked for compatibility for each new
@@ -1181,17 +1191,32 @@ sub check_archive_folder {
         "latest_archive_age=${latest_wal_age}s;$w_limit;$c_limit ".
         "num_archives=". scalar(@filelist_sorted);
 
-    $timeline = hex(substr($filelist_sorted[-1][0], 0, 8));
+    $start_tl = substr($filelist_sorted[0][0], 0, 8);
+    $end_tl   = substr($filelist_sorted[-1][0], 0, 8);
+    $timeline = $start_tl + 0;
     $wal = hex(substr($filelist_sorted[0][0], 8, 8));
     $seg = hex(substr($filelist_sorted[0][0], 16, 8));
 
+    # look for history files if timeline differs
+    if ( $start_tl ne $end_tl ) {
+        if ( -s "$args{'path'}/$end_tl.history" ) {
+            open my $fd, "<", "$args{'path'}/$end_tl.history";
+            while ( <$fd> ) {
+                next unless m{^\s*(\d)\t([0-9A-F]+)/([0-9A-F]+)\t.*$};
+                push @branch_wals =>
+                    sprintf("%08d%08s%08X", $1, $2, hex($3)>>24);
+            }
+            close $fd;
+        }
+    }
+
     # check ALL archives are here.
-    for ( my $i = 0; $i <= $#filelist_sorted ; $i++ ) {
+    for ( my $i=0, my $j=0; $i <= $#filelist_sorted ; $i++, $j++ ) {
         dprint ("Checking WAL $filelist_sorted[$i][0]\n");
-        my $curr = sprintf('%08X%08X%08X%s',
+        my $curr = sprintf('%08d%08X%08X%s',
             $timeline,
-            $wal + int(($seg + $i)/$seg_per_wal),
-            ($seg + $i)%$seg_per_wal,
+            $wal + int(($seg + $j)/$seg_per_wal),
+            ($seg + $j)%$seg_per_wal,
             $suffix
         );
 
@@ -1203,6 +1228,12 @@ sub check_archive_folder {
         if ( $check_size and $filelist_sorted[$i][2] != 16777216 ) {
             push @msg => "'$curr' is not 16MB";
             last;
+        }
+
+        if ( grep /$curr/, @branch_wals ) {
+            print "Found a boundary @ $curr !\n";
+            $timeline++;
+            $j--;
         }
     }
 
