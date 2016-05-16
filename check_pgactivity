@@ -69,6 +69,9 @@ my $PG_VERSION_93  = 90300;
 my $PG_VERSION_94  = 90400;
 my $PG_VERSION_95  = 90500;
 
+# reference to the output sub
+my $output_fmt;
+
 # Available services and descriptions.
 #
 # The referenced sub called to exec each service takes one parameters: a
@@ -367,7 +370,8 @@ my %args = (
     'help'                  => 0,
     'debug'                 => 0,
     'timeout'               => '30s',
-    'dump-status-file'      => 0
+    'dump-status-file'      => 0,
+    'format'                => 'nagios'
 );
 
 # Set name of the program without path*
@@ -1017,25 +1021,52 @@ sub dprint {
 }
 
 sub unknown($;$$$) {
-    return output( 3, $_[0], $_[1], $_[2], $_[3] );
+    return $output_fmt->( 3, $_[0], $_[1], $_[2], $_[3] );
 }
 
 sub critical($;$$$) {
-    return output( 2, $_[0], $_[1], $_[2], $_[3] );
+    return $output_fmt->( 2, $_[0], $_[1], $_[2], $_[3] );
 }
 
 sub warning($;$$$) {
-    return output( 1, $_[0], $_[1], $_[2], $_[3] );
+    return $output_fmt->( 1, $_[0], $_[1], $_[2], $_[3] );
 }
 
 sub ok($;$$$) {
-    return output( 0, $_[0], $_[1], $_[2], $_[3] );
+    return $output_fmt->( 0, $_[0], $_[1], $_[2], $_[3] );
 }
 
-sub output ($$;$$$) {
+sub debug_output ($$;$$$) {
+    my $rc      = shift;
+    my $service = shift;
+    my $ret;
+    my @msg;
+    my @perfdata;
+    my @longmsg;
+
+    @msg      = @{ $_[0] } if defined $_[0];
+    @perfdata = @{ $_[1] } if defined $_[1];
+    @longmsg  = @{ $_[2] } if defined $_[2];
+
+    $ret  = sprintf "%-15s: %s\n", 'Service', $service;
+
+    $ret .= sprintf "%-15s: 0 (%s)\n", "Returns", "OK"       if $rc == 0;
+    $ret .= sprintf "%-15s: 1 (%s)\n", "Returns", "WARNING"  if $rc == 1;
+    $ret .= sprintf "%-15s: 2 (%s)\n", "Returns", "CRITICAL" if $rc == 2;
+    $ret .= sprintf "%-15s: 3 (%s)\n", "Returns", "UNKNOWN"  if $rc == 3;
+
+    $ret .= sprintf "%-15s: %s\n", "Message", $_ foreach @msg;
+    $ret .= sprintf "%-15s: %s\n", "Long message", $_ foreach @longmsg;
+    $ret .= sprintf "%-15s: %s\n", "Perdata", $_ foreach @perfdata;
+
+    print $ret;
+
+    return $rc;
+}
+
+sub nagios_output ($$;$$$) {
     my $rc  = shift;
     my $ret = shift;
-    my $state;
     my @msg;
     my @perfdata;
     my @longmsg;
@@ -5968,7 +5999,8 @@ GetOptions(
         'timeout|t=s',
         'dbexclude=s',
         'dbinclude=s',
-        'dump-status-file!'
+        'dump-status-file!',
+        'format|F=s'
 ) or pod2usage( -exitval => 127 );
 
 list_services() if $args{'list'};
@@ -6059,6 +6091,18 @@ unless ( $args{'service'} eq 'pg_dump_backup' ) {
 }
 
 $_ = qr/$_/ for @{ $args{'dbexclude'} };
+
+# Output format
+for ( $args{'format'} ) {
+       if ( /^nagios$/ ) { $output_fmt = \&nagios_output }
+    elsif ( /^debug$/  ) { $output_fmt = \&debug_output  }
+    else {
+        pod2usage(
+            -message => "FATAL: unrecognized output format \"$_\" (see \"--output\")",
+            -exitval => 127
+        );
+    }
+}
 
 exit $services{ $args{'service'} }{'sub'}->( \%args );
 
