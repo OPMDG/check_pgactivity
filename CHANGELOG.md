@@ -1,5 +1,7 @@
 Changelog
 =========
+WIP 2.0:
+  - support various output format
 
 WIP 1.26:
   - force UTF8 encoding
