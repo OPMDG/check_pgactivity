@@ -3094,7 +3094,7 @@ sub check_hot_standby_delta {
         $c_limit_replayed = $c_limit_received;
     }
 
-    $wal_size = hex('100000000') if $hosts[0]{'version_num'} >= $PG_VERSION_93;
+    $wal_size = 4294967296 if $hosts[0]{'version_num'} >= $PG_VERSION_93;
 
     $w_limit_received = get_size( $w_limit_received );
     $c_limit_received = get_size( $c_limit_received );
@@ -4886,7 +4886,7 @@ sub check_streaming_delta {
 
     is_compat $hosts[0], 'streaming_delta', $PG_VERSION_91 or exit 1;
 
-    $wal_size = hex('100000000') if $hosts[0]{'version_num'} >= $PG_VERSION_93;
+    $wal_size = 4294967296 if $hosts[0]{'version_num'} >= $PG_VERSION_93;
 
     if ( scalar @{ $args{'slave'} } ) {
         $slaves{$_} = 0 foreach ( split ( /,/, join ( ',', @{ $args{'slave'} } ) ) );
@@ -5722,7 +5722,7 @@ sub check_wal_files {
 
     is_compat $hosts[0], 'wal_files', $PG_VERSION_81 or exit 1;
 
-    $wal_size = hex('100000000') if $hosts[0]{'version_num'} >= $PG_VERSION_93;
+    $wal_size = 4294967296 if $hosts[0]{'version_num'} >= $PG_VERSION_93;
 
     @rs = @{ query_ver( $hosts[0], %queries ) };
 
