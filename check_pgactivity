@@ -1107,6 +1107,25 @@ sub nagios_output ($$;$$$) {
     return $rc;
 }
 
+sub nagios_strict_output ($$;$$$) {
+
+    my $rc  = shift;
+    my $ret = shift;
+    my @msg;
+    my @perfdata;
+    my @longmsg;
+
+    @msg      = @{ $_[0] } if defined $_[0];
+    @perfdata = @{ $_[1] } if defined $_[1];
+    @longmsg  = @{ $_[2] } if defined $_[2];
+
+    map { $$_[2] = '' if exists $$_[2] and defined $$_[2]
+                and $$_[2] !~ /\A[Bcs%]\z/
+    } @perfdata;
+
+    return nagios_output( $rc, $ret, \@msg, \@perfdata, \@longmsg );
+}
+
 =head2 SERVICES
 
 Descriptions and parameters of available services.
@@ -6118,8 +6137,9 @@ $_ = qr/$_/ for @{ $args{'dbexclude'} };
 
 # Output format
 for ( $args{'format'} ) {
-       if ( /^nagios$/ ) { $output_fmt = \&nagios_output }
-    elsif ( /^debug$/  ) { $output_fmt = \&debug_output  }
+       if ( /^nagios$/        ) { $output_fmt = \&nagios_output }
+    elsif ( /^nagios_strict$/ ) { $output_fmt = \&nagios_strict_output }
+    elsif ( /^debug$/         ) { $output_fmt = \&debug_output  }
     else {
         pod2usage(
             -message => "FATAL: unrecognized output format \"$_\" (see \"--output\")",
