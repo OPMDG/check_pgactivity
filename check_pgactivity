@@ -5034,24 +5034,25 @@ sub check_table_unlogged {
     my @dbinclude   = @{ $args{'dbinclude'} };
     my @dbexclude   = @{ $args{'dbexclude'} };
     my $me          = 'POSTGRES_TABLE_UNLOGGED';
-    my %queries     = (
-                $PG_VERSION_95 =>  q{
-                    SELECT  current_database(), nsp.nspname AS schemaname, cls.relname, cls.relpersistence 
-                    FROM pg_class cls 
-                        join pg_namespace nsp on nsp.oid = cls.relnamespace
-                    WHERE 
-                        cls.relkind = 'r'
-                        AND nsp.nspname not like 'pg_toast%'
-                        AND nsp.nspname NOT IN ('information_schema', 'pg_catalog')
-                }
-    );
+    my $query       = q{
+        SELECT current_database(), nsp.nspname AS schemaname, cls.relname,
+               cls.relpersistence
+        FROM pg_class cls
+            join pg_namespace nsp on nsp.oid = cls.relnamespace
+        WHERE
+            cls.relkind = 'r'
+            AND nsp.nspname not like 'pg_toast%'
+            AND nsp.nspname NOT IN ('information_schema', 'pg_catalog')
+    };
 
     @hosts = @{ parse_hosts %args };
 
     pod2usage(
-        -message => 'FATAL: you must give only one host with service "table_unlogged"".',
+        -message => 'FATAL: you must give one (and only one) host with service "table_unlogged".',
         -exitval => 127
     ) if @hosts != 1;
+
+    is_compat $hosts[0], 'table_unlogged', $PG_VERSION_95 or exit 1;
 
     @all_db = @{ get_all_dbname( $hosts[0] ) };
 
@@ -5065,20 +5066,20 @@ sub check_table_unlogged {
         next ALLDB_LOOP if grep { $db =~ /$_/ } @dbexclude;
         next ALLDB_LOOP if @dbinclude and not grep { $db =~ /$_/ } @dbinclude;
 
-        @rc = @{ query_ver( $hosts[0], %queries, $db ) };
+        @rc = @{ query( $hosts[0], $query, $db ) };
 
         UNLOGGED_LOOP: foreach my $unlogged (@rc) {
 
             foreach my $exclude_re ( @{ $args{'exclude'} } ) {
                 if ("$unlogged->[0].$unlogged->[1].$unlogged->[2]" =~ m/$exclude_re/){
-			$total_extbl++;                  
-			next UNLOGGED_LOOP ;
+                    $total_extbl++;
+                    next UNLOGGED_LOOP ;
                 }
                 
             }
 
             # unlogged table count
-            if ($unlogged->[3] eq "u") {            
+            if ($unlogged->[3] eq "u") {
                 # long message info :
                 push @longmsg => sprintf "%s.%s.%s (unlogged);",
                     $unlogged->[0], $unlogged->[1], $unlogged->[2];
@@ -5095,17 +5096,18 @@ sub check_table_unlogged {
                 $db, $tbl_unlogged;
     }
 
-    if ($total_extbl > 0){
-	push @longmsg => sprintf "%i exclude table from check", $total_extbl ;
-    }
+    push @longmsg => sprintf "%i exclude table from check", $total_extbl
+        if $total_extbl > 0;
+
     # we use the critical count for the **total** number of unlogged table
     return critical $me,
         [ "$c_count/$total_tbl table(s) unlogged" ],
-        [ @perfdata ], [ @longmsg ]
+        \@perfdata, \@longmsg
             if $c_count > 0;
+
     return ok $me, 
         [ "No unlogged table" ],
-        [ @perfdata ], [ @longmsg ];
+        \@perfdata, \@longmsg;
     
 }
     
