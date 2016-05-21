@@ -289,6 +289,15 @@ The Warning threshold.
 
 The Critical threshold.
 
+=item B<-F>, B<--format> OUTPUT_FORMAT
+
+The output format. Supported output are: C<nagios>, C<nagios_strict> and
+C<debug>.
+
+The C<nagios_strict> format is equivalent to the C<nagios> format. The only
+difference is that it enforces the unit follow the strict nagios specs: B, c, s
+or %. Any unit not beeing in this list is dropped (Bps, Tps, etc).
+
 =item B<--tmpdir> DIRECTORY
 
 Path to a directory where the script can create temporary files. The
