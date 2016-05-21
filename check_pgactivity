@@ -291,8 +291,12 @@ The Critical threshold.
 
 =item B<-F>, B<--format> OUTPUT_FORMAT
 
-The output format. Supported output are: C<nagios>, C<nagios_strict> and
-C<debug>.
+The output format. Supported output are: C<binary>, C<debug>, C<nagios> and
+ C<nagios_strict>.
+
+Using the C<binary> format, the results are written in a binary file (using perl
+module C<Storable>) given in argument C<--output>. If no output is given,
+defaults to file C<check_pgactivity.out> in the same directory as the script.
 
 The C<nagios_strict> format is equivalent to the C<nagios> format. The only
 difference is that it enforces the unit follow the strict nagios specs: B, c, s
@@ -316,6 +320,12 @@ directory as the script.
 =item B<--dump-status-file>
 
 Dump the content of the status file and exit. This is useful for debug purpose.
+
+=item B<--dump-bin-file> [PATH]
+
+Dump the content of the given binary file previously created using
+C<--format binary>. If no path is given, defaults to file
+C<check_pgactivity.out> in the same directory as the script.
 
 =item B<-t>, B<--timeout> TIMEOUT
 
@@ -359,6 +369,7 @@ my %args = (
     'psql'                  => undef,
     'path'                  => undef,
     'status-file'           => dirname(__FILE__) . '/check_pgactivity.data',
+    'output'                => dirname(__FILE__) . '/check_pgactivity.out',
     'query'                 => undef,
     'type'                  => undef,
     'reverse'               => 0,
@@ -380,6 +391,7 @@ my %args = (
     'debug'                 => 0,
     'timeout'               => '30s',
     'dump-status-file'      => 0,
+    'dump-bin-file'         => undef,
     'format'                => 'nagios'
 );
 
@@ -509,13 +521,16 @@ sub load($$$) {
     return $all->{$hostkey}{$name};
 }
 
-sub dump_status_file() {
-    my $all = lock_retrieve($args{'status-file'});
+sub dump_status_file {
+    my $f = shift;
+    my $all;
 
-    {
-        local $Data::Dumper::Terse = 1;
-        print Dumper($all);
-    }
+    $f = $args{'status-file'} unless defined $f;
+    $f = $args{'output'} unless $f ;
+
+    $all = lock_retrieve($f);
+
+    print Data::Dumper->new( [ $all ] )->Terse(1)->Dump;
 
     exit 0;
 }
@@ -1048,6 +1063,33 @@ sub warning($;$$$) {
 
 sub ok($;$$$) {
     return $output_fmt->( 0, $_[0], $_[1], $_[2], $_[3] );
+}
+
+sub bin_output ($$;$$$) {
+    my $rc      = shift;
+    my $service = shift;
+    my $all = {};
+    my @msg;
+    my @perfdata;
+    my @longmsg;
+
+    @msg      = @{ $_[0] } if defined $_[0];
+    @perfdata = @{ $_[1] } if defined $_[1];
+    @longmsg  = @{ $_[2] } if defined $_[2];
+
+    $all = lock_retrieve( $args{'output'} ) if -r $args{'output'};
+
+    $all->{ $args{'service'} } = {
+        'timestamp' => time,
+        'rc'        => $rc,
+        'service'   => $service,
+        'messages'  => \@msg,
+        'perfdata'  => \@perfdata,
+        'longmsg'   => \@longmsg
+    };
+
+    lock_store( $all, $args{'output'} )
+        or die "Can't store data in '$args{'output'}'!\n";
 }
 
 sub debug_output ($$;$$$) {
@@ -6019,6 +6061,7 @@ GetOptions(
         'dbinclude=s',
         'debug!',
         'dump-status-file!',
+        'dump-bin-file:s',
         'effective_cache_size=i',
         'exclude=s',
         'format|F=s',
@@ -6034,6 +6077,7 @@ GetOptions(
         'no_check_enable!',
         'no_check_fsync!',
         'no_check_track_counts!',
+        'output|o=s',
         'path=s',
         'pattern=s',
         'port|p=s',
@@ -6060,7 +6104,8 @@ version()       if $args{'version'};
 
 pod2usage( -verbose => 2 ) if $args{'help'};
 
-dump_status_file() if $args{'dump-status-file'};
+dump_status_file( $args{'dump-bin-file'} ) if $args{'dump-status-file'}
+                                           or defined $args{'dump-bin-file'};
 
 
 # One service must be given
@@ -6146,12 +6191,13 @@ $_ = qr/$_/ for @{ $args{'dbexclude'} };
 
 # Output format
 for ( $args{'format'} ) {
-       if ( /^nagios$/        ) { $output_fmt = \&nagios_output }
-    elsif ( /^nagios_strict$/ ) { $output_fmt = \&nagios_strict_output }
+       if ( /^binary$/        ) { $output_fmt = \&bin_output  }
     elsif ( /^debug$/         ) { $output_fmt = \&debug_output  }
+    elsif ( /^nagios$/        ) { $output_fmt = \&nagios_output }
+    elsif ( /^nagios_strict$/ ) { $output_fmt = \&nagios_strict_output }
     else {
         pod2usage(
-            -message => "FATAL: unrecognized output format \"$_\" (see \"--output\")",
+            -message => "FATAL: unrecognized output format \"$_\" (see \"--format\")",
             -exitval => 127
         );
     }
