@@ -900,6 +900,31 @@ Descriptions and parameters of available services.
  perfdata. This list contains the fully qualified bloated table name, the
  estimated bloat size, the table size and the bloat percentage.
 
+\ **table_unlogged**\ (9.5+)
+
+ Check if table are changed to unlogged. In 9.5+, you can switch between logged and unlogged.
+
+ Without \ ``--critical``\  or \ ``--warning``\  parameters, this service attempts
+ to fetch all ``unlogged`` table 
+
+ A critical alert is raised if an unlogged table is detected.
+
+ This service supports both \ ``--dbexclude``\  and \ ``--dbinclude``\  parameters.
+
+ This service supports a \ ``--exclude REGEX``\  parameter to exclude relations
+ matching the given regular expression. The regular expression applies to
+ "database.schema_name.relation_name". This allows you to filter either on a
+ relation name for all schemas and databases, filter on a qualified named relation
+ (schema + relation) for all databases or filter on a qualified named relation in
+ only one database.
+
+ You can use multiple \ ``--exclude REGEX``\  parameters.
+
+ Perfdata will return the number of unlogged tables per database.
+ 
+ A list of the unlogged tables detail will be returned after the
+ perfdata. This list contains the fully qualified table name. If
+ excluded table is set, the number of exclude table is returned.
 
 
 \ **temp_files**\  (8.1+)

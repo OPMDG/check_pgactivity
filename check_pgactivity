@@ -103,6 +103,11 @@ my %services = (
         'sub'  => \&check_database_size,
         'desc' => 'Variation of database sizes.',
     },
+    'table_unlogged' => {
+        'sub'  => \&check_table_unlogged,
+        'desc' => 'Check unlogged table'
+    },
+    
     'wal_files' => {
         'sub'  => \&check_wal_files,
         'desc' => 'Total number of WAL files.',
@@ -4987,6 +4992,123 @@ sub check_streaming_delta {
     return ok($me, [ "$num_clusters slaves checked" ], \@perfdata);
 }
 
+
+=item B<table_unlogged>
+
+Check if table are changed to unlogged. In 9.5, you can switch between logged and unlogged.
+
+Without C<--critical>  or C<--warning> parameters, this service attempts to fetch 
+all unlogged tables. 
+
+A critical alert is raised if an unlogged table is detected.
+
+This service supports both C<--dbexclude>  and C<--dbinclude> parameters.
+
+This service supports a C<--exclude REGEX>  parameter to exclude relations
+matching the given regular expression. The regular expression applies to
+"database.schema_name.relation_name". This allows you to filter either on a
+relation name for all schemas and databases, filter on a qualified named relation
+(schema + relation) for all databases or filter on a qualified named relation in
+only one database.
+
+You can use multiple C<--exclude REGEX>  parameters.
+
+Perfdata will return the number of unlogged tables per database.
+
+A list of the unlogged tables detail will be returned after the
+perfdata. This list contains the fully qualified table name. If
+excluded table is set, the number of exclude table is returned.
+
+
+=cut
+sub check_table_unlogged {
+    my @perfdata;
+    my @longmsg;
+    my @rs;
+    my @hosts;
+    my @all_db;
+    my $total_tbl   = 0; # num of table checked, without excluded ones
+    my $total_extbl = 0; # num of excluded table
+    my $c_count     = 0;
+    my %args        = %{ $_[0] };
+    my @dbinclude   = @{ $args{'dbinclude'} };
+    my @dbexclude   = @{ $args{'dbexclude'} };
+    my $me          = 'POSTGRES_TABLE_UNLOGGED';
+    my %queries     = (
+                $PG_VERSION_95 =>  q{
+                    SELECT  current_database(), nsp.nspname AS schemaname, cls.relname, cls.relpersistence 
+                    FROM pg_class cls 
+                        join pg_namespace nsp on nsp.oid = cls.relnamespace
+                    WHERE 
+                        cls.relkind = 'r'
+                        AND nsp.nspname not like 'pg_toast%'
+                        AND nsp.nspname NOT IN ('information_schema', 'pg_catalog')
+                }
+    );
+
+    @hosts = @{ parse_hosts %args };
+
+    pod2usage(
+        -message => 'FATAL: you must give only one host with service "table_unlogged"".',
+        -exitval => 127
+    ) if @hosts != 1;
+
+    @all_db = @{ get_all_dbname( $hosts[0] ) };
+
+    # Iterate over all db
+    ALLDB_LOOP: foreach my $db (sort @all_db) {
+        my @rc;
+        
+        my $nb_tbl       = 0;
+        my $tbl_unlogged = 0;
+
+        next ALLDB_LOOP if grep { $db =~ /$_/ } @dbexclude;
+        next ALLDB_LOOP if @dbinclude and not grep { $db =~ /$_/ } @dbinclude;
+
+        @rc = @{ query_ver( $hosts[0], %queries, $db ) };
+
+        UNLOGGED_LOOP: foreach my $unlogged (@rc) {
+
+            foreach my $exclude_re ( @{ $args{'exclude'} } ) {
+                if ("$unlogged->[0].$unlogged->[1].$unlogged->[2]" =~ m/$exclude_re/){
+			$total_extbl++;                  
+			next UNLOGGED_LOOP ;
+                }
+                
+            }
+
+            # unlogged table count
+            if ($unlogged->[3] eq "u") {            
+                # long message info :
+                push @longmsg => sprintf "%s.%s.%s (unlogged);",
+                    $unlogged->[0], $unlogged->[1], $unlogged->[2];
+                    
+                $tbl_unlogged++;
+            }
+
+            $nb_tbl++;
+        }
+
+        $total_tbl += $nb_tbl;
+        $c_count += $tbl_unlogged;
+        push @perfdata => sprintf "'table unlogged in %s'=%s",
+                $db, $tbl_unlogged;
+    }
+
+    if ($total_extbl > 0){
+	push @longmsg => sprintf "%i exclude table from check", $total_extbl ;
+    }
+    # we use the critical count for the **total** number of unlogged table
+    return critical $me,
+        [ "$c_count/$total_tbl table(s) unlogged" ],
+        [ @perfdata ], [ @longmsg ]
+            if $c_count > 0;
+    return ok $me, 
+        [ "No unlogged table" ],
+        [ @perfdata ], [ @longmsg ];
+    
+}
+    
 
 =item B<table_bloat>
 
