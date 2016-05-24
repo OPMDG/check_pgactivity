@@ -291,8 +291,8 @@ The Critical threshold.
 
 =item B<-F>, B<--format> OUTPUT_FORMAT
 
-The output format. Supported output are: C<binary>, C<debug>, C<nagios> and
- C<nagios_strict>.
+The output format. Supported output are: C<binary>, C<debug>, C<human>,
+C<nagios> and C<nagios_strict>.
 
 Using the C<binary> format, the results are written in a binary file (using perl
 module C<Storable>) given in argument C<--output>. If no output is given,
@@ -1115,6 +1115,64 @@ sub debug_output ($$;$$$) {
     $ret .= sprintf "%-15s: %s\n", "Long message", $_ foreach @longmsg;
     $ret .= sprintf "%-15s: %s\n", "Perfdata",
         Data::Dumper->new([ $_ ])->Indent(0)->Terse(1)->Dump foreach @perfdata;
+
+    print $ret;
+
+    return $rc;
+}
+
+sub human_output ($$;$$$) {
+    my $rc      = shift;
+    my $service = shift;
+    my $ret;
+    my @msg;
+    my @perfdata;
+    my @longmsg;
+
+    @msg      = @{ $_[0] } if defined $_[0];
+    @perfdata = @{ $_[1] } if defined $_[1];
+    @longmsg  = @{ $_[2] } if defined $_[2];
+
+    $ret  = sprintf "%-15s: %s\n", 'Service', $service;
+
+    $ret .= sprintf "%-15s: 0 (%s)\n", "Returns", "OK"       if $rc == 0;
+    $ret .= sprintf "%-15s: 1 (%s)\n", "Returns", "WARNING"  if $rc == 1;
+    $ret .= sprintf "%-15s: 2 (%s)\n", "Returns", "CRITICAL" if $rc == 2;
+    $ret .= sprintf "%-15s: 3 (%s)\n", "Returns", "UNKNOWN"  if $rc == 3;
+
+    $ret .= sprintf "%-15s: %s\n", "Message", $_ foreach @msg;
+    $ret .= sprintf "%-15s: %s\n", "Long message", $_ foreach @longmsg;
+
+    foreach my $perfdata ( @perfdata ) {
+        if (exists $$perfdata[2] and $$perfdata[2] =~ /B$/) {
+            $ret .= sprintf "%-15s: %s=%s", "Perfdata",
+                $$perfdata[0], to_size($$perfdata[1]);
+            $ret .= sprintf " warn=%s", to_size( $$perfdata[3] ) if exists $$perfdata[3];
+            $ret .= sprintf " crit=%s", to_size( $$perfdata[4] ) if exists $$perfdata[4];
+            $ret .= sprintf " min=%s", to_size( $$perfdata[5] ) if exists $$perfdata[5];
+            $ret .= sprintf " max=%s", to_size( $$perfdata[6] ) if exists $$perfdata[6];
+            $ret .= "\n";
+        }
+        elsif (exists $$perfdata[2] and $$perfdata[2] =~ /s$/) {
+            $ret .= sprintf "%-15s: %s=%s", "Perfdata",
+                $$perfdata[0], to_interval( $$perfdata[1] );
+            $ret .= sprintf " warn=%s", to_interval( $$perfdata[3] ) if exists $$perfdata[3];
+            $ret .= sprintf " crit=%s", to_interval( $$perfdata[4] ) if exists $$perfdata[4];
+            $ret .= sprintf " min=%s", to_interval( $$perfdata[5] ) if exists $$perfdata[5];
+            $ret .= sprintf " max=%s", to_interval( $$perfdata[6] ) if exists $$perfdata[6];
+            $ret .= "\n";
+        }
+        else {
+            $ret .= sprintf "%-15s: %s=%s", "Perfdata",
+                $$perfdata[0], $$perfdata[1];
+            $ret .= sprintf "%s", $$perfdata[2] if exists $$perfdata[2];
+            $ret .= sprintf " warn=%s", $$perfdata[3] if exists $$perfdata[3];
+            $ret .= sprintf " crit=%s", $$perfdata[4] if exists $$perfdata[4];
+            $ret .= sprintf " min=%s", $$perfdata[5] if exists $$perfdata[5];
+            $ret .= sprintf " max=%s", $$perfdata[6] if exists $$perfdata[6];
+            $ret .= "\n";
+        }
+    }
 
     print $ret;
 
@@ -6193,6 +6251,7 @@ $_ = qr/$_/ for @{ $args{'dbexclude'} };
 for ( $args{'format'} ) {
        if ( /^binary$/        ) { $output_fmt = \&bin_output  }
     elsif ( /^debug$/         ) { $output_fmt = \&debug_output  }
+    elsif ( /^human$/         ) { $output_fmt = \&human_output  }
     elsif ( /^nagios$/        ) { $output_fmt = \&nagios_output }
     elsif ( /^nagios_strict$/ ) { $output_fmt = \&nagios_strict_output }
     else {
