@@ -1,11 +1,14 @@
 Changelog
 =========
-
-WIP 1.26:
+WIP 2.0:
+  - support various output format
   - force UTF8 encoding
   - fix a bug where pod2usage couldn't find the original script
   - fix wal size computation for 9.3+ (255 -vs- 256 seg of 16MB)
+  - do not connect ot the cluster if using --dbinclude for service pg_dump_backup
   - add argument --dump-status-file, useful for debugging
+  - add service "table_unlogged"
+  - add basic support to timeline cross in service archive_folder 
 
 2016-01-28 1.25:
   - add service pg_dump_backup
