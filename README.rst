@@ -998,7 +998,7 @@ Execute service "last_vacuum" on host "host=localhost port=5432":
 
  .. code-block:: perl
 
-    check_pgactivity -h localhost -p 5492 -s last_vacuum -w 30m -c 1h30m
+    check_pgactivity -h localhost -p 5432 -s last_vacuum -w 30m -c 1h30m
 
 
 
