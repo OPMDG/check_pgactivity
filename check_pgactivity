@@ -241,6 +241,10 @@ Database server host or socket directory (default: "localhost").
 
 Database user name (default: "postgres").
 
+=item B<--password> PASSWORD
+
+Database password
+
 =item B<-p>, B<--port> PORT
 
 Database server port (default: "5432").
@@ -346,6 +350,7 @@ my %args = (
     'tmpdir'                => File::Spec->tmpdir(),
     'psql'                  => undef,
     'path'                  => undef,
+    'password'              => undef,
     'status-file'           => dirname(__FILE__) . '/check_pgactivity.data',
     'query'                 => undef,
     'type'                  => undef,
@@ -793,7 +798,8 @@ sub parse_hosts(\%) {
         my @dbnames = split( /,/, $args{'dbname'} );
         my @dbusers = split( /,/, $args{'username'} );
         my @dbports = split( /,/, $args{'port'} );
-        my $nbhosts = max $#dbhosts, $#dbnames, $#dbusers, $#dbports;
+        my @dbpwds  = split( /,/, $args{'password'} );
+        my $nbhosts = max $#dbhosts, $#dbnames, $#dbusers, $#dbports, $#dbpwds;
 
         # Take the first value for each connection properties as default.
         # eg. "-h localhost -p 5432,5433" gives two hosts:
@@ -806,6 +812,7 @@ sub parse_hosts(\%) {
                     'port'      => $dbports[$i] || $dbports[0],
                     'db'        => $dbnames[$i] || $dbnames[0],
                     'user'      => $dbusers[$i] || $dbusers[0],
+                    'password'  => $dbpwds[$i] || $dbpwds[0],
                     'pgversion' => undef
                 }
             );
@@ -859,6 +866,7 @@ sub query($$;$) {
     $ENV{PGHOST}     = $host->{'host'}      if defined $host->{'host'};
     $ENV{PGPORT}     = $host->{'port'}      if defined $host->{'port'};
     $ENV{PGUSER}     = $host->{'user'}      if defined $host->{'user'};
+    $ENV{PGPASSWORD} = $host->{'password'}  if defined $host->{'password'};
     $ENV{PGOPTIONS}  = '-c client_encoding=utf8 -c client_min_messages=error -c statement_timeout=' . get_time($args{'timeout'}) * 1000;
 
     dprint ("Query: $query\n");
@@ -866,6 +874,7 @@ sub query($$;$) {
     dprint ("Env. host   : $ENV{PGHOST}    \n") if defined $host->{'host'};
     dprint ("Env. port   : $ENV{PGPORT}    \n") if defined $host->{'port'};
     dprint ("Env. user   : $ENV{PGUSER}    \n") if defined $host->{'user'};
+    dprint ("Env. password: xxxxxxxxxxx    \n") if defined $host->{'password'};
     dprint ("Env. db     : $ENV{PGDATABASE}\n") if defined $host->{'db'};
 
     $tmpfile = File::Temp->new(
@@ -5942,6 +5951,7 @@ GetOptions(
         'tmpdir=s',
         'psql|P=s',
         'path=s',
+        'password=s',
         'status-file=s',
         'query=s',
         'type=s',
