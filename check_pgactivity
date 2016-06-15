@@ -165,6 +165,10 @@ my %services = (
         'sub'  => \&check_streaming_delta,
         'desc' => 'Check delta in bytes between a master and its standbys in streaming replication.',
     },
+    'settings' => {
+        'sub'  => \&check_settings,
+        'desc' => 'Check if the configuration file changed.',
+    },
     'hit_ratio' => {
         'sub'  => \&check_hit_ratio,
         'desc' => 'Check hit ratio on databases.'
@@ -384,6 +388,7 @@ my %args = (
     'no_check_enable'       => 0,
     'no_check_track_counts' => 0,
     'ignore-wal-size'       => 0,
+    'save'                  => 0,
     'suffix'                => '',
     'slave'                 => [],
     'list'                  => 0,
@@ -5005,6 +5010,86 @@ SLOTS_LOOP: foreach my $row (@rs) {
     return ok( $me, [ "Replication slots OK" ], \@perfdata );
 }
 
+=item B<settings>
+
+Check if the settings changed compared to the known ones from postgresql.conf
+file (and auto + included ones).
+
+The "known" settings are recorded during the very first call of the service.
+To update the known settings after a configuration change, call this service
+again with the argument C<--save>.
+
+This service needs to execute C<postgres -C PARAMETER_NAME>. You can use the
+C<--path PATH_TO_POSTGRES> if the C<postgres> binary is not in the path.
+
+No perfdata.
+
+Critical and Warning thresholds are ignored.
+
+A WARNING is raised if at least one parameter changed.
+
+A CRITICAL is raised if the configuration could not been parsed, because of a
+syntax error as instance.
+
+=cut
+
+sub check_settings {
+    my $me  = 'POSTGRES_SETTINGS';
+    my @long_msg;
+    my @hosts;
+    my @rs;
+    my %settings;
+    my %args     = %{ $_[0] };
+    my $postgres = $args{'path'} || 'postgres';
+    my $query    = q{
+        SELECT name FROM pg_settings
+    };
+
+    @hosts = @{ parse_hosts %args };
+
+    @rs = @{ query( $hosts[0], $query ) };
+
+    %settings = %{ load( $hosts[0], 'settings', $args{'status-file'} ) || {} };
+
+    # save setting on the very first call
+    $args{'save'} = 1 unless %settings;
+
+PARAM_LOOP: foreach my $row (@rs) {
+        my $val = qx{ $postgres -C "$row->[0]" 2>&1 };
+        my $rc = $? >> 8;
+
+        # We ignore rc == 139 because there is a bug in some PostgreSQL versions
+        # where "postgres -C external_pid_file" crash on a segmentation fault
+        # when this parameter is left commented. See:
+        # https://www.postgresql.org/message-id/20160615204036.2d35d86a%40firost
+
+        return critical( $me,
+            [ "Failed to parse the configuration! ($?) "  ], undef, [ "$val" ]
+        ) if $? != 0 and $rc != 139;
+
+        chomp $val;
+
+        $val = '' if $rc == 139;
+
+        if ( $args{'save'} ) {
+            $settings{ $row->[0] } = $val;
+        }
+        else {
+            push @long_msg => "$row->[0]=$val" if $val ne $settings{ $row->[0] };
+        }
+    }
+
+    if ( $args{'save'} ) {
+        save $hosts[0], 'settings', \%settings, $args{'status-file'};
+        return ok( $me, [ "Setting saved" ] )
+    }
+
+    return warning( $me, [ 'Setting changed!' ], undef, \@long_msg )
+        if scalar @long_msg;
+
+    return ok( $me, [ "Setting OK" ] );
+}
+
 
 =item B<streaming_delta> (9.1+)
 
@@ -6142,6 +6227,7 @@ GetOptions(
         'psql|P=s',
         'query=s',
         'reverse!',
+        'save!',
         'service|s=s',
         'shared_buffers=i',
         'slave=s',

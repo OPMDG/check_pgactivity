@@ -8,7 +8,8 @@ WIP 2.0:
   - do not connect ot the cluster if using --dbinclude for service pg_dump_backup
   - add argument --dump-status-file, useful for debugging
   - add service "table_unlogged"
-  - add basic support to timeline cross in service archive_folder 
+  - add basic support to timeline cross in service archive_folder
+  - add service "settings"
 
 2016-01-28 1.25:
   - add service pg_dump_backup
