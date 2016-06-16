@@ -5,6 +5,7 @@ WIP 2.0:
   - force UTF8 encoding
   - fix a bug where pod2usage couldn't find the original script
   - fix wal size computation for 9.3+ (255 -vs- 256 seg of 16MB)
+  - fix perl warning with pg_dump_backup related to unknown database
   - do not connect ot the cluster if using --dbinclude for service pg_dump_backup
   - add argument --dump-status-file, useful for debugging
   - add service "table_unlogged"

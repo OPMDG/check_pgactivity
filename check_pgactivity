@@ -4752,7 +4752,9 @@ sub check_pg_dump_backup {
         @perf_oldest = ( "${db}_oldest", $first_age,     's' );
         @perf_newest = ( "${db}_newest", $last_age,      's' );
         @perf_size   = ( "${db}_size",   $lasts{$db}[1], 'B' );
-        @perf_delta  = ( "${db}_delta",  $lasts{$db}[1] - $db_sizes{$db}[1], 'B' );
+        @perf_delta  = exists $db_sizes{$db} ?
+            ( "${db}_delta",  $lasts{$db}[1] - $db_sizes{$db}[1], 'B' )
+            : ( "${db}_delta",  0, 'B' );
 
         if ( exists $warn{'newest'} or exists $crit{'newest'} ) {
             my $c_limit = $crit{'newest'};
