@@ -537,6 +537,28 @@ Descriptions and parameters of available services.
  This service raise a Critical if it doesn't find exactly ONE valid master
  cluster (ie. critical when 0 or 2 and more masters).
 
+\ **invalid_indexes**\  (8.4+)
+
+Check if there is any invalid indexes in a database.
+
+A critical alert is raised if an invalid index is detected.
+
+ This service supports both \ ``--dbexclude``\  and \ ``--dbinclude``\  parameters.
+
+This service supports a \ ``--exclude ``\ parameter to exclude indexes
+matching the given regular expression. The regular expression applies to
+"database.schema_name.index_name". This allows you to filter either on a
+relation name for all schemas and databases, filter on a qualified named 
+index (schema + index) for all databases or filter on a qualified named 
+index in only one database.
+
+You can use multiple \ ``--exclude ``\  parameters.
+
+Perfdata will return the number of invalid indexes per database.
+
+A list of invalid indexes detail will be returned after the
+perfdata. This list contains the fully qualified index name. If
+excluded index is set, the number of exclude index is returned.
 
 
 \ **is_hot_standby**\  (9.0+)
@@ -998,7 +1020,7 @@ Execute service "last_vacuum" on host "host=localhost port=5432":
 
  .. code-block:: perl
 
-    check_pgactivity -h localhost -p 5432 -s last_vacuum -w 30m -c 1h30m
+    check_pgactivity -h localhost -p 5492 -s last_vacuum -w 30m -c 1h30m
 
 
 
