@@ -197,6 +197,10 @@ my %services = (
         'sub'  => \&check_max_freeze_age,
         'desc' => 'Check oldest database in transaction age.'
     },
+        'invalid_indexes' => {
+        'sub'  => \&check_invalid_indexes,
+        'desc' => 'Check for invalid indexes.'
+    },
     'is_master' => {
         'sub'  => \&check_is_master,
         'desc' => 'Check if cluster is in production.'
@@ -3423,6 +3427,103 @@ sub check_is_master {
 
     return critical( $me, [ "Cluster is not master" ] ) if $rs[0] eq "t";
     return ok( $me, [ "Cluster is master" ] );
+}
+
+=item B<invalid_indexes>
+
+Check if there is any invalid indexes in a database.
+
+A critical alert is raised if an invalid index is detected.
+
+This service supports both C<--dbexclude>  and C<--dbinclude> parameters.
+
+This service supports a C<--exclude REGEX>  parameter to exclude indexes
+matching the given regular expression. The regular expression applies to
+"database.schema_name.index_name". This allows you to filter either on a
+relation name for all schemas and databases, filter on a qualified named 
+index (schema + index) for all databases or filter on a qualified named 
+index in only one database.
+
+You can use multiple C<--exclude REGEX>  parameters.
+
+Perfdata will return the number of invalid indexes per database.
+
+A list of invalid indexes detail will be returned after the
+perfdata. This list contains the fully qualified index name. If
+excluded index is set, the number of exclude index is returned.
+=cut
+
+sub check_invalid_indexes {
+    my @perfdata;
+    my @longmsg;
+    my @rs;
+    my @hosts;
+    my @all_db;
+    my $total_idx   = 0; # num of table checked, without excluded ones
+    my $total_extbl = 0; # num of excluded table
+    my $c_count     = 0;
+    my %args        = %{ $_[0] };
+    my @dbinclude   = @{ $args{'dbinclude'} };
+    my @dbexclude   = @{ $args{'dbexclude'} };
+    my $me          = 'POSTGRES_INVALID_INDEXES';
+    my $query       = q{
+    SELECT current_database(), nsp.nspname AS schemaname, cls.relname, idx.indisvalid
+        FROM pg_class cls
+            join pg_namespace nsp on nsp.oid = cls.relnamespace
+            join pg_index idx on idx.indexrelid = cls.oid
+        WHERE
+            cls.relkind = 'i'
+        AND nsp.nspname not like 'pg_toast%'
+        AND nsp.nspname NOT IN ('information_schema', 'pg_catalog');
+    };
+
+    @hosts = @{ parse_hosts %args };
+
+    pod2usage(
+        -message => 'FATAL: you must give one (and only one) host with service "invalid_indexes".',
+        -exitval => 127
+    ) if @hosts != 1;
+
+    @all_db = @{ get_all_dbname( $hosts[0] ) };
+
+    # Iterate over all db
+    ALLDB_LOOP: foreach my $db (sort @all_db) {
+        
+        my @rc;
+        my $nb_idx      = 0;
+        my $idx_invalid = 0;
+
+        next ALLDB_LOOP if grep { $db =~ /$_/ } @dbexclude;
+        next ALLDB_LOOP if @dbinclude and not grep { $db =~ /$_/ } @dbinclude;
+
+        @rc = @{ query( $hosts[0], $query, $db ) };
+
+        INVALIDIDX_LOOP: foreach my $invalid (@rc) {
+            foreach my $exclude_re ( @{ $args{'exclude'} } ) {
+                if ("$invalid->[0].$invalid->[1].$invalid->[2]" =~ m/$exclude_re/){
+                    $total_extbl++;
+                    next INVALIDIDX_LOOP ;
+                }
+            }
+            if ($invalid->[3] eq "f") {
+                # long message info :
+                push @longmsg => sprintf "Invalid index = %s.%s.%s ; ",
+                    $invalid->[0], $invalid->[1], $invalid->[2];
+                $idx_invalid++;
+            }
+            $nb_idx++;
+        }
+        $total_idx += $nb_idx;
+        $c_count += $idx_invalid;
+        push @perfdata => ["invalid index in $db", $idx_invalid ];
+    }
+    push @longmsg => sprintf "%i index(es) exclude from check", $total_extbl
+        if $total_extbl > 0;
+
+    # we use the critical count for the **total** number of invalid index
+    return critical $me, [ "$c_count/$total_idx index(es) invalid" ], 
+    \@perfdata , \@longmsg 	 if $c_count > 0;
+    return ok $me, [ "No invalid index" ], \@perfdata, \@longmsg ;
 }
 
 
