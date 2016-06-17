@@ -3487,7 +3487,7 @@ sub check_invalid_indexes {
     @all_db = @{ get_all_dbname( $hosts[0] ) };
 
     # Iterate over all db
-    ALLDB_LOOP: foreach my $db (sort @all_db) {
+    ALLDB_LOOP: foreach my $db ( sort @all_db ) {
         
         my @rc;
         my $nb_idx      = 0;
@@ -3522,7 +3522,8 @@ sub check_invalid_indexes {
 
     # we use the critical count for the **total** number of invalid index
     return critical $me, [ "$c_count/$total_idx index(es) invalid" ], 
-    \@perfdata , \@longmsg 	 if $c_count > 0;
+        \@perfdata, \@longmsg if $c_count > 0;
+
     return ok $me, [ "No invalid index" ], \@perfdata, \@longmsg ;
 }
 
