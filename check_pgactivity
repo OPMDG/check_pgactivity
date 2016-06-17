@@ -3451,6 +3451,7 @@ Perfdata will return the number of invalid indexes per database.
 A list of invalid indexes detail will be returned after the
 perfdata. This list contains the fully qualified index name. If
 excluded index is set, the number of exclude index is returned.
+
 =cut
 
 sub check_invalid_indexes {
