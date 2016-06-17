@@ -108,6 +108,21 @@ offers many options to measure and monitor useful performance metrics.
 
 
 
+\ **-F**\ , \ **--format**\  OUTPUT_FORMAT
+
+ The output format. Supported output are: \ ``binary``\ , \ ``debug``\ , \ ``human``\ ,
+ \ ``nagios``\  and \ ``nagios_strict``\ .
+
+ Using the \ ``binary``\  format, the results are written in a binary file (using perl
+ module \ ``Storable``\ ) given in argument \ ``--output``\ . If no output is given,
+ defaults to file \ ``check_pgactivity.out``\  in the same directory as the script.
+
+ The \ ``nagios_strict``\  format is equivalent to the \ ``nagios``\  format. The only
+ difference is that it enforces the unit follow the strict nagios specs: B, c, s
+ or %. Any unit not beeing in this list is dropped (Bps, Tps, etc).
+
+
+
 \ **--tmpdir**\  DIRECTORY
 
  Path to a directory where the script can create temporary files. The
@@ -132,6 +147,14 @@ offers many options to measure and monitor useful performance metrics.
 \ **--dump-status-file**\
 
  Dump the content of the status file and exit. This is useful for debug purpose.
+
+
+
+\ **--dump-bin-file**\  [PATH]
+
+ Dump the content of the given binary file previously created using
+ \ ``--format binary``\ . If no path is given, defaults to file
+ \ ``check_pgactivity.out``\  in the same directory as the script.
 
 
 
@@ -454,7 +477,7 @@ Descriptions and parameters of available services.
  Warning and Critical thresholds are ignored.
 
  Specific parameters are :
- \ ``--work_mem``\ , \ ``--maintenance_work_mem``\ , \ ``--shared_buffers``\ ,\ ``-- wal_buffers``\ ,
+ \ ``--work_mem``\ , \ ``--maintenance_work_mem``\ , \ ``--shared_buffers``\ ,\ ``--wal_buffers``\ ,
  \ ``--checkpoint_segments``\ , \ ``--effective_cache_size``\ , \ ``--no_check_autovacuum``\ ,
  \ ``--no_check_fsync``\ , \ ``--no_check_enable``\ , \ ``--no_check_track_counts``\ .
 
@@ -474,7 +497,7 @@ Descriptions and parameters of available services.
 
  Perform the given user query.
 
- The query is specified with the \ ``--query parameter``\ . The first column will be
+ The query is specified with the \ ``--query``\  parameter. The first column will be
  used to perform the test for the status if warning and critical are provided.
 
  The warning and critical arguments are optional. They can be of format integer
@@ -482,9 +505,16 @@ Descriptions and parameters of available services.
  Warning and Critical will be raised if they are greater than the first column,
  or less if the \ ``--reverse``\  option is used.
 
- All other columns will be used to generate the perfdata. The query must
- display them in the perfdata format, with unit if required (eg. "size=35B").
- If a field contains multiple values, they must be separated by a space.
+ All other columns will be used to generate the perfdata. Each field name is used
+ as the name of the perfdata. The field value must contain your perfdata value
+ and its unit append to it. You can add as many field as needed. Eg.:
+
+
+ .. code-block:: perl
+
+    SELECT pg_database_size('postgres'),
+           pg_database_size('postgres')||'B' AS db_size
+
 
 
 
@@ -537,28 +567,6 @@ Descriptions and parameters of available services.
  This service raise a Critical if it doesn't find exactly ONE valid master
  cluster (ie. critical when 0 or 2 and more masters).
 
-\ **invalid_indexes**\  (8.4+)
-
-Check if there is any invalid indexes in a database.
-
-A critical alert is raised if an invalid index is detected.
-
- This service supports both \ ``--dbexclude``\  and \ ``--dbinclude``\  parameters.
-
-This service supports a \ ``--exclude ``\ parameter to exclude indexes
-matching the given regular expression. The regular expression applies to
-"database.schema_name.index_name". This allows you to filter either on a
-relation name for all schemas and databases, filter on a qualified named 
-index (schema + index) for all databases or filter on a qualified named 
-index in only one database.
-
-You can use multiple \ ``--exclude ``\  parameters.
-
-Perfdata will return the number of invalid indexes per database.
-
-A list of invalid indexes detail will be returned after the
-perfdata. This list contains the fully qualified index name. If
-excluded index is set, the number of exclude index is returned.
 
 
 \ **is_hot_standby**\  (9.0+)
@@ -579,6 +587,31 @@ excluded index is set, the number of exclude index is returned.
  This service ignores critical and warning arguments.
 
  No perfdata is returned.
+
+
+
+\ **invalid_indexes**\
+
+ Check if there is any invalid indexes in a database.
+
+ A critical alert is raised if an invalid index is detected.
+
+ This service supports both \ ``--dbexclude``\   and \ ``--dbinclude``\  parameters.
+
+ This service supports a \ ``--exclude REGEX``\   parameter to exclude indexes
+ matching the given regular expression. The regular expression applies to
+ "database.schema_name.index_name". This allows you to filter either on a
+ relation name for all schemas and databases, filter on a qualified named
+ index (schema + index) for all databases or filter on a qualified named
+ index in only one database.
+
+ You can use multiple \ ``--exclude REGEX``\   parameters.
+
+ Perfdata will return the number of invalid indexes per database.
+
+ A list of invalid indexes detail will be returned after the
+ perfdata. This list contains the fully qualified index name. If
+ excluded index is set, the number of exclude index is returned.
 
 
 
@@ -861,6 +894,29 @@ excluded index is set, the number of exclude index is returned.
 
 
 
+\ **settings**\  (9.2+)
+
+ Check if the settings changed compared to the known ones from postgresql.conf
+ file (and auto + included ones).
+
+ The "known" settings are recorded during the very first call of the service.
+ To update the known settings after a configuration change, call this service
+ again with the argument \ ``--save``\ .
+
+ This service needs to execute \ ``postgres -C PARAMETER_NAME``\ . You can use the
+ \ ``--path PATH_TO_POSTGRES``\  if the \ ``postgres``\  binary is not in the path.
+
+ No perfdata.
+
+ Critical and Warning thresholds are ignored.
+
+ A WARNING is raised if at least one parameter changed.
+
+ A CRITICAL is raised if the configuration could not been parsed, because of a
+ syntax error as instance.
+
+
+
 \ **streaming_delta**\  (9.1+)
 
  Check the data delta between a cluster and its standbys in Streaming Replication.
@@ -887,6 +943,34 @@ excluded index is set, the number of exclude index is returned.
  data. If two values are supplied, the first one applies to flushed data,
  the second one to replayed data.
  These thresholds only accept a size (eg. 2.5G).
+
+
+
+\ **table_unlogged**\
+
+ Check if table are changed to unlogged. In 9.5, you can switch between logged and unlogged.
+
+ Without \ ``--critical``\   or \ ``--warning``\  parameters, this service attempts to fetch
+ all unlogged tables.
+
+ A critical alert is raised if an unlogged table is detected.
+
+ This service supports both \ ``--dbexclude``\   and \ ``--dbinclude``\  parameters.
+
+ This service supports a \ ``--exclude REGEX``\   parameter to exclude relations
+ matching the given regular expression. The regular expression applies to
+ "database.schema_name.relation_name". This allows you to filter either on a
+ relation name for all schemas and databases, filter on a qualified named relation
+ (schema + relation) for all databases or filter on a qualified named relation in
+ only one database.
+
+ You can use multiple \ ``--exclude REGEX``\   parameters.
+
+ Perfdata will return the number of unlogged tables per database.
+
+ A list of the unlogged tables detail will be returned after the
+ perfdata. This list contains the fully qualified table name. If
+ excluded table is set, the number of exclude table is returned.
 
 
 
@@ -922,31 +1006,6 @@ excluded index is set, the number of exclude index is returned.
  perfdata. This list contains the fully qualified bloated table name, the
  estimated bloat size, the table size and the bloat percentage.
 
-\ **table_unlogged**\ (9.5+)
-
- Check if table are changed to unlogged. In 9.5+, you can switch between logged and unlogged.
-
- Without \ ``--critical``\  or \ ``--warning``\  parameters, this service attempts
- to fetch all ``unlogged`` table 
-
- A critical alert is raised if an unlogged table is detected.
-
- This service supports both \ ``--dbexclude``\  and \ ``--dbinclude``\  parameters.
-
- This service supports a \ ``--exclude REGEX``\  parameter to exclude relations
- matching the given regular expression. The regular expression applies to
- "database.schema_name.relation_name". This allows you to filter either on a
- relation name for all schemas and databases, filter on a qualified named relation
- (schema + relation) for all databases or filter on a qualified named relation in
- only one database.
-
- You can use multiple \ ``--exclude REGEX``\  parameters.
-
- Perfdata will return the number of unlogged tables per database.
- 
- A list of the unlogged tables detail will be returned after the
- perfdata. This list contains the fully qualified table name. If
- excluded table is set, the number of exclude table is returned.
 
 
 \ **temp_files**\  (8.1+)

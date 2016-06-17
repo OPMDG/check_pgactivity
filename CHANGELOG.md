@@ -1,7 +1,12 @@
 Changelog
 =========
-WIP 2.0:
+
+2016-06-17 2.0:
   - support various output format
+  - add output format "nagios_strict"
+  - add output format "debug"
+  - add output format "binary"
+  - add output format "human"
   - force UTF8 encoding
   - fix a bug where pod2usage couldn't find the original script
   - fix wal size computation for 9.3+ (255 -vs- 256 seg of 16MB)
@@ -11,6 +16,7 @@ WIP 2.0:
   - add service "table_unlogged"
   - add basic support to timeline cross in service archive_folder
   - add service "settings"
+  - add service "invalid_indexes"
 
 2016-01-28 1.25:
   - add service pg_dump_backup

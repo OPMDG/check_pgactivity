@@ -52,7 +52,7 @@ setlocale( LC_ALL, 'C' );
 
 $| = 1;
 
-$VERSION = '2.0dev';
+$VERSION = '2.0_rc1';
 $PROGRAM = 'check_pgactivity';
 
 my $PG_VERSION_MIN = 70400;
@@ -6487,7 +6487,7 @@ __END__
 
 =head2 VERSION
 
-check_pgactivity version 1.25, released on Thu Jan 28 2016.
+check_pgactivity version 2.0_rc1, released on Fri Jun 17 2016.
 
 =head2 LICENSING
 
