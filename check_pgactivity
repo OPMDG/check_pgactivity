@@ -5113,7 +5113,7 @@ SLOTS_LOOP: foreach my $row (@rs) {
     return ok( $me, [ "Replication slots OK" ], \@perfdata );
 }
 
-=item B<settings>
+=item B<settings> (9.2+)
 
 Check if the settings changed compared to the known ones from postgresql.conf
 file (and auto + included ones).
@@ -5149,6 +5149,8 @@ sub check_settings {
     };
 
     @hosts = @{ parse_hosts %args };
+
+    is_compat $hosts[0], 'settings', $PG_VERSION_92 or exit 1;
 
     @rs = @{ query( $hosts[0], $query ) };
 
