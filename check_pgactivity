@@ -5115,26 +5115,20 @@ SLOTS_LOOP: foreach my $row (@rs) {
     return ok( $me, [ "Replication slots OK" ], \@perfdata );
 }
 
-=item B<settings> (9.2+)
+=item B<settings> (9.0+)
 
-Check if the settings changed compared to the known ones from postgresql.conf
-file (and auto + included ones).
+Check if the settings changed compared to the known ones from last call of this
+service.
 
 The "known" settings are recorded during the very first call of the service.
 To update the known settings after a configuration change, call this service
 again with the argument C<--save>.
 
-This service needs to execute C<postgres -C PARAMETER_NAME>. You can use the
-C<--path PATH_TO_POSTGRES> if the C<postgres> binary is not in the path.
-
 No perfdata.
 
 Critical and Warning thresholds are ignored.
 
-A WARNING is raised if at least one parameter changed.
-
-A CRITICAL is raised if the configuration could not been parsed, because of a
-syntax error as instance.
+A CRITICAL is raised if at least one parameter changed.
 
 =cut
 
@@ -5144,15 +5138,22 @@ sub check_settings {
     my @hosts;
     my @rs;
     my %settings;
-    my %args     = %{ $_[0] };
-    my $postgres = $args{'path'} || 'postgres';
-    my $query    = q{
-        SELECT name FROM pg_settings
+    my %new_settings;
+    my %args       = %{ $_[0] };
+    my $query = q{
+        SELECT coalesce(r.rolname, '*'), coalesce(d.datname, '*'),
+               unnest(s.setconfig) AS setting
+        FROM pg_db_role_setting s
+        LEFT JOIN pg_database d ON d.oid=s.setdatabase
+        LEFT JOIN pg_roles r ON r.oid=s.setrole
+        UNION ALL
+        SELECT '*', '*', name||'='||current_setting(name)
+        FROM pg_settings
     };
 
     @hosts = @{ parse_hosts %args };
 
-    is_compat $hosts[0], 'settings', $PG_VERSION_92 or exit 1;
+    is_compat $hosts[0], 'settings', $PG_VERSION_90 or exit 1;
 
     @rs = @{ query( $hosts[0], $query ) };
 
@@ -5162,32 +5163,35 @@ sub check_settings {
     $args{'save'} = 1 unless %settings;
 
 PARAM_LOOP: foreach my $row (@rs) {
-        my $val = qx{ $postgres -C "$row->[0]" 2>&1 };
-        my $rc = $? >> 8;
+        my ( $rolname, $datname, $setting ) = @$row;
+        my ( $name, $val ) = split /=/ => $setting, 2;
+        my $prefix = "$rolname\@$datname";
+        my $msg = "$setting";
 
-        # We ignore rc == 139 because there is a bug in some PostgreSQL versions
-        # where "postgres -C external_pid_file" crash on a segmentation fault
-        # when this parameter is left commented. See:
-        # https://www.postgresql.org/message-id/20160615204036.2d35d86a%40firost
+        $msg = "$prefix: $setting" unless $prefix eq '*@*';
 
-        return critical( $me,
-            [ "Failed to parse the configuration! ($?) "  ], undef, [ "$val" ]
-        ) if $? != 0 and $rc != 139;
+        $new_settings{$name}{$prefix} = $val;
 
-        chomp $val;
+        push @long_msg => $msg unless exists $settings{$name}{$prefix};
 
-        $val = '' if $rc == 139;
+        push @long_msg => $msg if exists $settings{$name}{$prefix}
+                                  and $val ne $settings{$name}{$prefix};
 
-        if ( $args{'save'} ) {
-            $settings{ $row->[0] } = $val;
-        }
-        else {
-            push @long_msg => "$row->[0]=$val" if $val ne $settings{ $row->[0] };
+        delete $settings{$name}{$prefix};
+
+    }
+
+    # gather remaining settings that has not been processed
+    foreach my $s ( keys %settings ) {
+        foreach my $p ( keys %{ $settings{$s} } ) {
+            my $prefix = ( $p eq "*@*"? ":" : " $p:" );
+
+            push @long_msg => "missing$prefix $s=$settings{$s}{$p}";
         }
     }
 
     if ( $args{'save'} ) {
-        save $hosts[0], 'settings', \%settings, $args{'status-file'};
+        save $hosts[0], 'settings', \%new_settings, $args{'status-file'};
         return ok( $me, [ "Setting saved" ] )
     }
 
