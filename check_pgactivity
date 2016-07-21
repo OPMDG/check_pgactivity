@@ -4958,8 +4958,8 @@ sub check_pga_version {
     pod2usage(
         -message => "FATAL: given version does not look like a check_pgactivity version!",
         -exitval => 127
-    ) if ( defined $args{'critical'} and $args{'critical'} !~ m/^\d\.\d+(?:beta\d*)?$/ )
-        or (defined $args{'warning'} and $args{'warning'} !~ m/^\d\.\d+(?:beta\d*)?$/ );
+    ) if ( defined $args{'critical'} and $args{'critical'} !~ m/^\d\.\d+(?:_?(?:beta|rc)\d*)?$/ )
+        or (defined $args{'warning'} and $args{'warning'} !~ m/^\d\.\d+(?:_?(?:beta|rc)\d*)?$/ );
 
     return critical( $me,
         [ sprintf($msg, "(should be $args{'critical'}!)", $^V) ]
@@ -5139,7 +5139,7 @@ sub check_settings {
     my @rs;
     my %settings;
     my %new_settings;
-    my %args       = %{ $_[0] };
+    my %args  = %{ $_[0] };
     my $query = q{
         SELECT coalesce(r.rolname, '*'), coalesce(d.datname, '*'),
                unnest(s.setconfig) AS setting
