@@ -5280,8 +5280,10 @@ sub check_streaming_delta {
 
     @rs = @{ query_ver( $hosts[0], %queries ) };
 
-    return unknown($me, ['No slaves connected'], ["'# of slaves'=0"])
-        unless @rs;
+    push @perfdata => [ '# of slaves', scalar @rs || 0 ];
+
+    return unknown( $me, ['No slaves connected'], \@perfdata )
+        unless scalar @rs;
 
     $rs[0][7] =~ m{^([0-9A-F]+)/([0-9A-F]+)$};
     $master_location = ( $wal_size * hex($1) ) + hex($2);
@@ -5300,9 +5302,6 @@ sub check_streaming_delta {
     $c_limit_flushed = get_size( $c_limit_flushed );
     $w_limit_replayed = get_size( $w_limit_replayed );
     $c_limit_replayed = get_size( $c_limit_replayed );
-
-
-    push @perfdata => [ '# of slaves', scalar @rs ];
 
     # compute deltas
     foreach my $host (@rs) {
