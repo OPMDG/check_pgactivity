@@ -2597,7 +2597,6 @@ sub check_commit_ratio {
     my $global_rollbacks;
     my %warn;
     my %crit;
-    my $ratio = 0;
     my %args  = %{ $_[0] };
     my $me    = 'POSTGRES_COMMIT_RATIO';
     my $sql   = q{
@@ -2653,6 +2652,7 @@ sub check_commit_ratio {
 
     foreach my $db ( keys %new_xacts ) {
 
+        my $ratio = 0;
         my $commits   = $new_xacts{$db}{'commit'} - $xacts{$db}{'commit'};
         my $rollbacks = $new_xacts{$db}{'rollback'} - $xacts{$db}{'rollback'};
 
