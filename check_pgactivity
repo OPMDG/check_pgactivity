@@ -52,7 +52,7 @@ setlocale( LC_ALL, 'C' );
 
 $| = 1;
 
-$VERSION = '2.0_rc4';
+$VERSION = '2.0_rc5';
 $PROGRAM = 'check_pgactivity';
 
 my $PG_VERSION_MIN = 70400;
