@@ -2112,7 +2112,7 @@ sub check_bgwriter {
     $delta_backend_fsync     = ($rs[7] - $bgw{'backend_fsync'})    / $delta_ts;
 
     push @perfdata, (
-        [ 'buffers_backend', $delta_buff_backend, 'Nps' ],
+        [ 'buffers_backend', $delta_buff_backend, 'Bps' ],
         [ 'checkpoint_timed', $delta_checkpoint_timed, 'Nps' ],
         [ 'checkpoint_req', $delta_checkpoint_req, 'Nps' ],
         [ 'buffers_checkpoint', $delta_buff_checkpointer, 'Bps' ],
