@@ -894,26 +894,20 @@ Descriptions and parameters of available services.
 
 
 
-\ **settings**\  (9.2+)
+\ **settings**\  (9.0+)
 
- Check if the settings changed compared to the known ones from postgresql.conf
- file (and auto + included ones).
+ Check if the settings changed compared to the known ones from last call of this
+ service.
 
  The "known" settings are recorded during the very first call of the service.
  To update the known settings after a configuration change, call this service
  again with the argument \ ``--save``\ .
 
- This service needs to execute \ ``postgres -C PARAMETER_NAME``\ . You can use the
- \ ``--path PATH_TO_POSTGRES``\  if the \ ``postgres``\  binary is not in the path.
-
  No perfdata.
 
  Critical and Warning thresholds are ignored.
 
- A WARNING is raised if at least one parameter changed.
-
- A CRITICAL is raised if the configuration could not been parsed, because of a
- syntax error as instance.
+ A CRITICAL is raised if at least one parameter changed.
 
 
 
@@ -1129,7 +1123,7 @@ VERSION
 =======
 
 
-check_pgactivity version 1.25, released on Thu Jan 28 2016.
+check_pgactivity version 2.0, released on Mon Aug 29 2016.
 
 
 LICENSING
