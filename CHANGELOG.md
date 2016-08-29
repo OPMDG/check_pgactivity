@@ -1,7 +1,7 @@
 Changelog
 =========
 
-2016-06-17 2.0:
+2016-08-29 2.0:
   - support various output format
   - add output format "nagios_strict"
   - add output format "debug"
@@ -11,6 +11,7 @@ Changelog
   - fix a bug where pod2usage couldn't find the original script
   - fix wal size computation for 9.3+ (255 -vs- 256 seg of 16MB)
   - fix perl warning with pg_dump_backup related to unknown database
+  - fix buffers_backend unit in check_bgwriter
   - do not connect ot the cluster if using --dbinclude for service pg_dump_backup
   - add argument --dump-status-file, useful for debugging
   - add service "table_unlogged"
