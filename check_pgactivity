@@ -258,7 +258,7 @@ Database server port (default: "5432").
 
 =item B<-d>, B<--dbname> DATABASE
 
-Database name to connect to (default: "postgres").
+Database name to connect to (default: "template1").
 
 B<WARNING>! This is not necessarily one of the database that will be
 checked. See C<--dbinclude> and C<--dbexclude> .
