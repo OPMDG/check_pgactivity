@@ -5328,8 +5328,8 @@ sub check_streaming_delta {
         push @perfdata => (
             [ "sent delta $name",    $send_delta,   "B" ],
             [ "wrote delta $name",   $write_delta,  "B" ],
-            [ "flushed delta $name", $flush_delta,  "B" ],
-            [ "replay delta $name",  $replay_delta, "B" ],
+            [ "flushed delta $name", $flush_delta,  "B", $w_limit_flushed, $c_limit_flushed ],
+            [ "replay delta $name",  $replay_delta, "B", $w_limit_replayed, $c_limit_replayed ],
             [ "pid $name", $host->[2] ]
         );
 
@@ -5339,25 +5339,25 @@ sub check_streaming_delta {
 
         if ($flush_delta > $c_limit_flushed) {
             push @msg_crit, "critical flush lag: " . to_size($flush_delta)
-            . " for $name";
+                . " for $name";
             next;
         }
 
         if ($replay_delta > $c_limit_replayed) {
             push @msg_crit, "critical replay lag: " . to_size($replay_delta)
-           . " for $name";
+                . " for $name";
             next;
         }
 
         if ($flush_delta > $w_limit_flushed) {
             push @msg_warn, "warning flush lag: ". to_size($flush_delta)
-           . " for $name";
+                . " for $name";
             next;
         }
 
         if ($replay_delta > $w_limit_replayed) {
             push @msg_warn, "warning replay lag: " . to_size($replay_delta)
-           . " for $name";
+                . " for $name";
             next;
         }
     }
