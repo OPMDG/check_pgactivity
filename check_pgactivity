@@ -1208,14 +1208,19 @@ sub nagios_output ($$;$$$) {
     if ( scalar @perfdata ) {
         $ret .= " |";
         foreach my $perf ( @perfdata ) {
+            # escape quotes
             $$perf[0] =~ s/'/''/g;
+            # surounding quotes if space in the label
             $$perf[0] = "'$$perf[0]'" if $$perf[0] =~ /\s/;
+            # the perfdata itself and its unit
             $ret .= " $$perf[0]=$$perf[1]";
-            $ret .= "$$perf[2]" if exists $$perf[2] and defined $$perf[2];
-            $ret .= ";$$perf[3]" if exists $$perf[3];
-            $ret .= ";$$perf[4]" if exists $$perf[4];
-            $ret .= ";$$perf[5]" if exists $$perf[5];
-            $ret .= ";$$perf[6]" if exists $$perf[6];
+
+            # init and join optional values (unit/warn/crit/min/max)
+            map {$_ = "" unless defined $_} @{$perf}[2..6];
+            $ret .= join ';' => @$perf[2..6];
+
+            # remove useless semi-colons at end
+            $ret =~ s/;*$//;
         }
     }
     $ret .= "\n". join( ' ', @longmsg ) if @longmsg;
@@ -1663,9 +1668,7 @@ sub check_backends {
     }
 
     push @perfdata, [
-        'maximum_connections', $rs[0][2], '',
-        $args{'warning'}, $args{'critical'},
-        0, $rs[0][2]
+        'maximum_connections', $rs[0][2], undef, undef, undef, 0, $rs[0][2]
     ];
 
     push @msg => "$num_backends connections on $rs[0][2]";
