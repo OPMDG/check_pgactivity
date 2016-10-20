@@ -4798,8 +4798,10 @@ sub check_pg_dump_backup {
         next if $now - $mtime < $min_age;
 
         if ( $global_pattern and $filename =~ $global_pattern ) {
-            $firsts{'globals_objects'} = [ $mtime, $size ];
-            $lasts{'globals_objects'}  = [ $mtime, $size ];
+            $firsts{'globals_objects'} = [ $mtime, $size ] if not exists $firsts{'globals_objects'}
+                or $firsts{'globals_objects'}[0] > $mtime;
+            $lasts{'globals_objects'}  = [ $mtime, $size ] if not exists $lasts{'globals_objects'}
+                or $lasts{'globals_objects'}[0] > $mtime;
         }
 
         next unless $filename =~ $pattern and defined $1;
