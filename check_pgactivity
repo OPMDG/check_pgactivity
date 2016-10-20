@@ -3249,13 +3249,6 @@ sub check_hot_standby_delta {
             END
     ";
 
-    # warning and critical are mandatory.
-    pod2usage(
-        -message => "FATAL: you must specify critical and warning thresholds.",
-        -exitval => 127
-    ) unless defined $args{'warning'} and defined $args{'critical'} ;
-
-
     @hosts = @{ parse_hosts %args };
 
     pod2usage(
@@ -3286,22 +3279,24 @@ sub check_hot_standby_delta {
     return critical($me, ['More than one cluster in production.'])
         if $num_clusters != 1;
 
-    ($w_limit_received, $w_limit_replayed) = split /,/, $args{'warning'};
-    ($c_limit_received, $c_limit_replayed) = split /,/, $args{'critical'};
+    if ( defined $args{'critical'} ) {
+        ($w_limit_received, $w_limit_replayed) = split /,/, $args{'warning'};
+        ($c_limit_received, $c_limit_replayed) = split /,/, $args{'critical'};
 
-    if (!defined($w_limit_replayed)) {
-        $w_limit_replayed = $w_limit_received;
-    }
-    if (!defined($c_limit_replayed)) {
-        $c_limit_replayed = $c_limit_received;
+        if (!defined($w_limit_replayed)) {
+            $w_limit_replayed = $w_limit_received;
+        }
+        if (!defined($c_limit_replayed)) {
+            $c_limit_replayed = $c_limit_received;
+        }
+
+        $w_limit_received = get_size( $w_limit_received );
+        $c_limit_received = get_size( $c_limit_received );
+        $w_limit_replayed = get_size( $w_limit_replayed );
+        $c_limit_replayed = get_size( $c_limit_replayed );
     }
 
     $wal_size = 4294967296 if $hosts[0]{'version_num'} >= $PG_VERSION_93;
-
-    $w_limit_received = get_size( $w_limit_received );
-    $c_limit_received = get_size( $c_limit_received );
-    $w_limit_replayed = get_size( $w_limit_replayed );
-    $c_limit_replayed = get_size( $c_limit_replayed );
 
     # we recycle this one to count the number of slave
     $num_clusters = 0;
@@ -5232,11 +5227,11 @@ Either of the two following examples will check for the presence of two slaves:
 Perfdata returns the data delta in bytes between the master and all standbys
 found and the number of slaves connected.
 
-Critical and Warning thresholds can take one or two values separated by a
-comma. If only one value is supplied, it applies to both flushed and replayed
-data. If two values are supplied, the first one applies to flushed data,
-the second one to replayed data.
-These thresholds only accept a size (eg. 2.5G).
+Critical and Warning thresholds are optional. They can take one or two values
+separated by a comma. If only one value is supplied, it applies to both flushed
+and replayed data. If two values are supplied, the first one applies to flushed
+data, the second one to replayed data. These thresholds only accept a size
+(eg. 2.5G).
 
 =cut
 
@@ -5269,13 +5264,6 @@ sub check_streaming_delta {
     );
     # FIXME this service should check for given slaves in opts!
 
-    # warning and critical are mandatory.
-    pod2usage(
-        -message => "FATAL: you must specify critical and warning thresholds.",
-        -exitval => 127
-    ) unless defined $args{'warning'} and defined $args{'critical'} ;
-
-
     @hosts = @{ parse_hosts %args };
 
     pod2usage(
@@ -5301,20 +5289,23 @@ sub check_streaming_delta {
     $rs[0][7] =~ m{^([0-9A-F]+)/([0-9A-F]+)$};
     $master_location = ( $wal_size * hex($1) ) + hex($2);
 
-    ($w_limit_flushed, $w_limit_replayed) = split /,/, $args{'warning'};
-    ($c_limit_flushed, $c_limit_replayed) = split /,/, $args{'critical'};
+    if ( defined $args{'critical'} ) {
 
-    if (!defined($w_limit_replayed)) {
-        $w_limit_replayed = $w_limit_flushed;
-    }
-    if (!defined($c_limit_replayed)) {
-        $c_limit_replayed = $c_limit_flushed;
-    }
+        ($w_limit_flushed, $w_limit_replayed) = split /,/, $args{'warning'};
+        ($c_limit_flushed, $c_limit_replayed) = split /,/, $args{'critical'};
 
-    $w_limit_flushed = get_size( $w_limit_flushed );
-    $c_limit_flushed = get_size( $c_limit_flushed );
-    $w_limit_replayed = get_size( $w_limit_replayed );
-    $c_limit_replayed = get_size( $c_limit_replayed );
+        if (!defined($w_limit_replayed)) {
+            $w_limit_replayed = $w_limit_flushed;
+        }
+        if (!defined($c_limit_replayed)) {
+            $c_limit_replayed = $c_limit_flushed;
+        }
+
+        $w_limit_flushed = get_size( $w_limit_flushed );
+        $c_limit_flushed = get_size( $c_limit_flushed );
+        $w_limit_replayed = get_size( $w_limit_replayed );
+        $c_limit_replayed = get_size( $c_limit_replayed );
+    }
 
     # compute deltas
     foreach my $host (@rs) {
@@ -5350,28 +5341,31 @@ sub check_streaming_delta {
 
         $slaves{"$host->[0] $host->[1]"} = 1;
 
-        if ($flush_delta > $c_limit_flushed) {
-            push @msg_crit, "critical flush lag: " . to_size($flush_delta)
-                . " for $name";
-            next;
-        }
+        if ( defined $args{'critical'} ) {
 
-        if ($replay_delta > $c_limit_replayed) {
-            push @msg_crit, "critical replay lag: " . to_size($replay_delta)
-                . " for $name";
-            next;
-        }
+            if ($flush_delta > $c_limit_flushed) {
+                push @msg_crit, "critical flush lag: " . to_size($flush_delta)
+                    . " for $name";
+                next;
+            }
 
-        if ($flush_delta > $w_limit_flushed) {
-            push @msg_warn, "warning flush lag: ". to_size($flush_delta)
-                . " for $name";
-            next;
-        }
+            if ($replay_delta > $c_limit_replayed) {
+                push @msg_crit, "critical replay lag: " . to_size($replay_delta)
+                    . " for $name";
+                next;
+            }
 
-        if ($replay_delta > $w_limit_replayed) {
-            push @msg_warn, "warning replay lag: " . to_size($replay_delta)
-                . " for $name";
-            next;
+            if ($flush_delta > $w_limit_flushed) {
+                push @msg_warn, "warning flush lag: ". to_size($flush_delta)
+                    . " for $name";
+                next;
+            }
+
+            if ($replay_delta > $w_limit_replayed) {
+                push @msg_warn, "warning replay lag: " . to_size($replay_delta)
+                    . " for $name";
+                next;
+            }
         }
     }
 
