@@ -3206,8 +3206,9 @@ You must give the connection parameters for two or more clusters.
 Perfdata returns the data delta in bytes between the master and each Hot
 standby cluster listed.
 
-Critical and Warning thresholds can take one or two values separated by a
-comma. If only one value given, it applies to both received and replayed data.
+Critical and Warning thresholds are optional. They can take one or two values
+separated by a comma. If only one value given, it applies to both received and
+replayed data.
 If two values are given, the first one applies to received data, the second one
 to replayed ones. These thresholds only accept a size (eg. 2.5G).
 
@@ -3327,28 +3328,31 @@ sub check_hot_standby_delta {
             $w_limit_replayed, $c_limit_replayed
         ]);
 
-        if ($host->{'receive_delta'} > $c_limit_received) {
-            push @msg_crit, "critical receive lag: "
-                . to_size($host->{'receive_delta'}) . " for $host->{'name'}";
-            next;
-        }
+        if ( defined $args{'critical'} ) {
 
-        if ($host->{'replay_delta'} > $c_limit_replayed) {
-            push @msg_crit, "critical replay lag: "
-                . to_size($host->{'replay_delta'}) . " for $host->{'name'}";
-            next;
-        }
+            if ($host->{'receive_delta'} > $c_limit_received) {
+                push @msg_crit, "critical receive lag: "
+                    . to_size($host->{'receive_delta'}) . " for $host->{'name'}";
+                next;
+            }
 
-        if ($host->{'receive_delta'} > $w_limit_received) {
-            push @msg_warn, "warning receive lag: "
-                . to_size($host->{'receive_delta'}) . " for $host->{'name'}";
-            next;
-        }
+            if ($host->{'replay_delta'} > $c_limit_replayed) {
+                push @msg_crit, "critical replay lag: "
+                    . to_size($host->{'replay_delta'}) . " for $host->{'name'}";
+                next;
+            }
 
-        if ($host->{'replay_delta'} > $w_limit_replayed) {
-            push @msg_warn, "warning replay lag: "
-                . to_size($host->{'replay_delta'}) . " for $host->{'name'}";
-            next;
+            if ($host->{'receive_delta'} > $w_limit_received) {
+                push @msg_warn, "warning receive lag: "
+                    . to_size($host->{'receive_delta'}) . " for $host->{'name'}";
+                next;
+            }
+
+            if ($host->{'replay_delta'} > $w_limit_replayed) {
+                push @msg_warn, "warning replay lag: "
+                    . to_size($host->{'replay_delta'}) . " for $host->{'name'}";
+                next;
+            }
         }
 
         $num_clusters++;
