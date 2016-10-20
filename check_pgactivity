@@ -3275,10 +3275,9 @@ sub check_hot_standby_delta {
     }
 
     # check all cluster have the same major version.
-    for (my $i = 0; $i < scalar @hosts; $i ++) {
-        last unless exists $hosts[$i + 1];
-        return critical($me, ["PostgreSQL major versions differ amongst clusters ($hosts[$i]{'version'} vs. $hosts[$i+1]{'version'})."] )
-            if substr($hosts[$i]{'version_num'}, 0, -2) != substr($hosts[$i+1]{'version_num'}, 0, -2);
+    foreach my $host ( @hosts ) {
+        return critical($me, ["PostgreSQL major versions differ amongst clusters ($hosts[0]{'version'} vs. $host->{'version'})."] )
+            if substr($hosts[0]{'version_num'}, 0, -2) != substr($host->{'version_num'}, 0, -2);
     }
 
     return critical($me, ['No cluster in production.'])
