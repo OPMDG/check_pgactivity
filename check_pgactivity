@@ -2921,6 +2921,9 @@ sub check_custom_query {
     @rs = @{ query( $hosts[0], $sql, undef, 1 ) };
     @fields = @{ shift @rs };
 
+    return unknown( $me, [ 'No row returned by the query!' ] )
+        unless defined $rs[0];
+
     pod2usage(
         -message => 'FATAL: First column of your query is not numeric!',
         -exitval => 127
