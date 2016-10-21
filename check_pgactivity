@@ -48,7 +48,11 @@ $ENV{'PATH'} = join $Config{'path_sep'} => @path;
 undef @path;
 
 # force the env in english
+undef $ENV{'LC_ALL'};
+$ENV{'LC_ALL'} = 'C';
 setlocale( LC_ALL, 'C' );
+undef $ENV{'LANG'};
+undef $ENV{'LANGUAGE'};
 
 $| = 1;
 
