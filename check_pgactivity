@@ -56,7 +56,7 @@ undef $ENV{'LANGUAGE'};
 
 $| = 1;
 
-$VERSION = '2.0';
+$VERSION = '2.1_rc1';
 $PROGRAM = 'check_pgactivity';
 
 my $PG_VERSION_MIN = 70400;
