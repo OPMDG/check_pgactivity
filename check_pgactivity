@@ -56,7 +56,7 @@ delete $ENV{'LANGUAGE'};
 
 $| = 1;
 
-$VERSION = '2.1_rc2';
+$VERSION = '2.1_rc3';
 $PROGRAM = 'check_pgactivity';
 
 my $PG_VERSION_MIN = 70400;
