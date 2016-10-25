@@ -603,6 +603,8 @@ sub to_interval($) {
 
     $interval .= "${val}s" if $val > 0;
 
+    return "${val}s" unless $interval; # return a value if $val <= 0
+
     return $interval;
 }
 
@@ -1157,32 +1159,34 @@ sub human_output ($$;$$$) {
     $ret .= sprintf "%-15s: %s\n", "Long message", $_ foreach @longmsg;
 
     foreach my $perfdata ( @perfdata ) {
-        if (exists $$perfdata[2] and $$perfdata[2] =~ /B$/) {
+        map {$_ = undef unless defined $_} @{$perfdata}[2..6];
+
+        if ( defined $$perfdata[2] and $$perfdata[2] =~ /B$/ ) {
             $ret .= sprintf "%-15s: %s=%s", "Perfdata",
                 $$perfdata[0], to_size($$perfdata[1]);
-            $ret .= sprintf " warn=%s", to_size( $$perfdata[3] ) if exists $$perfdata[3];
-            $ret .= sprintf " crit=%s", to_size( $$perfdata[4] ) if exists $$perfdata[4];
-            $ret .= sprintf " min=%s", to_size( $$perfdata[5] ) if exists $$perfdata[5];
-            $ret .= sprintf " max=%s", to_size( $$perfdata[6] ) if exists $$perfdata[6];
+            $ret .= sprintf " warn=%s", to_size( $$perfdata[3] ) if defined $$perfdata[3];
+            $ret .= sprintf " crit=%s", to_size( $$perfdata[4] ) if defined $$perfdata[4];
+            $ret .= sprintf " min=%s", to_size( $$perfdata[5] ) if defined $$perfdata[5];
+            $ret .= sprintf " max=%s", to_size( $$perfdata[6] ) if defined $$perfdata[6];
             $ret .= "\n";
         }
-        elsif (exists $$perfdata[2] and $$perfdata[2] =~ /s$/) {
+        elsif ( defined $$perfdata[2] and $$perfdata[2] =~ /s$/ ) {
             $ret .= sprintf "%-15s: %s=%s", "Perfdata",
                 $$perfdata[0], to_interval( $$perfdata[1] );
-            $ret .= sprintf " warn=%s", to_interval( $$perfdata[3] ) if exists $$perfdata[3];
-            $ret .= sprintf " crit=%s", to_interval( $$perfdata[4] ) if exists $$perfdata[4];
-            $ret .= sprintf " min=%s", to_interval( $$perfdata[5] ) if exists $$perfdata[5];
-            $ret .= sprintf " max=%s", to_interval( $$perfdata[6] ) if exists $$perfdata[6];
+            $ret .= sprintf " warn=%s", to_interval( $$perfdata[3] ) if defined $$perfdata[3];
+            $ret .= sprintf " crit=%s", to_interval( $$perfdata[4] ) if defined $$perfdata[4];
+            $ret .= sprintf " min=%s", to_interval( $$perfdata[5] ) if defined $$perfdata[5];
+            $ret .= sprintf " max=%s", to_interval( $$perfdata[6] ) if defined $$perfdata[6];
             $ret .= "\n";
         }
         else {
             $ret .= sprintf "%-15s: %s=%s", "Perfdata",
                 $$perfdata[0], $$perfdata[1];
-            $ret .= sprintf "%s", $$perfdata[2] if exists $$perfdata[2];
-            $ret .= sprintf " warn=%s", $$perfdata[3] if exists $$perfdata[3];
-            $ret .= sprintf " crit=%s", $$perfdata[4] if exists $$perfdata[4];
-            $ret .= sprintf " min=%s", $$perfdata[5] if exists $$perfdata[5];
-            $ret .= sprintf " max=%s", $$perfdata[6] if exists $$perfdata[6];
+            $ret .= sprintf "%s", $$perfdata[2] if defined $$perfdata[2];
+            $ret .= sprintf " warn=%s", $$perfdata[3] if defined $$perfdata[3];
+            $ret .= sprintf " crit=%s", $$perfdata[4] if defined $$perfdata[4];
+            $ret .= sprintf " min=%s", $$perfdata[5] if defined $$perfdata[5];
+            $ret .= sprintf " max=%s", $$perfdata[6] if defined $$perfdata[6];
             $ret .= "\n";
         }
     }
