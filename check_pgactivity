@@ -3177,7 +3177,8 @@ sub check_hit_ratio {
         # metrics moved since last run
         if ( $hit_delta + $read_delta > 0 ) {
             $ratio = 100 * $hit_delta / ( $hit_delta + $read_delta );
-            $ratio = int($ratio*100+0.05)/100;
+            # rounding the fractional part to 2 digits
+            $ratio = int($ratio*100+0.5)/100;
             $new_db_hitratio{ $db->[0] }[2] = $ratio;
 
             @perfdata_value = ( $db->[0], $ratio, '%' );
