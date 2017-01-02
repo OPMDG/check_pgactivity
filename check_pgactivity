@@ -3862,7 +3862,7 @@ sub check_locks {
     my $me            = 'POSTGRES_LOCKS';
     my %queries       = (
         $PG_VERSION_74 => q{
-            SELECT count(l.*), ref.mode,
+            SELECT count(l.granted), ref.mode,
                 current_setting('max_locks_per_transaction')::integer
                 * current_setting('max_connections')::integer, 0, ref.granted
             FROM (
@@ -3889,7 +3889,7 @@ sub check_locks {
             ORDER BY ref.granted, ref.mode
         },
         $PG_VERSION_82 => q{
-            SELECT count(l.*), ref.mode,
+            SELECT count(l.granted), ref.mode,
                 current_setting('max_locks_per_transaction')::integer * (
                     current_setting('max_prepared_transactions')::integer
                     + current_setting('max_connections')::integer), 0, ref.granted
@@ -3918,7 +3918,7 @@ sub check_locks {
             ORDER BY ref.granted, ref.mode
         },
         $PG_VERSION_91 => q{
-            SELECT count(l.*), ref.mode,
+            SELECT count(l.granted), ref.mode,
                 current_setting('max_locks_per_transaction')::integer * (
                     current_setting('max_prepared_transactions')::integer
                     + current_setting('max_connections')::integer),
