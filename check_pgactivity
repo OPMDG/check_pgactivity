@@ -6218,7 +6218,26 @@ sub check_wal_files {
     my $me       = 'POSTGRES_WAL_FILES';
     my $wal_size = hex('ff000000');
     my %queries  = (
-    $PG_VERSION_95 => q{
+     $PG_VERSION_100 => q{
+        WITH wal_settings AS (
+          SELECT setting::int + current_setting('wal_keep_segments')::int as max_nb_wal
+          FROM pg_settings
+          WHERE name = 'max_wal_size'
+        )
+        SELECT s.f,
+          max_nb_wal,
+          CASE WHEN pg_is_in_recovery()
+            THEN NULL
+            ELSE pg_current_xlog_location()
+          END,
+          current_setting('wal_keep_segments')::integer
+        FROM pg_ls_dir('pg_wal') AS s(f)
+        CROSS JOIN wal_settings
+        WHERE f ~ '^[0-9A-F]{24}$'
+        ORDER BY
+          (pg_stat_file('pg_wal/'||s,true)).modification DESC,
+          f DESC},
+     $PG_VERSION_95 => q{
         WITH wal_settings AS (
           SELECT setting::int + current_setting('wal_keep_segments')::int as max_nb_wal
           FROM pg_settings
