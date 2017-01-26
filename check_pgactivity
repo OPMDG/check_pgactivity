@@ -976,7 +976,7 @@ sub query_ver($\%;$) {
 
     set_pgversion($host);
 
-    foreach my $ver ( sort { $b cmp $a } keys %queries ) {
+    foreach my $ver ( sort { $b <=> $a } keys %queries ) {
         return query( $host, $queries{$ver}, $db )
             if ( $ver <= $host->{'version_num'} );
     }
