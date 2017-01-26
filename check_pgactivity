@@ -59,20 +59,21 @@ $| = 1;
 $VERSION = '2.1_rc3';
 $PROGRAM = 'check_pgactivity';
 
-my $PG_VERSION_MIN = 70400;
-my $PG_VERSION_74  = 70400;
-my $PG_VERSION_80  = 80000;
-my $PG_VERSION_81  = 80100;
-my $PG_VERSION_82  = 80200;
-my $PG_VERSION_83  = 80300;
-my $PG_VERSION_84  = 80400;
-my $PG_VERSION_90  = 90000;
-my $PG_VERSION_91  = 90100;
-my $PG_VERSION_92  = 90200;
-my $PG_VERSION_93  = 90300;
-my $PG_VERSION_94  = 90400;
-my $PG_VERSION_95  = 90500;
-my $PG_VERSION_96  = 90600;
+my $PG_VERSION_MIN =  70400;
+my $PG_VERSION_74  =  70400;
+my $PG_VERSION_80  =  80000;
+my $PG_VERSION_81  =  80100;
+my $PG_VERSION_82  =  80200;
+my $PG_VERSION_83  =  80300;
+my $PG_VERSION_84  =  80400;
+my $PG_VERSION_90  =  90000;
+my $PG_VERSION_91  =  90100;
+my $PG_VERSION_92  =  90200;
+my $PG_VERSION_93  =  90300;
+my $PG_VERSION_94  =  90400;
+my $PG_VERSION_95  =  90500;
+my $PG_VERSION_96  =  90600;
+my $PG_VERSION_100 = 100000;
 
 # reference to the output sub
 my $output_fmt;
@@ -1005,7 +1006,7 @@ sub set_pgversion($) {
 
     unless ( $host->{'version'} ) {
 
-        my $rs = query( $host, q{SELECT current_setting('server_version')} );
+        my $rs = query( $host, q{SELECT setting FROM pg_catalog.pg_settings WHERE name IN ('server_version_num', 'server_version') ORDER BY name = 'server_version_num'} );
 
         if ( $? != 0 ) {
             dprint("FATAL: psql error, $!\n");
@@ -1014,21 +1015,26 @@ sub set_pgversion($) {
 
         $host->{'version'} = $rs->[0][0];
 
-        chomp( $host->{'version'} );
-    }
+	chomp( $host->{'version'} );
 
-    if ( $host->{'version'} =~ /^(\d+)\.(\d+)(.(\d+))?/ ) {
-        $host->{'version_num'} = int($1) * 10000 + int($2) * 100;
+	if ( scalar(@$rs) > 1 ) {
+            # only use server_version_num for PostgreSQL 8.2+
+            $host->{'version_num'} = $rs->[1][0];
 
-        # alpha/beta version have no minor version number
-        $host->{'version_num'} += int($4) if defined $4;
+            chomp( $host->{'version_num'} );
+        }
+        elsif ( $host->{'version'} =~ /^(\d+)\.(\d+)(.(\d+))?/ ) {
+            # get back to the regexp handling for PostgreSQL <8.2
+            $host->{'version_num'} = int($1) * 10000 + int($2) * 100;
 
+            # alpha/beta version have no minor version number
+            $host->{'version_num'} += int($4) if defined $4;
+        }
         dprint(sprintf ("host %s is version %s/%s\n",
             $host->{'name'},
             $host->{'version'},
             $host->{'version_num'})
         );
-
         return;
     }
 
