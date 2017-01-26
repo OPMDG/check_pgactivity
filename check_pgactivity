@@ -59,20 +59,21 @@ $| = 1;
 $VERSION = '2.1_rc3';
 $PROGRAM = 'check_pgactivity';
 
-my $PG_VERSION_MIN = 70400;
-my $PG_VERSION_74  = 70400;
-my $PG_VERSION_80  = 80000;
-my $PG_VERSION_81  = 80100;
-my $PG_VERSION_82  = 80200;
-my $PG_VERSION_83  = 80300;
-my $PG_VERSION_84  = 80400;
-my $PG_VERSION_90  = 90000;
-my $PG_VERSION_91  = 90100;
-my $PG_VERSION_92  = 90200;
-my $PG_VERSION_93  = 90300;
-my $PG_VERSION_94  = 90400;
-my $PG_VERSION_95  = 90500;
-my $PG_VERSION_96  = 90600;
+my $PG_VERSION_MIN  =  70400;
+my $PG_VERSION_74   =  70400;
+my $PG_VERSION_80   =  80000;
+my $PG_VERSION_81   =  80100;
+my $PG_VERSION_82   =  80200;
+my $PG_VERSION_83   =  80300;
+my $PG_VERSION_84   =  80400;
+my $PG_VERSION_90   =  90000;
+my $PG_VERSION_91   =  90100;
+my $PG_VERSION_92   =  90200;
+my $PG_VERSION_93   =  90300;
+my $PG_VERSION_94   =  90400;
+my $PG_VERSION_95   =  90500;
+my $PG_VERSION_96   =  90600;
+my $PG_VERSION_100  = 100000;
 
 # reference to the output sub
 my $output_fmt;
@@ -971,7 +972,7 @@ sub query_ver($\%;$) {
 
     set_pgversion($host);
 
-    foreach my $ver ( sort { $b cmp $a } keys %queries ) {
+    foreach my $ver ( sort { $b <=> $a } keys %queries ) {
         return query( $host, $queries{$ver}, $db )
             if ( $ver <= $host->{'version_num'} );
     }
@@ -1017,11 +1018,12 @@ sub set_pgversion($) {
         chomp( $host->{'version'} );
     }
 
-    if ( $host->{'version'} =~ /^(\d+)\.(\d+)(.(\d+))?/ ) {
-        $host->{'version_num'} = int($1) * 10000 + int($2) * 100;
+    if ( $host->{'version'} =~ /^(\d+)(.(\d+))?(.(\d+))?/ ) {
+        $host->{'version_num'} = int($1) * 10000;
 
         # alpha/beta version have no minor version number
-        $host->{'version_num'} += int($4) if defined $4;
+        $host->{'version_num'} += int($3) * 100 if defined $3;
+        $host->{'version_num'} += int($5) if defined $5;
 
         dprint(sprintf ("host %s is version %s/%s\n",
             $host->{'name'},
