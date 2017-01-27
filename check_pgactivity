@@ -5048,14 +5048,22 @@ sub check_archiver {
     # cf. pgarch_readyXlog in src/backend/postmaster/pgarch.c about how the
     # archiver process pick the next WAL to archive.
     # We try to reproduce the same algo here
-    my $query = q{
-         SELECT s.f,
-           extract(epoch from (pg_stat_file('pg_xlog/archive_status/'||s.f)).modification),
-           extract(epoch from current_timestamp)
-         FROM pg_ls_dir('pg_xlog/archive_status') AS s(f)
-         WHERE f ~ '^[0123456789ABCDEF.history.backup.partial]{16,40}\.ready$'
-         ORDER BY s.f ASC
-    };
+    my %queries = (
+       $PG_VERSION_81 => q{
+           SELECT s.f,
+             extract(epoch from (pg_stat_file('pg_xlog/archive_status/'||s.f)).modification),
+             extract(epoch from current_timestamp)
+           FROM pg_ls_dir('pg_xlog/archive_status') AS s(f)
+           WHERE f ~ '^[0123456789ABCDEF.history.backup.partial]{16,40}\.ready$'
+           ORDER BY s.f ASC},
+       $PG_VERSION_100 => q{
+           SELECT s.f,
+             extract(epoch from (pg_stat_file('pg_wal/archive_status/'||s.f)).modification),
+             extract(epoch from current_timestamp)
+           FROM pg_ls_dir('pg_wal/archive_status') AS s(f)
+           WHERE f ~ '^[0123456789ABCDEF.history.backup.partial]{16,40}\.ready$'
+           ORDER BY s.f ASC}
+    );
 
     # warning and critical must be raw
     pod2usage(
@@ -5075,7 +5083,7 @@ sub check_archiver {
 
     $prev_archiving = load( $hosts[0], 'archiver', $args{'status-file'} ) || '';
 
-    @rs = @{ query( $hosts[0], $query ) };
+    @rs = @{ query_ver( $hosts[0], %queries ) };
 
     $nb_files = scalar @rs;
 
