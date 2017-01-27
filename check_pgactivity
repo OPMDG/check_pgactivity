@@ -5232,23 +5232,36 @@ sub check_settings {
     my @rs;
     my %settings;
     my %new_settings;
+    my $pending_count = 0;
     my %args  = %{ $_[0] };
-    my $query = q{
-        SELECT coalesce(r.rolname, '*'), coalesce(d.datname, '*'),
-               unnest(s.setconfig) AS setting
+    my %queries = (
+       $PG_VERSION_90 => q{ SELECT coalesce(r.rolname, '*'), coalesce(d.datname, '*'),
+               unnest(s.setconfig) AS setting,
+	       false AS pending_restart
         FROM pg_db_role_setting s
         LEFT JOIN pg_database d ON d.oid=s.setdatabase
         LEFT JOIN pg_roles r ON r.oid=s.setrole
         UNION ALL
-        SELECT '*', '*', name||'='||current_setting(name)
+        SELECT '*', '*', name||'='||current_setting(name),false
         FROM pg_settings
-    };
+       },
+       $PG_VERSION_95 => q{ SELECT coalesce(r.rolname, '*'), coalesce(d.datname, '*'),
+               unnest(s.setconfig) AS setting,
+	       false AS pending_restart
+        FROM pg_db_role_setting s
+        LEFT JOIN pg_database d ON d.oid=s.setdatabase
+        LEFT JOIN pg_roles r ON r.oid=s.setrole
+        UNION ALL
+        SELECT '*', '*', name||'='||current_setting(name), pending_restart
+        FROM pg_settings
+       }
+    );
 
     @hosts = @{ parse_hosts %args };
 
     is_compat $hosts[0], 'settings', $PG_VERSION_90 or exit 1;
 
-    @rs = @{ query( $hosts[0], $query ) };
+    @rs = @{ query_ver( $hosts[0], %queries ) };
 
     %settings = %{ load( $hosts[0], 'settings', $args{'status-file'} ) || {} };
 
@@ -5256,10 +5269,15 @@ sub check_settings {
     $args{'save'} = 1 unless %settings;
 
 PARAM_LOOP: foreach my $row (@rs) {
-        my ( $rolname, $datname, $setting ) = @$row;
+        my ( $rolname, $datname, $setting, $pending ) = @$row;
         my ( $name, $val ) = split /=/ => $setting, 2;
         my $prefix = "$rolname\@$datname";
         my $msg = "$setting";
+
+        if ( $pending eq "t" ) {
+            $pending_count++;
+            push @long_msg => "$name is pending restart !";
+        }
 
         $msg = "$prefix: $setting" unless $prefix eq '*@*';
 
@@ -5287,6 +5305,9 @@ PARAM_LOOP: foreach my $row (@rs) {
         save $hosts[0], 'settings', \%new_settings, $args{'status-file'};
         return ok( $me, [ "Setting saved" ] )
     }
+
+    return warning( $me, [ 'Setting changed and pending restart!' ], undef, \@long_msg )
+        if $pending_count > 0;
 
     return warning( $me, [ 'Setting changed!' ], undef, \@long_msg )
         if scalar @long_msg;
