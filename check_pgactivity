@@ -36,6 +36,7 @@ use Getopt::Long qw(:config bundling no_ignore_case_always);
 use List::Util qw(max);
 use Pod::Usage;
 use Scalar::Util qw(looks_like_number);
+use Fcntl qw(:flock);
 use Storable qw(lock_store lock_retrieve);
 
 use Config;
@@ -453,10 +454,16 @@ sub is_storable($) {
     my $storage = shift;
     my $head;
 
-    return Storable::file_magic( $storage ) if
-        defined *Storable::file_magic{CODE};
-
     open my $fh, '<', $storage;
+    flock($fh, LOCK_SH) or die "can't get shared lock on $storage: $!";
+
+    if ( defined *Storable::file_magic{CODE}
+         and Storable::file_magic( $storage )
+    ) {
+        close $fh; # release the shared lock
+        return 1;
+    }
+
     read $fh, $head, 64;
     close $fh;
 
