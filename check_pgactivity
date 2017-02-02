@@ -244,6 +244,10 @@ my %services = (
         'sub'  => \&check_stat_snapshot_age,
 	'desc' => 'Check stats collector\'s stats age'
     },
+    'sequences_exhausted' => {
+        'sub'  => \&check_sequences_exhausted,
+        'desc' => 'Check that auto-incremented colums aren\'t reaching their upper limit'
+	}
 );
 
 
@@ -6500,6 +6504,175 @@ sub check_stat_snapshot_age {
         return warning( $me, \@msg, \@perfdata )  if $stats_age >= $w_limit;
     }
 
+    return ok( $me, \@msg, \@perfdata );
+}
+
+=item B<sequences_exhausted> (7.4+)
+
+Check all sequences assigned to a column (the smallserial,serial and bigserial types),
+and raise an alarm if the column or sequences gets too close to its maximum value.
+
+Perfdata returns the sequence(s) that may have trigger the alert.
+
+Critical and Warning thresholds accept a percentage of the sequence filled.
+
+=cut
+sub check_sequences_exhausted {
+    my $me       = 'POSTGRES_CHECK_SEQ_EXHAUSTED';
+    my @rs;
+    my @rs2;
+    my @perfdata;
+    my @msg;
+    my @longmsg;
+    my @hosts;
+    my %args     = %{ $_[0] };
+    my $stats_age;
+    my @all_db;
+    my @dbinclude = @{ $args{'dbinclude'} };
+    my @dbexclude = @{ $args{'dbexclude'} };
+    my $criticity=0; # 0=ok, 1=warn, 2=critical
+
+    # Search path is emptied so that ::regclass gives us full paths
+    my $query  = qq{
+SET search_path TO 'pg_catalog';
+SELECT t.typname,
+       seq.oid::regclass as name,
+       pg_catalog.quote_ident(n.nspname) || '.' || pg_catalog.quote_ident(c.relname) || '.' || pg_catalog.quote_ident(a.attname)
+FROM pg_class seq
+INNER JOIN pg_catalog.pg_depend d ON d.objid=seq.oid
+INNER JOIN pg_catalog.pg_class c  ON c.oid=d.refobjid
+INNER JOIN pg_catalog.pg_namespace n ON n.oid=c.relnamespace
+INNER JOIN pg_catalog.pg_attribute a ON (
+         a.attrelid=c.oid AND
+         a.attnum=d.refobjsubid)
+INNER JOIN pg_catalog.pg_type t ON a.atttypid=t.oid
+WHERE seq.relkind='S'
+ AND d.classid='pg_catalog.pg_class'::pg_catalog.regclass
+ AND d.refclassid='pg_catalog.pg_class'::pg_catalog.regclass
+ AND d.deptype='a'
+    };
+
+    if ( not defined $args{'warning'} or not defined $args{'critical'} ) {
+        # warning and critical are mandatory.
+        pod2usage(
+            -message => "FATAL: you must specify critical and warning thresholds.",
+            -exitval => 127
+        );
+    }
+    unless ( $args{'warning'}  =~ m/^([0-9.]+)%$/
+          and  $args{'critical'} =~ m/^([0-9.]+)%$/)
+    {
+        # warning and critical must be %.
+        pod2usage(
+            -message => "FATAL: critical and warning thresholds only accept %.",
+            -exitval => 127
+        );
+    }
+
+    @hosts = @{ parse_hosts %args };
+    pod2usage(
+        -message => 'FATAL: you must give only one host with service "sequences_exhausted".',
+        -exitval => 127
+    ) if @hosts != 1;
+
+    is_compat $hosts[0], 'sequences_exhausted', $PG_VERSION_82 or exit 1;
+
+    @all_db = @{ get_all_dbname( $hosts[0] ) };
+
+
+    # Iterate over all db
+    ALLDB_LOOP: foreach my $db (sort @all_db) {
+        next ALLDB_LOOP if grep { $db =~ /$_/ } @dbexclude;
+        next ALLDB_LOOP if @dbinclude and not grep { $db =~ /$_/ } @dbinclude;
+        # We got an array: for each sequence, type (int2, int4, int8), sequence name, and the column name
+        @rs = @{ query ( $hosts[0], $query, $db ) };
+
+        # Now a second query: get last_value for all sequences. There is no way to not generate a query here
+        my @query_elements;
+        foreach my $record(@rs) {
+            my $seqname=$record->[1];
+            my $protected_seqname=$seqname;
+            $protected_seqname=~s/'/''/g; # Protect quotes
+            push @query_elements,("SELECT '$protected_seqname',last_value,min_value,max_value,increment_by FROM $seqname");
+        }
+        my $query_elements=join("\nUNION ALL\n",@query_elements);
+
+        # We got a second array: for each sequence, last value and max value (in this sequence)
+        @rs2 = @{ query ( $hosts[0], $query_elements, $db ) };
+
+        # To do things easier, we create a hash table with all sequences, merging these two queries
+        my %sequences;
+        foreach my $record(@rs) {
+            $sequences{$record->[1]}->{TYPE}=$record->[0];
+            $sequences{$record->[1]}->{COLNAME}=$record->[2];
+        }
+        foreach my $record(@rs2) {
+            $sequences{$record->[0]}->{LASTVALSEQ}=$record->[1];
+            $sequences{$record->[0]}->{MINVALSEQ}=$record->[2];
+            $sequences{$record->[0]}->{MAXVALSEQ}=$record->[3];
+            $sequences{$record->[0]}->{INCREMENTBY}=$record->[4];
+        }
+
+        # Calculate real max value:
+        # We take into accound negative incrementby. If incrementby <0, use minvalseq
+        foreach my $seq (keys %sequences)
+        {
+            my $max_value;
+            # We don't make the differenc between positive and negative limit
+            # It's only 1 of difference, so these is no point…
+            if ($sequences{$seq}->{TYPE} eq 'int2') {
+                $max_value=32767;
+            }
+            elsif ($sequences{$seq}->{TYPE} eq 'int4') {
+                $max_value=2147483647;
+            }
+            elsif ($sequences{$seq}->{TYPE} eq 'int8') {
+                $max_value=9223372036854775807;
+            }
+            else
+            {
+                # FIXME: do we need to support numeric ?
+                die "I don't know this type: ". $sequences{$seq}->{TYPE} . "for $seq";
+            }
+            my $max_val_seq;
+            if ($sequences{$seq}->{INCREMENTBY}>=0) {
+                $max_val_seq=$sequences{$seq}->{MAXVALSEQ};
+                $sequences{$seq}->{ABSVALSEQ}=$sequences{$seq}->{LASTVALSEQ};
+            } else {
+                $max_val_seq=-$sequences{$seq}->{MINVALSEQ};# Reverse the sign
+                $sequences{$seq}->{ABSVALSEQ}=-$sequences{$seq}->{LASTVALSEQ};
+            }
+            # The real maximum value is the smallest of both
+            my $real_max_value=$max_val_seq<=$max_value?$max_val_seq:$max_value;
+            $sequences{$seq}->{REALMAXVALUE}=$real_max_value;
+        }
+        # We have inverted values for the reverse-order sequences. We don't have to think about it anymore
+
+        foreach my $seq(keys %sequences) {
+            # First, get all info
+            my $real_max_value=$sequences{$seq}->{REALMAXVALUE};
+            my $lim_warning=$real_max_value-get_size($args{'warning'},$real_max_value);
+            my $lim_critical=$real_max_value-get_size($args{'critical'},$real_max_value);
+            my $how_much_left=$real_max_value-$sequences{$seq}->{ABSVALSEQ};
+            my $seq_desc="$db." . $sequences{$seq}->{COLNAME};
+            my $long_seq_desc="$db.$seq(owned by " . $sequences{$seq}->{COLNAME} . ')';
+            my $seq_criticity=0;
+            if ($how_much_left<=$lim_critical) {
+                $seq_criticity=2;
+            }
+            elsif ($how_much_left<=$lim_warning) {
+                $seq_criticity=1;
+            }
+            if ($seq_criticity>=1) {
+                push @perfdata => [ $seq_desc, $how_much_left, undef,
+                                    $lim_warning, $lim_critical, 0, $sequences{$seq}->{REALMAXVALUE} ];
+                push @longmsg, "$long_seq_desc $how_much_left values left";
+                $criticity=$criticity>$seq_criticity?$criticity:$seq_criticity; # Take biggest of the criticities
+            }
+        }
+    }
+    return warning( $me, \@msg, \@perfdata, \@longmsg ) if ($criticity==1);
+    return critical( $me, \@msg, \@perfdata, \@longmsg ) if ($criticity==2);
     return ok( $me, \@msg, \@perfdata );
 }
 
