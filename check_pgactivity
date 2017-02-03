@@ -1860,7 +1860,7 @@ sub check_backends_status {
         # pg_stat_activity schema change for wait events
         $PG_VERSION_96 => q{
             SELECT CASE
-                WHEN s.wait_event = 'Lock' THEN 'waiting for lock'
+                WHEN s.wait_event_type = 'Lock' THEN 'waiting for lock'
                 WHEN s.query = '<insufficient privilege>'
                     THEN 'insufficient privilege'
                 WHEN s.state IS NULL THEN 'undefined'
