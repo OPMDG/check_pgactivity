@@ -117,7 +117,7 @@ my %services = (
         'sub'  => \&check_table_unlogged,
         'desc' => 'Check unlogged table'
     },
-    
+
     'wal_files' => {
         'sub'  => \&check_wal_files,
         'desc' => 'Total number of WAL files.',
@@ -762,7 +762,7 @@ sub get_size($;$) {
 =head2 CONNECTIONS
 
 check_pgactivity allows two different connection specifications: by service, or
-by specifying values for host, user, port, and database. 
+by specifying values for host, user, port, and database.
 Some services can run on multiple hosts, or needs to connect to multiple hosts.
 
 You must specify one of the parameters below if the service needs to connect
@@ -3496,8 +3496,8 @@ This service supports both C<--dbexclude>  and C<--dbinclude> parameters.
 This service supports a C<--exclude REGEX>  parameter to exclude indexes
 matching the given regular expression. The regular expression applies to
 "database.schema_name.index_name". This allows you to filter either on a
-relation name for all schemas and databases, filter on a qualified named 
-index (schema + index) for all databases or filter on a qualified named 
+relation name for all schemas and databases, filter on a qualified named
+index (schema + index) for all databases or filter on a qualified named
 index in only one database.
 
 You can use multiple C<--exclude REGEX>  parameters.
@@ -3545,7 +3545,7 @@ sub check_invalid_indexes {
 
     # Iterate over all db
     ALLDB_LOOP: foreach my $db ( sort @all_db ) {
-        
+
         my @rc;
         my $nb_idx      = 0;
         my $idx_invalid = 0;
@@ -3578,7 +3578,7 @@ sub check_invalid_indexes {
         if $total_extbl > 0;
 
     # we use the critical count for the **total** number of invalid index
-    return critical $me, [ "$c_count/$total_idx index(es) invalid" ], 
+    return critical $me, [ "$c_count/$total_idx index(es) invalid" ],
         \@perfdata, \@longmsg if $c_count > 0;
 
     return ok $me, [ "No invalid index" ], \@perfdata, \@longmsg ;
@@ -5503,8 +5503,8 @@ sub check_streaming_delta {
 
 Check if table are changed to unlogged. In 9.5, you can switch between logged and unlogged.
 
-Without C<--critical>  or C<--warning> parameters, this service attempts to fetch 
-all unlogged tables. 
+Without C<--critical>  or C<--warning> parameters, this service attempts to fetch
+all unlogged tables.
 
 A critical alert is raised if an unlogged table is detected.
 
@@ -5565,7 +5565,7 @@ sub check_table_unlogged {
     # Iterate over all db
     ALLDB_LOOP: foreach my $db (sort @all_db) {
         my @rc;
-        
+
         my $nb_tbl       = 0;
         my $tbl_unlogged = 0;
 
@@ -5581,7 +5581,7 @@ sub check_table_unlogged {
                     $total_extbl++;
                     next UNLOGGED_LOOP ;
                 }
-                
+
             }
 
             # unlogged table count
@@ -5589,7 +5589,7 @@ sub check_table_unlogged {
                 # long message info :
                 push @longmsg => sprintf "%s.%s.%s (unlogged);",
                     $unlogged->[0], $unlogged->[1], $unlogged->[2];
-                    
+
                 $tbl_unlogged++;
             }
 
@@ -5610,7 +5610,7 @@ sub check_table_unlogged {
         \@perfdata, \@longmsg
             if $c_count > 0;
 
-    return ok $me, 
+    return ok $me,
         [ "No unlogged table" ],
         \@perfdata, \@longmsg;
 }
@@ -5954,7 +5954,7 @@ sub check_temp_files {
               WHEN agg.tmpfile <> '' THEN (pg_stat_file(agg.dir||'/'||agg.tmpfile)).size
               ELSE 0 END)
           FROM (
-            SELECT t3.datname, t3.spcname, t3.dbroot||'/'||t3.dbcont AS dir, 
+            SELECT t3.datname, t3.spcname, t3.dbroot||'/'||t3.dbcont AS dir,
               CASE gs.i WHEN 1 THEN pg_ls_dir(t3.dbroot||'/'||t3.dbcont) ELSE '' END AS tmpfile
             FROM (
               SELECT d.datname, t2.spcname, t2.tblroot||'/'||t2.tblcont AS dbroot, pg_ls_dir(t2.tblroot||'/'||t2.tblcont) AS dbcont
@@ -6282,7 +6282,7 @@ sub check_wal_files {
           SELECT setting::int + current_setting('wal_keep_segments')::int as max_nb_wal
           FROM pg_settings
           WHERE name = 'max_wal_size'
-        )       
+        )
         SELECT s.f,
           max_nb_wal,
           CASE WHEN pg_is_in_recovery()
@@ -6530,27 +6530,10 @@ sub check_sequences_exhausted {
     my @all_db;
     my @dbinclude = @{ $args{'dbinclude'} };
     my @dbexclude = @{ $args{'dbexclude'} };
+    my %sequences;
     my $criticity=0; # 0=ok, 1=warn, 2=critical
 
-    # Search path is emptied so that ::regclass gives us full paths
-    my $query  = qq{
-SET search_path TO 'pg_catalog';
-SELECT t.typname,
-       seq.oid::regclass as name,
-       pg_catalog.quote_ident(n.nspname) || '.' || pg_catalog.quote_ident(c.relname) || '.' || pg_catalog.quote_ident(a.attname)
-FROM pg_class seq
-INNER JOIN pg_catalog.pg_depend d ON d.objid=seq.oid
-INNER JOIN pg_catalog.pg_class c  ON c.oid=d.refobjid
-INNER JOIN pg_catalog.pg_namespace n ON n.oid=c.relnamespace
-INNER JOIN pg_catalog.pg_attribute a ON (
-         a.attrelid=c.oid AND
-         a.attnum=d.refobjsubid)
-INNER JOIN pg_catalog.pg_type t ON a.atttypid=t.oid
-WHERE seq.relkind='S'
- AND d.classid='pg_catalog.pg_class'::pg_catalog.regclass
- AND d.refclassid='pg_catalog.pg_class'::pg_catalog.regclass
- AND d.deptype='a'
-    };
+
 
     if ( not defined $args{'warning'} or not defined $args{'critical'} ) {
         # warning and critical are mandatory.
@@ -6570,6 +6553,7 @@ WHERE seq.relkind='S'
     }
 
     @hosts = @{ parse_hosts %args };
+
     pod2usage(
         -message => 'FATAL: you must give only one host with service "sequences_exhausted".',
         -exitval => 127
@@ -6584,35 +6568,94 @@ WHERE seq.relkind='S'
     ALLDB_LOOP: foreach my $db (sort @all_db) {
         next ALLDB_LOOP if grep { $db =~ /$_/ } @dbexclude;
         next ALLDB_LOOP if @dbinclude and not grep { $db =~ /$_/ } @dbinclude;
-        # We got an array: for each sequence, type (int2, int4, int8), sequence name, and the column name
-        @rs = @{ query ( $hosts[0], $query, $db ) };
 
-        # Now a second query: get last_value for all sequences. There is no way to not generate a query here
-        my @query_elements;
-        foreach my $record(@rs) {
-            my $seqname=$record->[1];
-            my $protected_seqname=$seqname;
-            $protected_seqname=~s/'/''/g; # Protect quotes
-            push @query_elements,("SELECT '$protected_seqname',last_value,min_value,max_value,increment_by FROM $seqname");
+        # We have two code paths: one for < 10.0 and one for >=10.S
+        if (is_compat $hosts[0], 'sequences_exhausted', $PG_VERSION_82, $PG_VERSION_96)
+        {
+            # Search path is emptied so that ::regclass gives us full paths
+            my $query  = qq{
+SET search_path TO 'pg_catalog';
+SELECT t.typname,
+       seq.oid::regclass as name,
+       pg_catalog.quote_ident(n.nspname) || '.' || pg_catalog.quote_ident(c.relname) || '.' || pg_catalog.quote_ident(a.attname)
+FROM pg_class seq
+INNER JOIN pg_catalog.pg_depend d ON d.objid=seq.oid
+INNER JOIN pg_catalog.pg_class c  ON c.oid=d.refobjid
+INNER JOIN pg_catalog.pg_namespace n ON n.oid=c.relnamespace
+INNER JOIN pg_catalog.pg_attribute a ON (
+         a.attrelid=c.oid AND
+         a.attnum=d.refobjsubid)
+INNER JOIN pg_catalog.pg_type t ON a.atttypid=t.oid
+WHERE seq.relkind='S'
+ AND d.classid='pg_catalog.pg_class'::pg_catalog.regclass
+ AND d.refclassid='pg_catalog.pg_class'::pg_catalog.regclass
+ AND d.deptype='a'};
+            # We got an array: for each record, type (int2, int4, int8), sequence name, and the column name
+            @rs = @{ query ( $hosts[0], $query, $db ) };
+
+            # Now a second query: get last_value for all sequences. There is no way to not generate a query here
+            my @query_elements;
+            foreach my $record(@rs) {
+                my $seqname=$record->[1];
+                my $protected_seqname=$seqname;
+                $protected_seqname=~s/'/''/g; # Protect quotes
+                push @query_elements,("SELECT '$protected_seqname',last_value,min_value,max_value,increment_by FROM $seqname");
+            }
+            my $query_elements=join("\nUNION ALL\n",@query_elements);
+
+            # We got a second array: for each record, sequence, last value and max value (in this sequence)
+            @rs2 = @{ query ( $hosts[0], $query_elements, $db ) };
+
+            # To do things easier, we store all this in a hash table with all sequences, merging these two queries
+            foreach my $record(@rs) {
+                $sequences{$record->[1]}->{TYPE}=$record->[0];
+                $sequences{$record->[1]}->{COLNAME}=$record->[2];
+            }
+            foreach my $record(@rs2) {
+                $sequences{$record->[0]}->{LASTVALSEQ}=$record->[1];
+                $sequences{$record->[0]}->{MINVALSEQ}=$record->[2];
+                $sequences{$record->[0]}->{MAXVALSEQ}=$record->[3];
+                $sequences{$record->[0]}->{INCREMENTBY}=$record->[4];
+            }
         }
-        my $query_elements=join("\nUNION ALL\n",@query_elements);
-
-        # We got a second array: for each sequence, last value and max value (in this sequence)
-        @rs2 = @{ query ( $hosts[0], $query_elements, $db ) };
-
-        # To do things easier, we create a hash table with all sequences, merging these two queries
-        my %sequences;
-        foreach my $record(@rs) {
-            $sequences{$record->[1]}->{TYPE}=$record->[0];
-            $sequences{$record->[1]}->{COLNAME}=$record->[2];
+        else
+        {
+            # Version 10.0 and bigger: we have pg_sequence now, and functions to get info directly from the sequence
+            my $query = qq{
+SET search_path TO 'pg_catalog';
+SELECT
+    t.typname,
+    seq.seqrelid::regclass AS sequencename,
+    pg_catalog.quote_ident(n.nspname) || '.' || pg_catalog.quote_ident(c.relname) || '.' || pg_catalog.quote_ident(a.attname),
+    CASE
+        WHEN has_sequence_privilege(seq.seqrelid, 'SELECT,USAGE'::text) THEN pg_sequence_last_value(seq.seqrelid::regclass)
+        ELSE NULL::bigint
+    END AS last_value,
+    seq.seqmin AS min_value,
+    seq.seqmax AS max_value,
+    seq.seqincrement AS increment_by
+   FROM pg_sequence seq
+   INNER JOIN pg_catalog.pg_depend d ON d.objid=seq.seqrelid
+   INNER JOIN pg_catalog.pg_class c  ON c.oid=d.refobjid
+   INNER JOIN pg_catalog.pg_namespace n ON n.oid=c.relnamespace
+   INNER JOIN pg_catalog.pg_attribute a ON ( a.attrelid=c.oid
+	                                 AND a.attnum=d.refobjsubid)
+   INNER JOIN pg_catalog.pg_type t ON a.atttypid=t.oid
+   WHERE d.classid='pg_catalog.pg_class'::pg_catalog.regclass
+     AND d.refclassid='pg_catalog.pg_class'::pg_catalog.regclass
+     AND d.deptype='a'};
+            # We get an array: for each record, type (int2, int4, int8), sequence name, column name, last, min, max, increment
+            @rs = @{ query ( $hosts[0], $query, $db ) };
+            foreach my $record (@rs)
+            {
+                $sequences{$record->[1]}->{TYPE}=$record->[0];
+                $sequences{$record->[1]}->{COLNAME}=$record->[2];
+                $sequences{$record->[1]}->{LASTVALSEQ}=$record->[3];
+                $sequences{$record->[1]}->{MINVALSEQ}=$record->[4];
+                $sequences{$record->[1]}->{MAXVALSEQ}=$record->[5];
+                $sequences{$record->[1]}->{INCREMENTBY}=$record->[6];
+            }
         }
-        foreach my $record(@rs2) {
-            $sequences{$record->[0]}->{LASTVALSEQ}=$record->[1];
-            $sequences{$record->[0]}->{MINVALSEQ}=$record->[2];
-            $sequences{$record->[0]}->{MAXVALSEQ}=$record->[3];
-            $sequences{$record->[0]}->{INCREMENTBY}=$record->[4];
-        }
-
         # Calculate real max value:
         # We take into accound negative incrementby. If incrementby <0, use minvalseq
         foreach my $seq (keys %sequences)
