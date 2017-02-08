@@ -5262,7 +5262,7 @@ sub check_settings {
         UNION ALL
         SELECT '*', '*', pgs.name||'='||current_setting(pgs.name),
                pgs.pending_restart,
-               pfs.error || ' in ' || pfs.sourcefile
+               pfs.error || ' in ' || pfs.sourcefile || ' at line ' || pfs.sourceline
         FROM pg_settings pgs
 	LEFT JOIN pg_file_settings pfs ON (pgs.name = pfs.name)
        }
