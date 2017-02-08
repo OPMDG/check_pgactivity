@@ -5240,27 +5240,31 @@ sub check_settings {
     my %settings;
     my %new_settings;
     my $pending_count = 0;
+    my $error_count = 0;
     my %args  = %{ $_[0] };
     my %queries = (
        $PG_VERSION_90 => q{ SELECT coalesce(r.rolname, '*'), coalesce(d.datname, '*'),
                unnest(s.setconfig) AS setting,
-	       false AS pending_restart
+	       false AS pending_restart, NULL AS error
         FROM pg_db_role_setting s
         LEFT JOIN pg_database d ON d.oid=s.setdatabase
         LEFT JOIN pg_roles r ON r.oid=s.setrole
         UNION ALL
-        SELECT '*', '*', name||'='||current_setting(name),false
+        SELECT '*', '*', name||'='||current_setting(name),false,NULL
         FROM pg_settings
        },
        $PG_VERSION_95 => q{ SELECT coalesce(r.rolname, '*'), coalesce(d.datname, '*'),
                unnest(s.setconfig) AS setting,
-	       false AS pending_restart
+	       false AS pending_restart, NULL AS error
         FROM pg_db_role_setting s
         LEFT JOIN pg_database d ON d.oid=s.setdatabase
         LEFT JOIN pg_roles r ON r.oid=s.setrole
         UNION ALL
-        SELECT '*', '*', name||'='||current_setting(name), pending_restart
-        FROM pg_settings
+        SELECT '*', '*', pgs.name||'='||current_setting(pgs.name),
+               pgs.pending_restart,
+               pfs.error || ' in ' || pfs.sourcefile
+        FROM pg_settings pgs
+	LEFT JOIN pg_file_settings pfs ON (pgs.name = pfs.name)
        }
     );
 
@@ -5276,7 +5280,7 @@ sub check_settings {
     $args{'save'} = 1 unless %settings;
 
 PARAM_LOOP: foreach my $row (@rs) {
-        my ( $rolname, $datname, $setting, $pending ) = @$row;
+        my ( $rolname, $datname, $setting, $pending, $error ) = @$row;
         my ( $name, $val ) = split /=/ => $setting, 2;
         my $prefix = "$rolname\@$datname";
         my $msg = "$setting";
@@ -5285,6 +5289,11 @@ PARAM_LOOP: foreach my $row (@rs) {
             $pending_count++;
             push @long_msg => "$name is pending restart !";
         }
+
+        if ( $error ne "" ) {
+            $error_count++;
+            push @long_msg => "$name: $error";
+	}
 
         $msg = "$prefix: $setting" unless $prefix eq '*@*';
 
@@ -5312,6 +5321,9 @@ PARAM_LOOP: foreach my $row (@rs) {
         save $hosts[0], 'settings', \%new_settings, $args{'status-file'};
         return ok( $me, [ "Setting saved" ] )
     }
+
+    return critical( $me, [ 'Bad setting in configuration file will prevent PostgreSQL restart!' ], undef, \@long_msg )
+        if $error_count > 0;
 
     return warning( $me, [ 'Setting changed and pending restart!' ], undef, \@long_msg )
         if $pending_count > 0;
