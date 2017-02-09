@@ -5264,8 +5264,26 @@ sub check_settings {
                pgs.pending_restart,
                pfs.error || ' in ' || pfs.sourcefile || ' at line ' || pfs.sourceline
         FROM pg_settings pgs
-	LEFT JOIN pg_file_settings pfs ON (pgs.name = pfs.name)
-       }
+        LEFT JOIN pg_file_settings pfs ON (pgs.name = pfs.name)
+       },
+       $PG_VERSION_100 => q{ SELECT coalesce(r.rolname, '*'), coalesce(d.datname, '*'),
+               unnest(s.setconfig) AS setting,
+	       false AS pending_restart, NULL AS error
+        FROM pg_db_role_setting s
+        LEFT JOIN pg_database d ON d.oid=s.setdatabase
+        LEFT JOIN pg_roles r ON r.oid=s.setrole
+        UNION ALL
+        SELECT '*', '*', pgs.name||'='||current_setting(pgs.name),
+               pgs.pending_restart,
+               pfs.error || ' in ' || pfs.sourcefile || ' at line ' || pfs.sourceline
+        FROM pg_settings pgs
+        LEFT JOIN pg_file_settings pfs ON (pgs.name = pfs.name)
+        UNION ALL
+        SELECT '*', '*', 'hba_file_error', false,
+               error || ' in ' || current_setting('hba_file') || ' at line ' || line_number
+        FROM pg_hba_file_rules
+        WHERE error IS NOT NULL
+	}
     );
 
     @hosts = @{ parse_hosts %args };
@@ -5285,15 +5303,17 @@ PARAM_LOOP: foreach my $row (@rs) {
         my $prefix = "$rolname\@$datname";
         my $msg = "$setting";
 
-        if ( $pending eq "t" ) {
-            $pending_count++;
-            push @long_msg => "$name is pending restart !";
-        }
-
         if ( $error ne "" ) {
             $error_count++;
             push @long_msg => "$name: $error";
 	}
+
+        next PARAM_LOOP if ( $name eq "hba_file_error" );
+
+        if ( $pending eq "t" ) {
+            $pending_count++;
+            push @long_msg => "$name is pending restart !";
+        }
 
         $msg = "$prefix: $setting" unless $prefix eq '*@*';
 
