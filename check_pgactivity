@@ -5303,7 +5303,8 @@ PARAM_LOOP: foreach my $row (@rs) {
         my $prefix = "$rolname\@$datname";
         my $msg = "$setting";
 
-        if ( $error ne "" ) {
+        # error is a real error if pending_restart is not true
+        if ( $error ne "" and $pending ne "t") {
             $error_count++;
             push @long_msg => "$name: $error";
 	}
