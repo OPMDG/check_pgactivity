@@ -247,6 +247,10 @@ my %services = (
     'sequences_exhausted' => {
         'sub'  => \&check_sequences_exhausted,
         'desc' => 'Check that auto-incremented colums aren\'t reaching their upper limit'
+	},
+	    'pgdata_permission' => {
+        'sub'  => \&check_pgdata_permission,
+        'desc' => 'Check that the permission on PGDATA is 700'
 	}
 );
 
@@ -6719,6 +6723,67 @@ SELECT
     return ok( $me, \@msg, \@perfdata );
 }
 
+=item B<pgdata_permission> (9.6+)
+
+Check that the data directory of the instance has 700 as permission
+
+=cut
+sub check_pgdata_permission {
+    my $me       = 'POSTGRES_CHECK_PGDATA_PERMISSION';
+    my @rs;
+    my @rs2;
+    my @perfdata;
+    my @msg;
+    my @longmsg;
+    my @hosts;
+    my %args     = %{ $_[0] };
+    my $stats_age;
+    my $criticity=0; # 0=ok, 1=warn, 2=critical
+
+
+
+    @hosts = @{ parse_hosts %args };
+
+    pod2usage(
+        -message => 'FATAL: you must give only one host with service "pgdata_permission".',
+        -exitval => 127
+    ) if @hosts != 1;
+
+    is_compat $hosts[0], 'sequences_exhausted', $PG_VERSION_96 or exit 1;
+
+    # Get the data directory
+            my $query = qq{
+SELECT setting FROM pg_settings WHERE name='data_directory'
+};
+
+    @rs = @{ query ( $hosts[0], $query ) };
+
+    my $data_directory=$rs[0]->[0];
+
+    my @stat;
+    unless (@stat = stat($data_directory))
+    {
+       my @msg=("Postgresql returned this PGDATA: $data_directory, but I cannot access it: $!");
+       return unknown($me, \@msg);
+    }
+
+    my $mode=$stat[2];
+    my $perm=sprintf("%04o",$mode & 07777);
+
+    if ($perm ne '0700')
+    {
+        $criticity=2;
+        @msg=("Permission is $perm on $data_directory");
+    }
+    else
+    {
+        @msg=("Permission is ok on $data_directory");
+    }
+
+    return warning( $me, \@msg) if ($criticity==1);
+    return critical( $me, \@msg) if ($criticity==2);
+    return ok( $me, \@msg, \@perfdata );
+}
 # End of SERVICE section in pod doc
 =pod
 
