@@ -6437,7 +6437,7 @@ sub check_wal_files {
     return ok( $me, \@msg, \@perfdata );
 }
 
-=item B<stat_snapshot_age> (8.1+)
+=item B<stat_snapshot_age> (9.5+)
 
 Check the age of the statistics snapshot (statistics collector's statistics).
 This probe help to detect a frozen stats collector process.
