@@ -6290,7 +6290,7 @@ sub check_wal_files {
           max_nb_wal,
           CASE WHEN pg_is_in_recovery()
             THEN NULL
-            ELSE pg_current_xlog_location()
+            ELSE pg_current_wal_location()
           END,
           current_setting('wal_keep_segments')::integer
         FROM pg_ls_dir('pg_wal') AS s(f)
