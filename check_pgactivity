@@ -3630,7 +3630,8 @@ sub check_is_replay_paused {
     my $c_limit = -1;
     my %args    = %{ $_[0] };
     my $me      = 'POSTGRES_REPLICATION_PAUSED';
-    my $query   = q{
+    my %queries = (
+	$PG_VERSION_91 => q{
         SELECT pg_is_in_recovery()::int AS is_in_recovery,
         CASE pg_is_in_recovery()
             WHEN 't' THEN pg_is_xlog_replay_paused()::int
@@ -3645,8 +3646,24 @@ sub check_is_replay_paused {
                 THEN 1::int
             WHEN pg_is_in_recovery() THEN 0::int
             ELSE NULL
-        END AS delta
-    };
+        END AS delta},
+	$PG_VERSION_100 => q{
+        SELECT pg_is_in_recovery()::int AS is_in_recovery,
+        CASE pg_is_in_recovery()
+            WHEN 't' THEN pg_is_wal_replay_paused()::int
+            ELSE 0::int
+        END AS is_paused,
+        CASE pg_is_in_recovery()
+            WHEN 't' THEN extract('epoch' FROM now()-pg_last_xact_replay_timestamp())::int
+            ELSE NULL::int
+        END AS lag,
+        CASE
+            WHEN pg_is_in_recovery() AND pg_last_wal_replay_location() <> pg_last_wal_receive_location()
+                THEN 1::int
+            WHEN pg_is_in_recovery() THEN 0::int
+            ELSE NULL
+        END AS delta}
+    );
 
     if ( defined $args{'warning'} and defined $args{'critical'} ) {
         # warning and critical must be interval if provided.
@@ -3668,7 +3685,7 @@ sub check_is_replay_paused {
 
     is_compat $hosts[0], "is_replay_paused", $PG_VERSION_91 or exit 1;
 
-    @rs = @{ query( $hosts[0], $query )->[0] };
+    @rs = @{ query_ver( $hosts[0], %queries )->[0] };
 
     return unknown ( $me,
         [ "Server is not standby." ],
