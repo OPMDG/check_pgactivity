@@ -5154,7 +5154,8 @@ sub check_replication_slots {
     my @rs;
     my %args = %{ $_[0] };
 
-    my $query   = q{
+    my %queries = (
+       $PG_VERSION_94 => q{
         WITH wal_size AS (
             SELECT current_setting('wal_block_size')::int * setting::int AS val
             FROM pg_settings
@@ -5170,8 +5171,25 @@ sub check_replication_slots {
             ),0
         )
         FROM pg_replication_slots slot
-        CROSS JOIN wal_size s
-    };
+        CROSS JOIN wal_size s},
+       $PG_VERSION_100 => q{
+        WITH wal_size AS (
+            SELECT current_setting('wal_block_size')::int * setting::int AS val
+            FROM pg_settings
+            WHERE name = 'wal_segment_size'
+        )
+        SELECT slot.slot_name,
+        COALESCE(
+            floor(
+                (pg_wal_location_diff(pg_current_wal_location(), slot.restart_lsn)
+                - (pg_walfile_name_offset(restart_lsn)).file_offset
+                )
+                / (s.val)
+            ),0
+        )
+        FROM pg_replication_slots slot
+        CROSS JOIN wal_size s}
+    );
 
     @hosts = @{ parse_hosts %args };
 
@@ -5191,7 +5209,7 @@ sub check_replication_slots {
             and  $args{'critical'} =~ m/^([0-9]+)$/;
     }
 
-    @rs = @{ query( $hosts[0], $query ) };
+    @rs = @{ query_ver( $hosts[0], %queries ) };
 
 SLOTS_LOOP: foreach my $row (@rs) {
         push @perfdata => [ $row->[0], $row->[1] ];
