@@ -3284,7 +3284,8 @@ sub check_hot_standby_delta {
     my $me              = 'POSTGRES_HOT_STANDBY_DELTA';
     # we need to coalesce on pg_last_xlog_receive_location because it returns
     # NULL during WAL Shipping
-    my $query = "
+    my %queries = (
+	$PG_VERSION_90 => q{
         SELECT (NOT pg_is_in_recovery())::int,
             CASE pg_is_in_recovery()
                 WHEN 't' THEN coalesce(
@@ -3297,7 +3298,21 @@ sub check_hot_standby_delta {
                 WHEN 't' THEN pg_last_xlog_replay_location()
                 ELSE NULL
             END
-    ";
+	    },
+	$PG_VERSION_100 => q{
+        SELECT (NOT pg_is_in_recovery())::int,
+            CASE pg_is_in_recovery()
+                WHEN 't' THEN coalesce(
+                    pg_last_wal_receive_location(),
+                    pg_last_wal_replay_location()
+                )
+                ELSE pg_current_wal_location()
+            END,
+            CASE pg_is_in_recovery()
+                WHEN 't' THEN pg_last_wal_replay_location()
+                ELSE NULL
+            END
+	    });
 
     @hosts = @{ parse_hosts %args };
 
@@ -3312,7 +3327,7 @@ sub check_hot_standby_delta {
 
     # fetch LSNs
     foreach my $host (@hosts) {
-        $host->{'rs'} = \@{ query( $host, $query )->[0] };
+        $host->{'rs'} = \@{ query_ver( $host, %queries )->[0] };
         $num_clusters += $host->{'rs'}[0];
         $master_location = $host->{'rs'}[1] if $host->{'rs'}[0];
     }
