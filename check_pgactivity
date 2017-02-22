@@ -6802,16 +6802,10 @@ sub check_wal_receiver {
 
     is_compat $hosts[0], 'wal_receiver', $PG_VERSION_96 or exit 1;
 
-    my %queries  = (
-	   $PG_VERSION_96 => qq{ SELECT pid, slot_name, status, received_tli,
-                            pg_xlog_location_diff(latest_end_lsn, received_lsn) AS lag
-                       FROM pg_stat_wal_receiver },
-	   $PG_VERSION_100 => qq{ SELECT pid, slot_name, status, received_tli,
-                            pg_wal_location_diff(latest_end_lsn, received_lsn) AS lag
-                       FROM pg_stat_wal_receiver },
-    );
+    my $query  = qq{ SELECT pid, slot_name, status, received_tli
+                       FROM pg_stat_wal_receiver };
 
-    @rs = @{ query_ver ( $hosts[0], %queries ) };
+    @rs = @{ query ( $hosts[0], $query ) };
 
     return unknown ( $me, ['No receiver connected'], \@perfdata )
         unless scalar @rs;
@@ -6820,10 +6814,8 @@ sub check_wal_receiver {
     my $slot = $rs[0][1];
     my $status = $rs[0][2];
     my $recv_tli = $rs[0][3];
-    my $delta = $rs[0][4];
 
     push @perfdata => [ 'pid', $pid ];
-    push @perfdata => [ 'lag in feedback', $delta ];
     push @perfdata => [ 'tli', $recv_tli ];
 
     # status can be stopped, starting, streaming, waiting, restarting, stopping
