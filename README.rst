@@ -1056,8 +1056,8 @@ Descriptions and parameters of available services.
  Check the number of WAL files.
 
  Perfdata returns the total number of WAL files, current number of written WAL,
- the current number of recycled WAL and the rate of WAL written to disk since
- last execution on master clusters.
+ the current number of recycled WAL, the rate of WAL written to disk since
+ last execution on master clusters and the current timeline id.
 
  Critical and Warning thresholds accept either a raw number of files or a
  percentage. In case of percentage, the limit is computed based on:

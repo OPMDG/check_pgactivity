@@ -6277,8 +6277,8 @@ DB_LOOP: foreach my $stat (@rs) {
 Check the number of WAL files.
 
 Perfdata returns the total number of WAL files, current number of written WAL,
-the current number of recycled WAL and the rate of WAL written to disk since
-last execution on master clusters.
+the current number of recycled WAL, the rate of WAL written to disk since
+last execution on master clusters and the current timeline.
 
 Critical and Warning thresholds accept either a raw number of files or a
 percentage. In case of percentage, the limit is computed based on:
@@ -6302,6 +6302,7 @@ sub check_wal_files {
     my $seg_recycled = 0;
     my $seg_kept     = 0;
     my $num_seg      = 0;
+    my $tli;
     my $max_segs;
     my $first_seg;
     my @rs;
@@ -6324,7 +6325,8 @@ sub check_wal_files {
             THEN NULL
             ELSE pg_current_wal_location()
           END,
-          current_setting('wal_keep_segments')::integer
+          current_setting('wal_keep_segments')::integer,
+          (pg_control_checkpoint()).timeline_id AS tli
         FROM pg_ls_dir('pg_wal') AS s(f)
         CROSS JOIN wal_settings
         WHERE f ~ '^[0-9A-F]{24}$'
@@ -6343,7 +6345,8 @@ sub check_wal_files {
             THEN NULL
             ELSE pg_current_xlog_location()
           END,
-          current_setting('wal_keep_segments')::integer
+          current_setting('wal_keep_segments')::integer,
+	  substring(s.f from 1 for 8)::integer AS tli
         FROM pg_ls_dir('pg_xlog') AS s(f)
         CROSS JOIN wal_settings
         WHERE f ~ '^[0-9A-F]{24}$'
@@ -6362,7 +6365,8 @@ sub check_wal_files {
             THEN NULL
             ELSE pg_current_xlog_location()
           END,
-          current_setting('wal_keep_segments')::integer
+          current_setting('wal_keep_segments')::integer,
+	  substring(s.f from 1 for 8)::integer AS tli
         FROM pg_ls_dir('pg_xlog') AS s(f)
         WHERE f ~ '^[0-9A-F]{24}$'
         ORDER BY
@@ -6373,7 +6377,8 @@ sub check_wal_files {
           1 + (
             current_setting('checkpoint_segments')::float4
             * ( 2 + current_setting('checkpoint_completion_target')::float4 )
-          ), pg_current_xlog_location()
+          ), pg_current_xlog_location(),
+	  NULL, substring(s.f from 1 for 8)::integer AS tli
         FROM pg_ls_dir('pg_xlog') AS s(f)
         WHERE f ~ '^[0-9A-F]{24}$'
         ORDER BY
@@ -6381,7 +6386,8 @@ sub check_wal_files {
           f DESC},
       $PG_VERSION_82 => q{
         SELECT s.f,
-          1 + (current_setting('checkpoint_segments')::integer * 2), pg_current_xlog_location()
+          1 + (current_setting('checkpoint_segments')::integer * 2), pg_current_xlog_location(),
+	  NULL, substring(s.f from 1 for 8)::integer AS tli
         FROM pg_ls_dir('pg_xlog') AS s(f)
         WHERE f ~ '^[0-9A-F]{24}$'
         ORDER BY
@@ -6389,7 +6395,8 @@ sub check_wal_files {
           f DESC},
       $PG_VERSION_81 => q{
         SELECT s.f,
-          1 + (current_setting('checkpoint_segments')::integer * 2)
+          1 + (current_setting('checkpoint_segments')::integer * 2),
+	  NULL, NULL, substring(s.f from 1 for 8)::integer AS tli
         FROM pg_ls_dir('pg_xlog') AS s(f)
         WHERE f ~ '^[0-9A-F]{24}$'
         ORDER BY
@@ -6427,6 +6434,7 @@ sub check_wal_files {
 
     $first_seg = $rs[0][0];
     $max_segs  = $rs[0][1];
+    $tli = $rs[0][4];
 
     foreach my $r (@rs) {
         $num_seg++;
@@ -6437,6 +6445,7 @@ sub check_wal_files {
 
     push @perfdata => [ "total_wal", $num_seg, undef ];
     push @perfdata => [ "recycled_wal", $seg_recycled ];
+    push @perfdata => [ "tli", $tli ];
 
     # pay attention to the wal_keep_segment in perfdata
     if ( $hosts[0]{'version_num'} >= $PG_VERSION_90) {
