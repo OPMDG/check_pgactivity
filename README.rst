@@ -1087,6 +1087,18 @@ Descriptions and parameters of available services.
 
 
 
+\ **wal_receiver**\ (9.6+)
+
+ Check replication status on standby's end.
+
+ Perfdata returns wal receiver's pid, current lag and timeline.
+
+ This service returns OK if wal receiver's status is 'streaming',
+ returns WARNING if status is different but wal receiver is active, and
+ return UNKNOWN if not connected.
+
+
+
 
 
 EXAMPLES

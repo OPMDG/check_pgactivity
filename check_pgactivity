@@ -247,7 +247,11 @@ my %services = (
     'sequences_exhausted' => {
         'sub'  => \&check_sequences_exhausted,
         'desc' => 'Check that auto-incremented colums aren\'t reaching their upper limit'
-	}
+    },
+    'wal_receiver' => {
+        'sub'  => \&check_wal_receiver,
+        'desc' => 'Check wal receiver status on standby'
+    }
 );
 
 
@@ -6772,6 +6776,59 @@ SELECT
     return critical( $me, \@msg, \@perfdata, \@longmsg ) if ($criticity==2);
     return ok( $me, \@msg, \@perfdata );
 }
+
+=item B<wal_receiver> (9.6+)
+
+Check replication status on standby's end.
+
+Perfdata returns wal receiver's pid, current lag and timeline.
+
+This service returns OK if wal receiver's status is 'streaming',
+returns WARNING if status is different but wal receiver is active, and
+return UNKNOWN if not connected.
+
+=cut
+
+sub check_wal_receiver {
+    my $me       = 'POSTGRES_WAL_RECEIVER';
+    my $wal_size = hex('ff000000');
+    my @perfdata;
+    my @rs;
+    my @msg;
+    my @hosts;
+    my %args     = %{ $_[0] };
+
+    @hosts = @{ parse_hosts %args };
+
+    is_compat $hosts[0], 'wal_receiver', $PG_VERSION_96 or exit 1;
+
+    my $query  = qq{ SELECT pid, slot_name, status, received_tli
+                       FROM pg_stat_wal_receiver };
+
+    @rs = @{ query ( $hosts[0], $query ) };
+
+    return unknown ( $me, ['No receiver connected'], \@perfdata )
+        unless scalar @rs;
+
+    my $pid = $rs[0][0];
+    my $slot = $rs[0][1];
+    my $status = $rs[0][2];
+    my $recv_tli = $rs[0][3];
+
+    push @perfdata => [ 'pid', $pid ];
+    push @perfdata => [ 'tli', $recv_tli ];
+
+    # status can be stopped, starting, streaming, waiting, restarting, stopping
+    if ( $slot eq "" ) {
+        push @msg, 'status: ' . $status;
+    }
+    else {
+        push @msg, 'status for slot ' .$slot . ': ' . $status;
+    }
+    return warning ( $me, \@msg, @perfdata ) if $status ne 'streaming';
+    return ok ( $me, \@msg, \@perfdata );
+}
+
 
 # End of SERVICE section in pod doc
 =pod
