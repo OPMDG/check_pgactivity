@@ -1094,8 +1094,8 @@ Descriptions and parameters of available services.
  Perfdata returns wal receiver's pid, current lag and timeline.
 
  This service returns OK if wal receiver's status is 'streaming',
- returns OK if status is different but wal receiver is active, and
- return unknown if not connected.
+ returns WARNING if status is different but wal receiver is active, and
+ return UNKNOWN if not connected.
 
 
 
