@@ -247,7 +247,11 @@ my %services = (
     'sequences_exhausted' => {
         'sub'  => \&check_sequences_exhausted,
         'desc' => 'Check that auto-incremented colums aren\'t reaching their upper limit'
-	}
+    },
+    'wait_events' => {
+        'sub'  => \&check_wait_events,
+        'desc' => 'Check for wait events'
+    }
 );
 
 
@@ -6594,7 +6598,6 @@ sub check_sequences_exhausted {
     my @longmsg;
     my @hosts;
     my %args     = %{ $_[0] };
-    my $stats_age;
     my @all_db;
     my @dbinclude = @{ $args{'dbinclude'} };
     my @dbexclude = @{ $args{'dbexclude'} };
@@ -6786,6 +6789,74 @@ SELECT
     return critical( $me, \@msg, \@perfdata, \@longmsg ) if ($criticity==2);
     return ok( $me, \@msg, \@perfdata );
 }
+
+=item B<wait_events> (9.6+)
+
+Check for wait events from PostgreSQL 9.6+.
+
+Perfdata returns the number of events observed during check, for each known
+category, the oldest wait event noted for each category and the total number
+of wait events observed.
+
+No Critical and Warning thresholds are accepted.
+
+=cut
+sub check_wait_events {
+    my $me       = 'POSTGRES_WAIT_EVENTS';
+    my $num_waiting_backends = 0;
+    my @rs;
+    my @perfdata;
+    my @msg;
+    my @longmsg;
+    my @hosts;
+    my %args     = %{ $_[0] };
+
+    my %events       = (
+        'LWLock'    => [0, 0],
+        'Lock'      => [0, 0],
+        'BufferPin' => [0, 0],
+        'Activity'  => [0, 0],
+        'Extension' => [0, 0],
+        'Client'    => [0, 0],
+        'IPC'       => [0, 0],
+        'Timeout'   => [0, 0]
+    );
+
+    my $query  = qq{ SELECT wait_event_type, count(*) AS count,
+                            max(extract('epoch' from date_trunc('milliseconds', current_timestamp-state_change))) AS max_state_change_age
+                       FROM pg_stat_activity
+		      WHERE wait_event_type IS NOT NULL
+		      GROUP BY wait_event_type};
+
+    @hosts = @{ parse_hosts %args };
+
+    pod2usage(
+        -message => 'FATAL: you must give only one host with service "wait_events".',
+        -exitval => 127
+    ) if @hosts != 1;
+
+    is_compat $hosts[0], 'wait_events', $PG_VERSION_96 or exit 1;
+
+    @rs = @{ query ( $hosts[0], $query ) };
+
+    REC_LOOP: foreach my $r (@rs) {
+        $num_waiting_backends += $r->[2];
+
+        $events{$r->[0]}[0] = $r->[1];
+        $events{$r->[0]}[1] = $r->[2];
+
+    }
+
+    PERFDATA_LOOP: foreach my $s (sort keys %events) {
+        push @perfdata => [ ( $s, $events{$s}[0] ) ];
+        push @perfdata => [ ( 'oldest_' . $s, $events{$s}[1] . 's' ) ];
+    }
+
+    push @perfdata => [ "total_wait_events", $num_waiting_backends, undef ];
+
+    return ok($me, \@msg, \@perfdata);
+}
+
 
 # End of SERVICE section in pod doc
 =pod
