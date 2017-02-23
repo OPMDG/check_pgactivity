@@ -1762,7 +1762,8 @@ sub check_backends_status {
         'active'                        => [0, 0],
         'disabled'                      => [0, 0],
         'undefined'                     => [0, 0],
-        'insufficient privilege'        => [0, 0]
+        'insufficient privilege'        => [0, 0],
+        'other wait event'              => [0, 0]
     );
     my %queries      = (
         # doesn't support "idle in transaction (aborted)" and xact age
@@ -1865,6 +1866,7 @@ sub check_backends_status {
         $PG_VERSION_96 => q{
             SELECT CASE
                 WHEN s.wait_event_type = 'Lock' THEN 'waiting for lock'
+                WHEN s.wait_event_type IS NOT NULL THEN 'other wait event'
                 WHEN s.query = '<insufficient privilege>'
                     THEN 'insufficient privilege'
                 WHEN s.state IS NULL THEN 'undefined'
@@ -1915,7 +1917,10 @@ sub check_backends_status {
     @rs = @{ query_ver( $hosts[0], %queries ) };
 
     delete $status{'idle in transaction (aborted)'}
-        if $hosts[0] < $PG_VERSION_90;
+        if $hosts[0]->{'version_num'} < $PG_VERSION_90;
+
+    delete $status{'other wait event'}
+        if $hosts[0]->{'version_num'} < $PG_VERSION_96;
 
     $max_connections = $rs[0][3] if scalar @rs;
 
