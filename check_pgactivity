@@ -6840,7 +6840,7 @@ sub check_wait_events {
     @rs = @{ query ( $hosts[0], $query ) };
 
     REC_LOOP: foreach my $r (@rs) {
-        $num_waiting_backends += $r->[2];
+        $num_waiting_backends += $r->[1];
 
         $events{$r->[0]}[0] = $r->[1];
         $events{$r->[0]}[1] = $r->[2];
