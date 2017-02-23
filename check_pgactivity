@@ -6812,14 +6812,16 @@ sub check_wait_events {
     my %args     = %{ $_[0] };
 
     my %events       = (
-        'LWLock'    => [0, 0],
-        'Lock'      => [0, 0],
-        'BufferPin' => [0, 0],
-        'Activity'  => [0, 0],
-        'Extension' => [0, 0],
-        'Client'    => [0, 0],
-        'IPC'       => [0, 0],
-        'Timeout'   => [0, 0]
+        'LWLockTranche' => [0, 0],
+        'LWLockNamed'   => [0, 0],
+        'LWLock'        => [0, 0],
+        'Lock'          => [0, 0],
+        'BufferPin'     => [0, 0],
+        'Activity'      => [0, 0],
+        'Extension'     => [0, 0],
+        'Client'        => [0, 0],
+        'IPC'           => [0, 0],
+        'Timeout'       => [0, 0]
     );
 
     my $query  = qq{ SELECT wait_event_type, count(*) AS count,
@@ -6838,6 +6840,19 @@ sub check_wait_events {
     is_compat $hosts[0], 'wait_events', $PG_VERSION_96 or exit 1;
 
     @rs = @{ query ( $hosts[0], $query ) };
+
+    if ($hosts[0]->{'version_num'} < $PG_VERSION_100) {
+        delete $events{'LWLock'};
+        delete $events{'Activity'};
+        delete $events{'Extension'};
+        delete $events{'Client'};
+        delete $events{'IPC'};
+        delete $events{'Timeout'};
+    }
+    else {
+        delete $events{'LWLockTranche'};
+        delete $events{'LWLockNamed'};
+    }
 
     REC_LOOP: foreach my $r (@rs) {
         $num_waiting_backends += $r->[1];
