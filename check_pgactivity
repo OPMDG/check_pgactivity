@@ -242,12 +242,12 @@ my %services = (
     },
     'stat_snapshot_age' => {
         'sub'  => \&check_stat_snapshot_age,
-	'desc' => 'Check stats collector\'s stats age'
+        'desc' => 'Check stats collector\'s stats age'
     },
     'sequences_exhausted' => {
         'sub'  => \&check_sequences_exhausted,
         'desc' => 'Check that auto-incremented colums aren\'t reaching their upper limit'
-	}
+    }
 );
 
 
@@ -1030,9 +1030,9 @@ sub set_pgversion($) {
 
         $host->{'version'} = $rs->[0][0];
 
-	chomp( $host->{'version'} );
+        chomp( $host->{'version'} );
 
-	if ( scalar(@$rs) > 1 ) {
+        if ( scalar(@$rs) > 1 ) {
             # only use server_version_num for PostgreSQL 8.2+
             $host->{'version_num'} = $rs->[1][0];
 
@@ -3290,7 +3290,7 @@ sub check_hot_standby_delta {
     # we need to coalesce on pg_last_xlog_receive_location because it returns
     # NULL during WAL Shipping
     my %queries = (
-	$PG_VERSION_90 => q{
+        $PG_VERSION_90 => q{
         SELECT (NOT pg_is_in_recovery())::int,
             CASE pg_is_in_recovery()
                 WHEN 't' THEN coalesce(
@@ -3303,8 +3303,8 @@ sub check_hot_standby_delta {
                 WHEN 't' THEN pg_last_xlog_replay_location()
                 ELSE NULL
             END
-	    },
-	$PG_VERSION_100 => q{
+        },
+        $PG_VERSION_100 => q{
         SELECT (NOT pg_is_in_recovery())::int,
             CASE pg_is_in_recovery()
                 WHEN 't' THEN coalesce(
@@ -3317,7 +3317,7 @@ sub check_hot_standby_delta {
                 WHEN 't' THEN pg_last_wal_replay_location()
                 ELSE NULL
             END
-	    });
+    });
 
     @hosts = @{ parse_hosts %args };
 
@@ -3636,7 +3636,7 @@ sub check_is_replay_paused {
     my %args    = %{ $_[0] };
     my $me      = 'POSTGRES_REPLICATION_PAUSED';
     my %queries = (
-	$PG_VERSION_91 => q{
+        $PG_VERSION_91 => q{
         SELECT pg_is_in_recovery()::int AS is_in_recovery,
         CASE pg_is_in_recovery()
             WHEN 't' THEN pg_is_xlog_replay_paused()::int
@@ -3652,7 +3652,7 @@ sub check_is_replay_paused {
             WHEN pg_is_in_recovery() THEN 0::int
             ELSE NULL
         END AS delta},
-	$PG_VERSION_100 => q{
+        $PG_VERSION_100 => q{
         SELECT pg_is_in_recovery()::int AS is_in_recovery,
         CASE pg_is_in_recovery()
             WHEN 't' THEN pg_is_wal_replay_paused()::int
@@ -5301,9 +5301,10 @@ sub check_settings {
     my $pending_count = 0;
     my %args  = %{ $_[0] };
     my %queries = (
-       $PG_VERSION_90 => q{ SELECT coalesce(r.rolname, '*'), coalesce(d.datname, '*'),
-               unnest(s.setconfig) AS setting,
-	       false AS pending_restart
+        $PG_VERSION_90 => q{
+        SELECT coalesce(r.rolname, '*'), coalesce(d.datname, '*'),
+          unnest(s.setconfig) AS setting,
+          false AS pending_restart
         FROM pg_db_role_setting s
         LEFT JOIN pg_database d ON d.oid=s.setdatabase
         LEFT JOIN pg_roles r ON r.oid=s.setrole
@@ -5311,9 +5312,10 @@ sub check_settings {
         SELECT '*', '*', name||'='||current_setting(name),false
         FROM pg_settings
        },
-       $PG_VERSION_95 => q{ SELECT coalesce(r.rolname, '*'), coalesce(d.datname, '*'),
-               unnest(s.setconfig) AS setting,
-	       false AS pending_restart
+        $PG_VERSION_95 => q{
+        SELECT coalesce(r.rolname, '*'), coalesce(d.datname, '*'),
+          unnest(s.setconfig) AS setting,
+          false AS pending_restart
         FROM pg_db_role_setting s
         LEFT JOIN pg_database d ON d.oid=s.setdatabase
         LEFT JOIN pg_roles r ON r.oid=s.setrole
@@ -6351,7 +6353,7 @@ sub check_wal_files {
             ELSE pg_current_xlog_location()
           END,
           current_setting('wal_keep_segments')::integer,
-	  substring(s.f from 1 for 8)::integer AS tli
+          substring(s.f from 1 for 8)::integer AS tli
         FROM pg_ls_dir('pg_xlog') AS s(f)
         CROSS JOIN wal_settings
         WHERE f ~ '^[0-9A-F]{24}$'
@@ -6371,7 +6373,7 @@ sub check_wal_files {
             ELSE pg_current_xlog_location()
           END,
           current_setting('wal_keep_segments')::integer,
-	  substring(s.f from 1 for 8)::integer AS tli
+          substring(s.f from 1 for 8)::integer AS tli
         FROM pg_ls_dir('pg_xlog') AS s(f)
         WHERE f ~ '^[0-9A-F]{24}$'
         ORDER BY
@@ -6383,7 +6385,7 @@ sub check_wal_files {
             current_setting('checkpoint_segments')::float4
             * ( 2 + current_setting('checkpoint_completion_target')::float4 )
           ), pg_current_xlog_location(),
-	  NULL, substring(s.f from 1 for 8)::integer AS tli
+          NULL, substring(s.f from 1 for 8)::integer AS tli
         FROM pg_ls_dir('pg_xlog') AS s(f)
         WHERE f ~ '^[0-9A-F]{24}$'
         ORDER BY
@@ -6392,7 +6394,7 @@ sub check_wal_files {
       $PG_VERSION_82 => q{
         SELECT s.f,
           1 + (current_setting('checkpoint_segments')::integer * 2), pg_current_xlog_location(),
-	  NULL, substring(s.f from 1 for 8)::integer AS tli
+          NULL, substring(s.f from 1 for 8)::integer AS tli
         FROM pg_ls_dir('pg_xlog') AS s(f)
         WHERE f ~ '^[0-9A-F]{24}$'
         ORDER BY
@@ -6401,7 +6403,7 @@ sub check_wal_files {
       $PG_VERSION_81 => q{
         SELECT s.f,
           1 + (current_setting('checkpoint_segments')::integer * 2),
-	  NULL, NULL, substring(s.f from 1 for 8)::integer AS tli
+          NULL, NULL, substring(s.f from 1 for 8)::integer AS tli
         FROM pg_ls_dir('pg_xlog') AS s(f)
         WHERE f ~ '^[0-9A-F]{24}$'
         ORDER BY
@@ -6707,7 +6709,7 @@ SELECT
    INNER JOIN pg_catalog.pg_class c  ON c.oid=d.refobjid
    INNER JOIN pg_catalog.pg_namespace n ON n.oid=c.relnamespace
    INNER JOIN pg_catalog.pg_attribute a ON ( a.attrelid=c.oid
-	                                 AND a.attnum=d.refobjsubid)
+                                             AND a.attnum=d.refobjsubid)
    INNER JOIN pg_catalog.pg_type t ON a.atttypid=t.oid
    WHERE d.classid='pg_catalog.pg_class'::pg_catalog.regclass
      AND d.refclassid='pg_catalog.pg_class'::pg_catalog.regclass
