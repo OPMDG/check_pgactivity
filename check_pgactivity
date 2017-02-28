@@ -421,7 +421,8 @@ my %args = (
     'timeout'               => '30s',
     'dump-status-file'      => 0,
     'dump-bin-file'         => undef,
-    'format'                => 'nagios'
+    'format'                => 'nagios',
+    'uid'                   => undef
 );
 
 # Set name of the program without path*
@@ -6888,7 +6889,8 @@ to the system user running postgresql currently.
 Checking permission works on all Unix systems.
 
 Checking user works only in Linux systems (it uses /proc to not add
-dependencies). It needs PG 9.3+ too (because of fancy psql options used)
+dependencies). Before 9.3, you need to give the expected owner using the
+C<--uid> argument. Without this argument, the owner will not be checked.
 
 B<It has to be executed locally on the monitored server.>
 
@@ -6897,9 +6899,8 @@ sub check_pgdata_permission {
     my $me        = 'POSTGRES_CHECK_PGDATA_PERMISSION';
     my %args      = %{ $_[0] };
     my $criticity = 0; # 0=ok, 1=warn, 2=critical
+    my $pg_uid    = $args{'uid'};
     my @rs;
-    my @rs2;
-    my @perfdata;
     my @msg;
     my @longmsg;
     my @stat;
@@ -6907,6 +6908,7 @@ sub check_pgdata_permission {
     my $mode;
     my $perm;
     my $query;
+    my $dir_uid;
     my $stats_age;
     my $data_directory;
 
@@ -6932,7 +6934,8 @@ sub check_pgdata_permission {
         "Postgresql returned this PGDATA: $data_directory, but I cannot access it: $!"
     ]) unless @stat = stat( $data_directory );
 
-    $mode = $stat[2];
+    $mode    = $stat[2];
+    $dir_uid = $stat[4];
     $perm = sprintf( "%04o", $mode & 07777 );
 
     if ($perm ne '0700') {
@@ -6943,12 +6946,14 @@ sub check_pgdata_permission {
         push @msg, ( "Permission is ok on $data_directory" );
     }
 
-    # Now see who this directory belongs to, and if it matches the user running the instance
-    # Simplest way is to get the current backend pid and see who it belongs to
-    if ( $^O =~ /linux/i and $hosts[0]{'version_num'} >= $PG_VERSION_93 ) {
-        my $dir_uid = $stat[4];
+    # Now see who this directory belongs to, and if it matches the user running
+    # the instance.
+    if ( defined $args{'uid'} ) {
+         $pg_uid = getpwnam( $args{'uid'} );
+    }
+    # Simplest way is to get the current backend pid and see who it belongs to
+    elsif ( $^O =~ /linux/i and $hosts[0]{'version_num'} >= $PG_VERSION_93 ) {
         my $pg_line_uid;
-        my $pg_uid;
         my @rs_tmp;
 
         $query = qq{
@@ -6959,29 +6964,29 @@ sub check_pgdata_permission {
         };
         @rs = @{ query ( $hosts[0], $query ) };
 
-        # As there are not the usual separators, we only get a big record separated with \n
-        # Find the record beginning with Uid and get the third column (containing EUID)
+        # As there are not the usual separators, we only get a big record
+        # separated with \n
+        # Find the record beginning with Uid and get the third column
+        # (containing EUID)
         @rs_tmp      = split( /\n/, $rs[0][0] );
         $pg_line_uid = ( grep (/^Uid/, @rs_tmp) )[0];
         $pg_uid      = ( split("\t", $pg_line_uid) )[2];
-
-        if ( not defined $pg_uid ) {
-            push @msg, ( "Cannot determine UID of user running postgres" );
-            return unknown( $me, \@msg );
-        }
-
-        if ( $pg_uid ne $dir_uid ) {
-            $criticity = 2;
-            push @msg, ( "User running Postgres ($pg_uid) doesn't own $data_directory ($dir_uid)" );
-        }
-        else {
-            push @msg, ( "Owner of $data_directory is ($pg_uid)" );
-        }
     }
 
-    return warning( $me, \@msg )  if $criticity == 1;
-    return critical( $me, \@msg ) if $criticity == 2;
-    return ok( $me, \@msg, \@perfdata );
+    if ( not defined $pg_uid ) {
+        push @longmsg, ( "Cannot determine UID of user running postgres. Try to use '--uid'?" );
+    }
+    elsif ( $pg_uid ne $dir_uid ) {
+        $criticity = 2;
+        push @msg, ( "User running Postgres ($pg_uid) doesn't own $data_directory ($dir_uid)" );
+    }
+    else {
+        push @msg, ( "Owner of $data_directory is ($pg_uid)" );
+    }
+
+    return warning( $me, \@msg, undef, \@longmsg )  if $criticity == 1;
+    return critical( $me, \@msg, undef, \@longmsg ) if $criticity;
+    return ok( $me, \@msg, undef, \@longmsg );
 }
 
 # End of SERVICE section in pod doc
@@ -7034,6 +7039,7 @@ GetOptions(
         'tmpdir=s',
         'type=s',
         'username|U=s',
+        'uid=s',
         'version|V!',
         'wal_buffers=i',
         'warning|w=s',
