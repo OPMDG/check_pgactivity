@@ -5,7 +5,6 @@ Changelog
   - add support for PostgreSQL 9.6
   - add early-support for PostgreSQL 10
   - add service sequences_exhausted to monitor sequence usage
-  - add service wait_events to account wait events (9.6+)
   - add service stat_snapshot_age to detect a stuck stats collector process
   - add service wal_receiver to monitor replication on standby's end
   - add support for "pending restart" parameters from PostgreSQL 9.5+ in check_settings
