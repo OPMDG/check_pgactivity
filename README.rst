@@ -57,7 +57,7 @@ offers many options to measure and monitor useful performance metrics.
 
 \ **-d**\ , \ **--dbname**\  DATABASE
 
- Database name to connect to (default: "postgres").
+ Database name to connect to (default: "template1").
 
  \ **WARNING**\ ! This is not necessarily one of the database that will be
  checked. See \ ``--dbinclude``\  and \ ``--dbexclude``\  .
@@ -324,13 +324,41 @@ Descriptions and parameters of available services.
  This service requires the argument \ ``--path``\  on the command line to specify the
  archive folder path to check.
 
- Optional argument \ ``--ignore-wal-size``\  skips the WAL size check. This is useful
- if your archived WALs are compressed. Default behaviour is to check the WALs
- size.
-
  Optional argument \ ``--suffix``\  allows you define the suffix of your archived
  WALs. Useful if they are compressed with an extension (eg. .gz, .bz2, ...).
  Default is no suffix.
+
+ This service needs to read the header of one of the archives to define how many
+ segments a WAL owns. Check_pgactivity automatically handles files with
+ extensions .gz, .bz2, .xz, .zip or .7z using the following commands:
+
+
+ .. code-block:: perl
+
+    gzip -dc
+    bzip2 -dc
+    xz -dc
+    unzip -qqp
+    7z x -so
+
+
+ If needed, you can provide your own command that writes the uncompressed file
+ to standard output by using the \ ``--unarchiver``\  argument.
+
+ Optional argument \ ``--ignore-wal-size``\  skips the WAL size check. This is useful
+ if your archived WALs are compressed and check_pgactivity is unable to guess the
+ original size. Here are the commands check_pgactivity uses to guess the original
+ size of .gz, .xz or .zip files:
+
+
+ .. code-block:: perl
+
+    gzip -ql
+    xz -ql
+    unzip -qql
+
+
+ Default behaviour is to check the WALs size.
 
  Perfdata contains the number of WALs archived and the age of the most recent
  one.
@@ -338,16 +366,16 @@ Descriptions and parameters of available services.
  Critical and Warning define the max age of the latest archived WAL as an
  interval (eg. 5m or 300s ).
 
+ Sample commands:
 
 
-\ **archiver**\  (8.1+)
+ .. code-block:: perl
 
- Check the number of WAL files ready to archive.
+    check_pgactivity -s archive_folder --path /path/to/archives -w 15m -c 30m
+    check_pgactivity -s archive_folder --path /path/to/archives --suffix .gz -w 15m -c 30m
+    check_pgactivity -s archive_folder --path /path/to/archives --ignore-wal-size --suffix .bz2 -w 15m -c 30m
+    check_pgactivity -s archive_folder --path /path/to/archives --unarchiver "unrar p" --ignore-wal-size --suffix .rar -w 15m -c 30m
 
- Perfdata returns the number of WAL files waiting to be archived and the age
- of the oldest WAL file waiting to be archived.
-
- Critical and Warning thresholds only accept a raw number of files.
 
 
 
@@ -570,13 +598,35 @@ Descriptions and parameters of available services.
  Perfdata returns the data delta in bytes between the master and each Hot
  standby cluster listed.
 
- Critical and Warning thresholds can take one or two values separated by a
- comma. If only one value given, it applies to both received and replayed data.
+ Critical and Warning thresholds are optional. They can take one or two values
+ separated by a comma. If only one value given, it applies to both received and
+ replayed data.
  If two values are given, the first one applies to received data, the second one
  to replayed ones. These thresholds only accept a size (eg. 2.5G).
 
  This service raise a Critical if it doesn't find exactly ONE valid master
  cluster (ie. critical when 0 or 2 and more masters).
+
+
+
+\ **is_hot_standby**\  (9.0+)
+
+ Checks if the cluster is in recovery and accepts read only queries.
+
+ This service ignores critical and warning arguments.
+
+ No perfdata is returned.
+
+
+
+\ **is_master**\  (all)
+
+ Checks if the cluster accepts read and/or write queries. This state is reported
+ as "in production" by pg_controldata.
+
+ This service ignores critical and warning arguments.
+
+ No perfdata is returned.
 
 
 
@@ -602,27 +652,6 @@ Descriptions and parameters of available services.
  A list of invalid indexes detail will be returned after the
  perfdata. This list contains the fully qualified index name. If
  excluded index is set, the number of exclude index is returned.
-
-
-
-\ **is_hot_standby**\  (9.0+)
-
- Checks if the cluster is in recovery and accepts read only queries.
-
- This service ignores critical and warning arguments.
-
- No perfdata is returned.
-
-
-
-\ **is_master**\  (all)
-
- Checks if the cluster accepts read and/or write queries. This state is reported
- as "in production" by pg_controldata.
-
- This service ignores critical and warning arguments.
-
- No perfdata is returned.
 
 
 
@@ -883,6 +912,21 @@ Descriptions and parameters of available services.
 
 
 
+\ **archiver**\  (8.1+)
+
+ Check if the archiver is working properly and the number of WAL files ready to
+ archive.
+
+ Perfdata returns the number of WAL files waiting to be archived.
+
+ Critical and Warning thresholds are optional. They apply on the number of file
+ waiting to be archived. They only accept a raw number of files.
+
+ Whatever the given threshold, a critical alert is raised if the archiver process
+ did not archive the oldest waiting WAL to be archived since last call.
+
+
+
 \ **replication_slots**\  (9.4+)
 
  Check the number of WAL retained by each replication slots.
@@ -892,19 +936,6 @@ Descriptions and parameters of available services.
  Critical and Warning thresholds are optional. If provided, the number of WAL
  kept by each replication slot will be compared to the threshold.
  These thresholds only accept a raw number.
-
-
-
-\ **sequences_exhausted** \
-
- Check all sequences assigned to a column (the smallserial,serial and
- bigserial types), and raise an alarm if the column or sequences gets
- too close to its maximum value.
-
- Perfdata returns the sequence(s) that may have trigger the alert.
-
- Critical and Warning thresholds accept a percentage of the sequence
- filled.
 
 
 
@@ -922,18 +953,6 @@ Descriptions and parameters of available services.
  Critical and Warning thresholds are ignored.
 
  A CRITICAL is raised if at least one parameter changed.
-
-
-
-\ **stat_snapshot_age**\ (9.5+)
-
- Check the age of the statistics snapshot (statistics collector's
- statistics). This probe help to detect a frozen stats collector
- process.
-
- Perfdata returns the statistics snapshot age.
-
- Critical and Warning thresholds accept a raw number of seconds.
 
 
 
@@ -958,11 +977,11 @@ Descriptions and parameters of available services.
  Perfdata returns the data delta in bytes between the master and all standbys
  found and the number of slaves connected.
 
- Critical and Warning thresholds can take one or two values separated by a
- comma. If only one value is supplied, it applies to both flushed and replayed
- data. If two values are supplied, the first one applies to flushed data,
- the second one to replayed data.
- These thresholds only accept a size (eg. 2.5G).
+ Critical and Warning thresholds are optional. They can take one or two values
+ separated by a comma. If only one value is supplied, it applies to both flushed
+ and replayed data. If two values are supplied, the first one applies to flushed
+ data, the second one to replayed data. These thresholds only accept a size
+ (eg. 2.5G).
 
 
 
@@ -1057,7 +1076,7 @@ Descriptions and parameters of available services.
 
  Perfdata returns the total number of WAL files, current number of written WAL,
  the current number of recycled WAL, the rate of WAL written to disk since
- last execution on master clusters and the current timeline id.
+ last execution on master clusters and the current timeline.
 
  Critical and Warning thresholds accept either a raw number of files or a
  percentage. In case of percentage, the limit is computed based on:
@@ -1085,6 +1104,43 @@ Descriptions and parameters of available services.
     100% = 1 + checkpoint_segments * (2 + checkpoint_completion_target)
     100% = 1 + wal_keep_segments + 2 * checkpoint_segments
 
+
+
+
+\ **stat_snapshot_age**\  (9.5+)
+
+ Check the age of the statistics snapshot (statistics collector's statistics).
+ This probe help to detect a frozen stats collector process.
+
+ Perfdata returns the statistics snapshot age.
+
+ Critical and Warning thresholds accept a raw number of seconds.
+
+
+
+\ **sequences_exhausted**\  (7.4+)
+
+ Check all sequences assigned to a column (the smallserial,serial and bigserial types),
+ and raise an alarm if the column or sequences gets too close to its maximum value.
+
+ Perfdata returns the sequence(s) that may have trigger the alert.
+
+ Critical and Warning thresholds accept a percentage of the sequence filled.
+
+
+
+\ **pgdata_permission**\  (8.2+)
+
+ Check that the data directory of the instance has 700 as permission, and belongs
+ to the system user running postgresql currently.
+
+ Checking permission works on all Unix systems.
+
+ Checking user works only in Linux systems (it uses /proc to not add
+ dependencies). Before 9.3, you need to give the expected owner using the
+ \ ``--uid``\  argument. Without this argument, the owner will not be checked.
+
+ \ **It has to be executed locally on the monitored server.**\
 
 
 
