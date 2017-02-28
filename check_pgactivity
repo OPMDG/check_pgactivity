@@ -407,6 +407,7 @@ my %args = (
     'no_check_enable'       => 0,
     'no_check_track_counts' => 0,
     'ignore-wal-size'       => 0,
+    'unarchiver'            => '',
     'save'                  => 0,
     'suffix'                => '',
     'slave'                 => [],
@@ -1296,13 +1297,33 @@ only checked on the last one, for performance consideration.
 This service requires the argument C<--path> on the command line to specify the
 archive folder path to check.
 
-Optional argument C<--ignore-wal-size> skips the WAL size check. This is useful
-if your archived WALs are compressed. Default behaviour is to check the WALs
-size.
-
 Optional argument C<--suffix> allows you define the suffix of your archived
 WALs. Useful if they are compressed with an extension (eg. .gz, .bz2, ...).
 Default is no suffix.
+
+This service needs to read the header of one of the archives to define how many
+segments a WAL owns. Check_pgactivity automatically handles files with
+extensions .gz, .bz2, .xz, .zip or .7z using the following commands:
+
+  gzip -dc
+  bzip2 -dc
+  xz -dc
+  unzip -qqp
+  7z x -so
+
+If needed, you can provide your own command that writes the uncompressed file
+to standard output by using the C<--unarchiver> argument.
+
+Optional argument C<--ignore-wal-size> skips the WAL size check. This is useful
+if your archived WALs are compressed and check_pgactivity is unable to guess the
+original size. Here are the commands check_pgactivity uses to guess the original
+size of .gz, .xz or .zip files:
+
+  gzip -ql
+  xz -ql
+  unzip -qql
+
+Default behaviour is to check the WALs size.
 
 Perfdata contains the number of WALs archived and the age of the most recent
 one.
@@ -1310,10 +1331,18 @@ one.
 Critical and Warning define the max age of the latest archived WAL as an
 interval (eg. 5m or 300s ).
 
+Sample commands:
+
+  check_pgactivity -s archive_folder --path /path/to/archives -w 15m -c 30m
+  check_pgactivity -s archive_folder --path /path/to/archives --suffix .gz -w 15m -c 30m
+  check_pgactivity -s archive_folder --path /path/to/archives --ignore-wal-size --suffix .bz2 -w 15m -c 30m
+  check_pgactivity -s archive_folder --path /path/to/archives --unarchiver "unrar p" --ignore-wal-size --suffix .rar -w 15m -c 30m
+
 =cut
 
 sub check_archive_folder {
     my @msg;
+    my @longmsg;
     my @msg_crit;
     my @msg_warn;
     my @perfdata;
@@ -1330,6 +1359,7 @@ sub check_archive_folder {
     my $seg;
     my $latest_wal_age;
     my $dh;
+    my $fh;
     my $wal_version;
     my $filename_re;
     my $history_re;
@@ -1338,6 +1368,13 @@ sub check_archive_folder {
     my $me             = 'POSTGRES_ARCHIVES';
     my $seg_per_wal    = 255; # increased later for pg > 9.2
     my %args           = %{ $_[0] };
+    my %unarchive_cmd  = (
+        '.gz'  => "gzip -dc",
+        '.bz2' => "bzip2 -dc",
+        '.xz'  => "xz -dc",
+        '.zip' => "unzip -qqp",
+        '.7z'  => "7z x -so"
+    );
     my %wal_versions   = (
         '80' => 53340,
         '81' => 53341,
@@ -1347,7 +1384,11 @@ sub check_archive_folder {
         '90' => 53348,
         '91' => 53350,
         '92' => 53361,
-        '93' => 53365
+        '93' => 53365,
+        '94' => 53374,
+        '95' => 53383,
+        '96' => 53395,
+        '100' => 53397
     );
 
     # "path" argument must be given
@@ -1399,13 +1440,34 @@ sub check_archive_folder {
 
     $latest_wal_age = time() - $filelist_sorted[-1][1];
 
-    # We need to read the XLOG_PAGE_MAGIC to be able to guess $seg_per_wal
-    open FIRST_WAL, "<", "$args{'path'}/$filelist_sorted[-1][0]";
-    read(FIRST_WAL, $wal_version, 2);
-    close FIRST_WAL;
+    # Read the XLOG_PAGE_MAGIC header to guess $seg_per_wal
+
+    if ( $args{'unarchiver'} eq '' and $suffix =~ /^.(?:gz|bz2|zip|xz|7z)$/ ) {
+        open $fh, "-|",
+            qq{ $unarchive_cmd{$suffix} "$args{'path'}/$filelist_sorted[-1][0]" 2>/dev/null }
+            or
+            die "could not read first WAL using '$unarchive_cmd{$suffix}': $!";
+    }
+
+    elsif ( $args{'unarchiver'} ne '' ) {
+        open $fh, "-|",
+            qq{ $args{'unarchiver'} "$args{'path'}/$filelist_sorted[-1][0]" 2>/dev/null }
+            or die "could not read first WAL using '$args{'unarchiver'}': $!";
+    }
+
+    # fallback on raw parsing of first WAL
+    open $fh, "<", "$args{'path'}/$filelist_sorted[-1][0]" unless defined $fh;
+
+    read( $fh, $wal_version, 2 );
+    close $fh;
     $wal_version = unpack('S', $wal_version);
 
+    die ("Could not parse XLOG_PAGE_MAGIC") unless defined $wal_version;
+
     dprint ("wal version: $wal_version");
+
+    die "Unknown WAL XLOG_PAGE_MAGIC $wal_version!"
+        unless grep /^$wal_version$/ => values %wal_versions;
 
     # FIXME: As there is no consensus about XLOG_PAGE_MAGIC algo accros postrges
     # versions this piece of code should checked for compatibility for each new
@@ -1417,6 +1479,9 @@ sub check_archive_folder {
         'latest_archive_age', $latest_wal_age, 's', $w_limit, $c_limit
     ];
     push @perfdata, [ 'num_archives', scalar(@filelist_sorted) ];
+
+    dprint ("first wal: $filelist_sorted[0][0]");
+    dprint ("last wal: $filelist_sorted[-1][0]");
 
     $start_tl = substr($filelist_sorted[0][0], 0, 8);
     $end_tl   = substr($filelist_sorted[-1][0], 0, 8);
@@ -1452,13 +1517,35 @@ sub check_archive_folder {
             last;
         }
 
-        if ( $check_size and $filelist_sorted[$i][2] != 16777216 ) {
-            push @msg => "'$curr' is not 16MB";
-            last;
+        if ( $check_size ) {
+
+            if ( $suffix eq '.gz' ) {
+                my $ans = qx{ gzip -ql "$args{'path'}/$curr" 2>/dev/null };
+
+                $filelist_sorted[$i][2] = 16777216
+                    if $ans =~ /^\s*\d+\s+16777216\s/;
+            }
+            elsif ( $suffix eq '.xz' ) {
+                my @ans = qx{ xz -ql --robot "$args{'path'}/$curr" 2>/dev/null };
+
+                $filelist_sorted[$i][2] = 16777216
+                    if $ans[-1] =~ /\w+\s+\d+\s+\d+\s+16777216\s+/;
+            }
+            elsif ( $suffix eq '.zip' ) {
+                my $ans;
+                $ans = qx{ unzip -qql "$args{'path'}/$curr" 2>/dev/null };
+                $filelist_sorted[$i][2] = 16777216
+                    if $ans =~ /^\s*16777216/;
+            }
+
+            if ( $filelist_sorted[$i][2] != 16777216 ) {
+                push @msg => "'$curr' is not 16MB";
+                last;
+            }
         }
 
         if ( grep /$curr/, @branch_wals ) {
-            print "Found a boundary @ $curr !\n";
+            dprint( "Found a boundary @ $curr !\n" );
             $timeline++;
             $j--;
         }
@@ -1469,13 +1556,13 @@ sub check_archive_folder {
     push @msg => scalar(@filelist_sorted)." WAL archived in '$args{'path'}', "
         ."latest archived since ". to_interval($latest_wal_age);
 
-    return critical( $me, \@msg, \@perfdata )
+    return critical( $me, \@msg, \@perfdata, \@longmsg )
         if $latest_wal_age >= $c_limit;
 
-    return warning( $me, \@msg, \@perfdata )
+    return warning( $me, \@msg, \@perfdata, \@longmsg )
         if $latest_wal_age >= $w_limit;
 
-    return ok( $me, \@msg, \@perfdata );
+    return ok( $me, \@msg, \@perfdata, \@longmsg );
 }
 
 =item B<autovacuum> (8.1+)
@@ -6813,6 +6900,7 @@ GetOptions(
         'help|?!',
         'host|h=s',
         'ignore-wal-size!',
+        'unarchiver=s',
         'dbname|d=s',
         'dbservice|S=s',
         'list|l!',
