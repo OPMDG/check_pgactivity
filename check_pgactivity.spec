@@ -29,7 +29,7 @@ install -D -p -m 0755 check_pgactivity %{buildroot}/%{_libdir}/nagios/plugins/ch
 %files
 %defattr(-,root,root,0755)
 %{_libdir}/nagios/plugins/check_pgactivity
-%doc README.rst LICENSE
+%doc README LICENSE
 
 %changelog
 * Tue Feb 28 2017 Jehan-Guillaume de Rorthais <jgdr@dalibo.com> 2.2~rc1-1
