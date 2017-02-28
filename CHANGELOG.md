@@ -7,6 +7,7 @@ Changelog
   - add service sequences_exhausted to monitor sequence usage
   - add service stat_snapshot_age to detect a stuck stats collector process
   - add service wal_receiver to monitor replication on standby's end
+  - add service pgdata_permission to monitor rights and ownership of the PGDATA
   - add support for "pending restart" parameters from PostgreSQL 9.5+ in check_settings
   - add support for pg_file_settings for PostgreSQL 9.5+ & pg_hba_file_rules for 10+ in check_settings
   - add timeline id in perfdata output from wal_files
