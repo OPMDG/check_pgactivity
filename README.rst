@@ -340,6 +340,17 @@ Descriptions and parameters of available services.
 
 
 
+\ **archiver**\  (8.1+)
+
+ Check the number of WAL files ready to archive.
+
+ Perfdata returns the number of WAL files waiting to be archived and the age
+ of the oldest WAL file waiting to be archived.
+
+ Critical and Warning thresholds only accept a raw number of files.
+
+
+
 \ **autovacuum**\  (8.1+)
 
  Check the autovacuum activity on the cluster.
@@ -569,27 +580,6 @@ Descriptions and parameters of available services.
 
 
 
-\ **is_hot_standby**\  (9.0+)
-
- Checks if the cluster is in recovery and accepts read only queries.
-
- This service ignores critical and warning arguments.
-
- No perfdata is returned.
-
-
-
-\ **is_master**\  (all)
-
- Checks if the cluster accepts read and/or write queries. This state is reported
- as "in production" by pg_controldata.
-
- This service ignores critical and warning arguments.
-
- No perfdata is returned.
-
-
-
 \ **invalid_indexes**\
 
  Check if there is any invalid indexes in a database.
@@ -612,6 +602,27 @@ Descriptions and parameters of available services.
  A list of invalid indexes detail will be returned after the
  perfdata. This list contains the fully qualified index name. If
  excluded index is set, the number of exclude index is returned.
+
+
+
+\ **is_hot_standby**\  (9.0+)
+
+ Checks if the cluster is in recovery and accepts read only queries.
+
+ This service ignores critical and warning arguments.
+
+ No perfdata is returned.
+
+
+
+\ **is_master**\  (all)
+
+ Checks if the cluster accepts read and/or write queries. This state is reported
+ as "in production" by pg_controldata.
+
+ This service ignores critical and warning arguments.
+
+ No perfdata is returned.
 
 
 
@@ -872,16 +883,6 @@ Descriptions and parameters of available services.
 
 
 
-\ **ready_archives**\  (8.1+)
-
- Check the number of WAL files ready to archive.
-
- Perfdata returns the number of WAL files waiting to be archived.
-
- Critical and Warning thresholds only accept a raw number of files.
-
-
-
 \ **replication_slots**\  (9.4+)
 
  Check the number of WAL retained by each replication slots.
@@ -891,6 +892,19 @@ Descriptions and parameters of available services.
  Critical and Warning thresholds are optional. If provided, the number of WAL
  kept by each replication slot will be compared to the threshold.
  These thresholds only accept a raw number.
+
+
+
+\ **sequences_exhausted** \
+
+ Check all sequences assigned to a column (the smallserial,serial and
+ bigserial types), and raise an alarm if the column or sequences gets
+ too close to its maximum value.
+
+ Perfdata returns the sequence(s) that may have trigger the alert.
+
+ Critical and Warning thresholds accept a percentage of the sequence
+ filled.
 
 
 
@@ -908,6 +922,18 @@ Descriptions and parameters of available services.
  Critical and Warning thresholds are ignored.
 
  A CRITICAL is raised if at least one parameter changed.
+
+
+
+\ **stat_snapshot_age**\ (9.5+)
+
+ Check the age of the statistics snapshot (statistics collector's
+ statistics). This probe help to detect a frozen stats collector
+ process.
+
+ Perfdata returns the statistics snapshot age.
+
+ Critical and Warning thresholds accept a raw number of seconds.
 
 
 
@@ -1030,8 +1056,8 @@ Descriptions and parameters of available services.
  Check the number of WAL files.
 
  Perfdata returns the total number of WAL files, current number of written WAL,
- the current number of recycled WAL and the rate of WAL written to disk since
- last execution on master clusters.
+ the current number of recycled WAL, the rate of WAL written to disk since
+ last execution on master clusters and the current timeline id.
 
  Critical and Warning thresholds accept either a raw number of files or a
  percentage. In case of percentage, the limit is computed based on:

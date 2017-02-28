@@ -242,16 +242,16 @@ my %services = (
     },
     'stat_snapshot_age' => {
         'sub'  => \&check_stat_snapshot_age,
-	'desc' => 'Check stats collector\'s stats age'
+        'desc' => 'Check stats collector\'s stats age'
     },
     'sequences_exhausted' => {
         'sub'  => \&check_sequences_exhausted,
         'desc' => 'Check that auto-incremented colums aren\'t reaching their upper limit'
-	},
+    },
     'pgdata_permission' => {
         'sub'  => \&check_pgdata_permission,
         'desc' => 'Check that the permission on PGDATA is 700'
-	}
+    }
 );
 
 
@@ -411,6 +411,7 @@ my %args = (
     'no_check_enable'       => 0,
     'no_check_track_counts' => 0,
     'ignore-wal-size'       => 0,
+    'unarchiver'            => '',
     'save'                  => 0,
     'suffix'                => '',
     'slave'                 => [],
@@ -1034,9 +1035,9 @@ sub set_pgversion($) {
 
         $host->{'version'} = $rs->[0][0];
 
-	chomp( $host->{'version'} );
+        chomp( $host->{'version'} );
 
-	if ( scalar(@$rs) > 1 ) {
+        if ( scalar(@$rs) > 1 ) {
             # only use server_version_num for PostgreSQL 8.2+
             $host->{'version_num'} = $rs->[1][0];
 
@@ -1300,13 +1301,33 @@ only checked on the last one, for performance consideration.
 This service requires the argument C<--path> on the command line to specify the
 archive folder path to check.
 
-Optional argument C<--ignore-wal-size> skips the WAL size check. This is useful
-if your archived WALs are compressed. Default behaviour is to check the WALs
-size.
-
 Optional argument C<--suffix> allows you define the suffix of your archived
 WALs. Useful if they are compressed with an extension (eg. .gz, .bz2, ...).
 Default is no suffix.
+
+This service needs to read the header of one of the archives to define how many
+segments a WAL owns. Check_pgactivity automatically handles files with
+extensions .gz, .bz2, .xz, .zip or .7z using the following commands:
+
+  gzip -dc
+  bzip2 -dc
+  xz -dc
+  unzip -qqp
+  7z x -so
+
+If needed, you can provide your own command that writes the uncompressed file
+to standard output by using the C<--unarchiver> argument.
+
+Optional argument C<--ignore-wal-size> skips the WAL size check. This is useful
+if your archived WALs are compressed and check_pgactivity is unable to guess the
+original size. Here are the commands check_pgactivity uses to guess the original
+size of .gz, .xz or .zip files:
+
+  gzip -ql
+  xz -ql
+  unzip -qql
+
+Default behaviour is to check the WALs size.
 
 Perfdata contains the number of WALs archived and the age of the most recent
 one.
@@ -1314,10 +1335,18 @@ one.
 Critical and Warning define the max age of the latest archived WAL as an
 interval (eg. 5m or 300s ).
 
+Sample commands:
+
+  check_pgactivity -s archive_folder --path /path/to/archives -w 15m -c 30m
+  check_pgactivity -s archive_folder --path /path/to/archives --suffix .gz -w 15m -c 30m
+  check_pgactivity -s archive_folder --path /path/to/archives --ignore-wal-size --suffix .bz2 -w 15m -c 30m
+  check_pgactivity -s archive_folder --path /path/to/archives --unarchiver "unrar p" --ignore-wal-size --suffix .rar -w 15m -c 30m
+
 =cut
 
 sub check_archive_folder {
     my @msg;
+    my @longmsg;
     my @msg_crit;
     my @msg_warn;
     my @perfdata;
@@ -1334,6 +1363,7 @@ sub check_archive_folder {
     my $seg;
     my $latest_wal_age;
     my $dh;
+    my $fh;
     my $wal_version;
     my $filename_re;
     my $history_re;
@@ -1342,6 +1372,13 @@ sub check_archive_folder {
     my $me             = 'POSTGRES_ARCHIVES';
     my $seg_per_wal    = 255; # increased later for pg > 9.2
     my %args           = %{ $_[0] };
+    my %unarchive_cmd  = (
+        '.gz'  => "gzip -dc",
+        '.bz2' => "bzip2 -dc",
+        '.xz'  => "xz -dc",
+        '.zip' => "unzip -qqp",
+        '.7z'  => "7z x -so"
+    );
     my %wal_versions   = (
         '80' => 53340,
         '81' => 53341,
@@ -1351,7 +1388,11 @@ sub check_archive_folder {
         '90' => 53348,
         '91' => 53350,
         '92' => 53361,
-        '93' => 53365
+        '93' => 53365,
+        '94' => 53374,
+        '95' => 53383,
+        '96' => 53395,
+        '100' => 53397
     );
 
     # "path" argument must be given
@@ -1403,13 +1444,34 @@ sub check_archive_folder {
 
     $latest_wal_age = time() - $filelist_sorted[-1][1];
 
-    # We need to read the XLOG_PAGE_MAGIC to be able to guess $seg_per_wal
-    open FIRST_WAL, "<", "$args{'path'}/$filelist_sorted[-1][0]";
-    read(FIRST_WAL, $wal_version, 2);
-    close FIRST_WAL;
+    # Read the XLOG_PAGE_MAGIC header to guess $seg_per_wal
+
+    if ( $args{'unarchiver'} eq '' and $suffix =~ /^.(?:gz|bz2|zip|xz|7z)$/ ) {
+        open $fh, "-|",
+            qq{ $unarchive_cmd{$suffix} "$args{'path'}/$filelist_sorted[-1][0]" 2>/dev/null }
+            or
+            die "could not read first WAL using '$unarchive_cmd{$suffix}': $!";
+    }
+
+    elsif ( $args{'unarchiver'} ne '' ) {
+        open $fh, "-|",
+            qq{ $args{'unarchiver'} "$args{'path'}/$filelist_sorted[-1][0]" 2>/dev/null }
+            or die "could not read first WAL using '$args{'unarchiver'}': $!";
+    }
+
+    # fallback on raw parsing of first WAL
+    open $fh, "<", "$args{'path'}/$filelist_sorted[-1][0]" unless defined $fh;
+
+    read( $fh, $wal_version, 2 );
+    close $fh;
     $wal_version = unpack('S', $wal_version);
 
+    die ("Could not parse XLOG_PAGE_MAGIC") unless defined $wal_version;
+
     dprint ("wal version: $wal_version");
+
+    die "Unknown WAL XLOG_PAGE_MAGIC $wal_version!"
+        unless grep /^$wal_version$/ => values %wal_versions;
 
     # FIXME: As there is no consensus about XLOG_PAGE_MAGIC algo accros postrges
     # versions this piece of code should checked for compatibility for each new
@@ -1421,6 +1483,9 @@ sub check_archive_folder {
         'latest_archive_age', $latest_wal_age, 's', $w_limit, $c_limit
     ];
     push @perfdata, [ 'num_archives', scalar(@filelist_sorted) ];
+
+    dprint ("first wal: $filelist_sorted[0][0]");
+    dprint ("last wal: $filelist_sorted[-1][0]");
 
     $start_tl = substr($filelist_sorted[0][0], 0, 8);
     $end_tl   = substr($filelist_sorted[-1][0], 0, 8);
@@ -1456,13 +1521,35 @@ sub check_archive_folder {
             last;
         }
 
-        if ( $check_size and $filelist_sorted[$i][2] != 16777216 ) {
-            push @msg => "'$curr' is not 16MB";
-            last;
+        if ( $check_size ) {
+
+            if ( $suffix eq '.gz' ) {
+                my $ans = qx{ gzip -ql "$args{'path'}/$curr" 2>/dev/null };
+
+                $filelist_sorted[$i][2] = 16777216
+                    if $ans =~ /^\s*\d+\s+16777216\s/;
+            }
+            elsif ( $suffix eq '.xz' ) {
+                my @ans = qx{ xz -ql --robot "$args{'path'}/$curr" 2>/dev/null };
+
+                $filelist_sorted[$i][2] = 16777216
+                    if $ans[-1] =~ /\w+\s+\d+\s+\d+\s+16777216\s+/;
+            }
+            elsif ( $suffix eq '.zip' ) {
+                my $ans;
+                $ans = qx{ unzip -qql "$args{'path'}/$curr" 2>/dev/null };
+                $filelist_sorted[$i][2] = 16777216
+                    if $ans =~ /^\s*16777216/;
+            }
+
+            if ( $filelist_sorted[$i][2] != 16777216 ) {
+                push @msg => "'$curr' is not 16MB";
+                last;
+            }
         }
 
         if ( grep /$curr/, @branch_wals ) {
-            print "Found a boundary @ $curr !\n";
+            dprint( "Found a boundary @ $curr !\n" );
             $timeline++;
             $j--;
         }
@@ -1473,13 +1560,13 @@ sub check_archive_folder {
     push @msg => scalar(@filelist_sorted)." WAL archived in '$args{'path'}', "
         ."latest archived since ". to_interval($latest_wal_age);
 
-    return critical( $me, \@msg, \@perfdata )
+    return critical( $me, \@msg, \@perfdata, \@longmsg )
         if $latest_wal_age >= $c_limit;
 
-    return warning( $me, \@msg, \@perfdata )
+    return warning( $me, \@msg, \@perfdata, \@longmsg )
         if $latest_wal_age >= $w_limit;
 
-    return ok( $me, \@msg, \@perfdata );
+    return ok( $me, \@msg, \@perfdata, \@longmsg );
 }
 
 =item B<autovacuum> (8.1+)
@@ -1766,7 +1853,8 @@ sub check_backends_status {
         'active'                        => [0, 0],
         'disabled'                      => [0, 0],
         'undefined'                     => [0, 0],
-        'insufficient privilege'        => [0, 0]
+        'insufficient privilege'        => [0, 0],
+        'other wait event'              => [0, 0]
     );
     my %queries      = (
         # doesn't support "idle in transaction (aborted)" and xact age
@@ -1868,7 +1956,8 @@ sub check_backends_status {
         # pg_stat_activity schema change for wait events
         $PG_VERSION_96 => q{
             SELECT CASE
-                WHEN s.wait_event = 'Lock' THEN 'waiting for lock'
+                WHEN s.wait_event_type = 'Lock' THEN 'waiting for lock'
+                WHEN s.wait_event_type IS NOT NULL THEN 'other wait event'
                 WHEN s.query = '<insufficient privilege>'
                     THEN 'insufficient privilege'
                 WHEN s.state IS NULL THEN 'undefined'
@@ -1919,7 +2008,10 @@ sub check_backends_status {
     @rs = @{ query_ver( $hosts[0], %queries ) };
 
     delete $status{'idle in transaction (aborted)'}
-        if $hosts[0] < $PG_VERSION_90;
+        if $hosts[0]->{'version_num'} < $PG_VERSION_90;
+
+    delete $status{'other wait event'}
+        if $hosts[0]->{'version_num'} < $PG_VERSION_96;
 
     $max_connections = $rs[0][3] if scalar @rs;
 
@@ -3288,7 +3380,8 @@ sub check_hot_standby_delta {
     my $me              = 'POSTGRES_HOT_STANDBY_DELTA';
     # we need to coalesce on pg_last_xlog_receive_location because it returns
     # NULL during WAL Shipping
-    my $query = "
+    my %queries = (
+        $PG_VERSION_90 => q{
         SELECT (NOT pg_is_in_recovery())::int,
             CASE pg_is_in_recovery()
                 WHEN 't' THEN coalesce(
@@ -3301,7 +3394,21 @@ sub check_hot_standby_delta {
                 WHEN 't' THEN pg_last_xlog_replay_location()
                 ELSE NULL
             END
-    ";
+        },
+        $PG_VERSION_100 => q{
+        SELECT (NOT pg_is_in_recovery())::int,
+            CASE pg_is_in_recovery()
+                WHEN 't' THEN coalesce(
+                    pg_last_wal_receive_location(),
+                    pg_last_wal_replay_location()
+                )
+                ELSE pg_current_wal_location()
+            END,
+            CASE pg_is_in_recovery()
+                WHEN 't' THEN pg_last_wal_replay_location()
+                ELSE NULL
+            END
+    });
 
     @hosts = @{ parse_hosts %args };
 
@@ -3316,7 +3423,7 @@ sub check_hot_standby_delta {
 
     # fetch LSNs
     foreach my $host (@hosts) {
-        $host->{'rs'} = \@{ query( $host, $query )->[0] };
+        $host->{'rs'} = \@{ query_ver( $host, %queries )->[0] };
         $num_clusters += $host->{'rs'}[0];
         $master_location = $host->{'rs'}[1] if $host->{'rs'}[0];
     }
@@ -3619,7 +3726,8 @@ sub check_is_replay_paused {
     my $c_limit = -1;
     my %args    = %{ $_[0] };
     my $me      = 'POSTGRES_REPLICATION_PAUSED';
-    my $query   = q{
+    my %queries = (
+        $PG_VERSION_91 => q{
         SELECT pg_is_in_recovery()::int AS is_in_recovery,
         CASE pg_is_in_recovery()
             WHEN 't' THEN pg_is_xlog_replay_paused()::int
@@ -3634,8 +3742,24 @@ sub check_is_replay_paused {
                 THEN 1::int
             WHEN pg_is_in_recovery() THEN 0::int
             ELSE NULL
-        END AS delta
-    };
+        END AS delta},
+        $PG_VERSION_100 => q{
+        SELECT pg_is_in_recovery()::int AS is_in_recovery,
+        CASE pg_is_in_recovery()
+            WHEN 't' THEN pg_is_wal_replay_paused()::int
+            ELSE 0::int
+        END AS is_paused,
+        CASE pg_is_in_recovery()
+            WHEN 't' THEN extract('epoch' FROM now()-pg_last_xact_replay_timestamp())::int
+            ELSE NULL::int
+        END AS lag,
+        CASE
+            WHEN pg_is_in_recovery() AND pg_last_wal_replay_location() <> pg_last_wal_receive_location()
+                THEN 1::int
+            WHEN pg_is_in_recovery() THEN 0::int
+            ELSE NULL
+        END AS delta}
+    );
 
     if ( defined $args{'warning'} and defined $args{'critical'} ) {
         # warning and critical must be interval if provided.
@@ -3657,7 +3781,7 @@ sub check_is_replay_paused {
 
     is_compat $hosts[0], "is_replay_paused", $PG_VERSION_91 or exit 1;
 
-    @rs = @{ query( $hosts[0], $query )->[0] };
+    @rs = @{ query_ver( $hosts[0], %queries )->[0] };
 
     return unknown ( $me,
         [ "Server is not standby." ],
@@ -5158,7 +5282,8 @@ sub check_replication_slots {
     my @rs;
     my %args = %{ $_[0] };
 
-    my $query   = q{
+    my %queries = (
+       $PG_VERSION_94 => q{
         WITH wal_size AS (
             SELECT current_setting('wal_block_size')::int * setting::int AS val
             FROM pg_settings
@@ -5174,8 +5299,25 @@ sub check_replication_slots {
             ),0
         )
         FROM pg_replication_slots slot
-        CROSS JOIN wal_size s
-    };
+        CROSS JOIN wal_size s},
+       $PG_VERSION_100 => q{
+        WITH wal_size AS (
+            SELECT current_setting('wal_block_size')::int * setting::int AS val
+            FROM pg_settings
+            WHERE name = 'wal_segment_size'
+        )
+        SELECT slot.slot_name,
+        COALESCE(
+            floor(
+                (pg_wal_location_diff(pg_current_wal_location(), slot.restart_lsn)
+                - (pg_walfile_name_offset(restart_lsn)).file_offset
+                )
+                / (s.val)
+            ),0
+        )
+        FROM pg_replication_slots slot
+        CROSS JOIN wal_size s}
+    );
 
     @hosts = @{ parse_hosts %args };
 
@@ -5195,7 +5337,7 @@ sub check_replication_slots {
             and  $args{'critical'} =~ m/^([0-9]+)$/;
     }
 
-    @rs = @{ query( $hosts[0], $query ) };
+    @rs = @{ query_ver( $hosts[0], %queries ) };
 
 SLOTS_LOOP: foreach my $row (@rs) {
         push @perfdata => [ $row->[0], $row->[1] ];
@@ -5250,9 +5392,10 @@ sub check_settings {
     my $pending_count = 0;
     my %args  = %{ $_[0] };
     my %queries = (
-       $PG_VERSION_90 => q{ SELECT coalesce(r.rolname, '*'), coalesce(d.datname, '*'),
-               unnest(s.setconfig) AS setting,
-	       false AS pending_restart
+        $PG_VERSION_90 => q{
+        SELECT coalesce(r.rolname, '*'), coalesce(d.datname, '*'),
+          unnest(s.setconfig) AS setting,
+          false AS pending_restart
         FROM pg_db_role_setting s
         LEFT JOIN pg_database d ON d.oid=s.setdatabase
         LEFT JOIN pg_roles r ON r.oid=s.setrole
@@ -5260,9 +5403,10 @@ sub check_settings {
         SELECT '*', '*', name||'='||current_setting(name),false
         FROM pg_settings
        },
-       $PG_VERSION_95 => q{ SELECT coalesce(r.rolname, '*'), coalesce(d.datname, '*'),
-               unnest(s.setconfig) AS setting,
-	       false AS pending_restart
+        $PG_VERSION_95 => q{
+        SELECT coalesce(r.rolname, '*'), coalesce(d.datname, '*'),
+          unnest(s.setconfig) AS setting,
+          false AS pending_restart
         FROM pg_db_role_setting s
         LEFT JOIN pg_database d ON d.oid=s.setdatabase
         LEFT JOIN pg_roles r ON r.oid=s.setrole
@@ -5374,6 +5518,10 @@ sub check_streaming_delta {
     my $master_location = '';
     my $num_clusters    = 0;
     my %queries         = (
+        $PG_VERSION_100 => q{SELECT application_name, client_addr, pid,
+            sent_location, write_location, flush_location, replay_location,
+            CASE pg_is_in_recovery() WHEN true THEN pg_last_wal_receive_location() ELSE pg_current_wal_location() END
+            FROM pg_stat_replication},
         $PG_VERSION_92 => q{SELECT application_name, client_addr, pid,
             sent_location, write_location, flush_location, replay_location,
             CASE pg_is_in_recovery() WHEN true THEN pg_last_xlog_receive_location() ELSE pg_current_xlog_location() END
@@ -6227,8 +6375,8 @@ DB_LOOP: foreach my $stat (@rs) {
 Check the number of WAL files.
 
 Perfdata returns the total number of WAL files, current number of written WAL,
-the current number of recycled WAL and the rate of WAL written to disk since
-last execution on master clusters.
+the current number of recycled WAL, the rate of WAL written to disk since
+last execution on master clusters and the current timeline.
 
 Critical and Warning thresholds accept either a raw number of files or a
 percentage. In case of percentage, the limit is computed based on:
@@ -6252,6 +6400,7 @@ sub check_wal_files {
     my $seg_recycled = 0;
     my $seg_kept     = 0;
     my $num_seg      = 0;
+    my $tli;
     my $max_segs;
     my $first_seg;
     my @rs;
@@ -6272,9 +6421,10 @@ sub check_wal_files {
           max_nb_wal,
           CASE WHEN pg_is_in_recovery()
             THEN NULL
-            ELSE pg_current_xlog_location()
+            ELSE pg_current_wal_location()
           END,
-          current_setting('wal_keep_segments')::integer
+          current_setting('wal_keep_segments')::integer,
+          (pg_control_checkpoint()).timeline_id AS tli
         FROM pg_ls_dir('pg_wal') AS s(f)
         CROSS JOIN wal_settings
         WHERE f ~ '^[0-9A-F]{24}$'
@@ -6293,7 +6443,8 @@ sub check_wal_files {
             THEN NULL
             ELSE pg_current_xlog_location()
           END,
-          current_setting('wal_keep_segments')::integer
+          current_setting('wal_keep_segments')::integer,
+          substring(s.f from 1 for 8)::integer AS tli
         FROM pg_ls_dir('pg_xlog') AS s(f)
         CROSS JOIN wal_settings
         WHERE f ~ '^[0-9A-F]{24}$'
@@ -6312,7 +6463,8 @@ sub check_wal_files {
             THEN NULL
             ELSE pg_current_xlog_location()
           END,
-          current_setting('wal_keep_segments')::integer
+          current_setting('wal_keep_segments')::integer,
+          substring(s.f from 1 for 8)::integer AS tli
         FROM pg_ls_dir('pg_xlog') AS s(f)
         WHERE f ~ '^[0-9A-F]{24}$'
         ORDER BY
@@ -6323,7 +6475,8 @@ sub check_wal_files {
           1 + (
             current_setting('checkpoint_segments')::float4
             * ( 2 + current_setting('checkpoint_completion_target')::float4 )
-          ), pg_current_xlog_location()
+          ), pg_current_xlog_location(),
+          NULL, substring(s.f from 1 for 8)::integer AS tli
         FROM pg_ls_dir('pg_xlog') AS s(f)
         WHERE f ~ '^[0-9A-F]{24}$'
         ORDER BY
@@ -6331,7 +6484,8 @@ sub check_wal_files {
           f DESC},
       $PG_VERSION_82 => q{
         SELECT s.f,
-          1 + (current_setting('checkpoint_segments')::integer * 2), pg_current_xlog_location()
+          1 + (current_setting('checkpoint_segments')::integer * 2), pg_current_xlog_location(),
+          NULL, substring(s.f from 1 for 8)::integer AS tli
         FROM pg_ls_dir('pg_xlog') AS s(f)
         WHERE f ~ '^[0-9A-F]{24}$'
         ORDER BY
@@ -6339,7 +6493,8 @@ sub check_wal_files {
           f DESC},
       $PG_VERSION_81 => q{
         SELECT s.f,
-          1 + (current_setting('checkpoint_segments')::integer * 2)
+          1 + (current_setting('checkpoint_segments')::integer * 2),
+          NULL, NULL, substring(s.f from 1 for 8)::integer AS tli
         FROM pg_ls_dir('pg_xlog') AS s(f)
         WHERE f ~ '^[0-9A-F]{24}$'
         ORDER BY
@@ -6377,6 +6532,7 @@ sub check_wal_files {
 
     $first_seg = $rs[0][0];
     $max_segs  = $rs[0][1];
+    $tli = $rs[0][4];
 
     foreach my $r (@rs) {
         $num_seg++;
@@ -6387,6 +6543,7 @@ sub check_wal_files {
 
     push @perfdata => [ "total_wal", $num_seg, undef ];
     push @perfdata => [ "recycled_wal", $seg_recycled ];
+    push @perfdata => [ "tli", $tli ];
 
     # pay attention to the wal_keep_segment in perfdata
     if ( $hosts[0]{'version_num'} >= $PG_VERSION_90) {
@@ -6445,7 +6602,7 @@ sub check_wal_files {
     return ok( $me, \@msg, \@perfdata );
 }
 
-=item B<stat_snapshot_age> (8.1+)
+=item B<stat_snapshot_age> (9.5+)
 
 Check the age of the statistics snapshot (statistics collector's statistics).
 This probe help to detect a frozen stats collector process.
@@ -6643,7 +6800,7 @@ SELECT
    INNER JOIN pg_catalog.pg_class c  ON c.oid=d.refobjid
    INNER JOIN pg_catalog.pg_namespace n ON n.oid=c.relnamespace
    INNER JOIN pg_catalog.pg_attribute a ON ( a.attrelid=c.oid
-	                                 AND a.attnum=d.refobjsubid)
+                                             AND a.attnum=d.refobjsubid)
    INNER JOIN pg_catalog.pg_type t ON a.atttypid=t.oid
    WHERE d.classid='pg_catalog.pg_class'::pg_catalog.regclass
      AND d.refclassid='pg_catalog.pg_class'::pg_catalog.regclass
@@ -6850,6 +7007,7 @@ GetOptions(
         'help|?!',
         'host|h=s',
         'ignore-wal-size!',
+        'unarchiver=s',
         'dbname|d=s',
         'dbservice|S=s',
         'list|l!',
