@@ -1198,7 +1198,7 @@ sub human_output ($$;$$$) {
             $ret .= sprintf " max=%s", to_size( $$perfdata[6] ) if defined $$perfdata[6];
             $ret .= "\n";
         }
-        elsif ( defined $$perfdata[2] and $$perfdata[2] =~ /s$/ ) {
+        elsif ( defined $$perfdata[2] and $$perfdata[2] =~ /\ds$/ ) {
             $ret .= sprintf "%-15s: %s=%s", "Perfdata",
                 $$perfdata[0], to_interval( $$perfdata[1] );
             $ret .= sprintf " warn=%s", to_interval( $$perfdata[3] ) if defined $$perfdata[3];
