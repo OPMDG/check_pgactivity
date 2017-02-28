@@ -247,6 +247,10 @@ my %services = (
     'sequences_exhausted' => {
         'sub'  => \&check_sequences_exhausted,
         'desc' => 'Check that auto-incremented colums aren\'t reaching their upper limit'
+    },
+    'pgdata_permission' => {
+        'sub'  => \&check_pgdata_permission,
+        'desc' => 'Check that the permission on PGDATA is 700'
     }
 );
 
@@ -6873,6 +6877,109 @@ SELECT
     }
     return warning( $me, \@msg, \@perfdata, \@longmsg ) if ($criticity==1);
     return critical( $me, \@msg, \@perfdata, \@longmsg ) if ($criticity==2);
+    return ok( $me, \@msg, \@perfdata );
+}
+
+=item B<pgdata_permission> (8.2+)
+
+Check that the data directory of the instance has 700 as permission, and belongs to the system user running postgresql currently.
+Checking permission works on all Unix systems.
+Checking user works only in Linux systems (it uses /proc to not add dependencies). It needs PG 9.3+ too (because of fancy psql options used)
+
+B<It has to be executed locally on the monitored server.>
+
+=cut
+sub check_pgdata_permission {
+    my $me       = 'POSTGRES_CHECK_PGDATA_PERMISSION';
+    my @rs;
+    my @rs2;
+    my @perfdata;
+    my @msg;
+    my @longmsg;
+    my @hosts;
+    my %args     = %{ $_[0] };
+    my $stats_age;
+    my $criticity=0; # 0=ok, 1=warn, 2=critical
+
+
+
+    @hosts = @{ parse_hosts %args };
+
+    pod2usage(
+        -message => 'FATAL: you must give only one host with service "pgdata_permission".',
+        -exitval => 127
+    ) if @hosts != 1;
+
+    is_compat $hosts[0], 'pgdata_permission', $PG_VERSION_82 or exit 1;
+
+    # Get the data directory
+    my $query = qq{
+SELECT setting FROM pg_settings WHERE name='data_directory'
+};
+
+    @rs = @{ query ( $hosts[0], $query ) };
+
+    my $data_directory=$rs[0]->[0];
+
+    my @stat;
+    unless (@stat = stat($data_directory))
+    {
+       my @msg=("Postgresql returned this PGDATA: $data_directory, but I cannot access it: $!");
+       return unknown($me, \@msg);
+    }
+
+    my $mode=$stat[2];
+    my $perm=sprintf("%04o",$mode & 07777);
+
+    if ($perm ne '0700')
+    {
+        $criticity=2;
+        push @msg,("Permission is $perm on $data_directory");
+    }
+    else
+    {
+        push @msg,("Permission is ok on $data_directory");
+    }
+
+    # Now see who this directory belongs to, and if it matches the user running the instance
+    # Simplest way is to get the current backend pid and see who it belongs to
+    if ($^O =~ /linux/i and is_compat $hosts[0], 'pgdata_permission_owner', $PG_VERSION_93)
+    {
+        my $dir_uid=$stat[4];
+
+        $query = qq{
+    select pg_backend_pid() as pid
+    \\gset
+    \\setenv PID :pid
+    \\! cat /proc/\$PID/status
+    };
+        @rs = @{ query ( $hosts[0], $query ) };
+        # As there are not the usual separators, we only get a big record separated with \n
+        # Find the record beginning with Uid and get the third column (containing EUID)
+        my @rs_tmp=split(/\n/,$rs[0]->[0]);
+
+        my $pg_line_uid=(grep (/^Uid/,@rs_tmp))[0];
+        my $pg_uid=(split("\t",$pg_line_uid))[2];
+
+        if (not defined $pg_uid)
+        {
+            push @msg,("Cannot determine UID of user running postgres");
+            return unknown($me, \@msg);
+        }
+
+        if ($pg_uid ne $dir_uid)
+        {
+            $criticity=2;
+            push @msg,("User running Postgres ($pg_uid) doesn't own $data_directory ($dir_uid)");
+        }
+        else
+        {
+            push @msg,("Owner of $data_directory is ($pg_uid)");
+        }
+    }
+
+    return warning( $me, \@msg) if ($criticity==1);
+    return critical( $me, \@msg) if ($criticity==2);
     return ok( $me, \@msg, \@perfdata );
 }
 
