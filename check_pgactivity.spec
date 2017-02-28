@@ -1,7 +1,7 @@
-%global _tag REL2_0
+%global _tag REL2_2_RC1
 
 Name: nagios-plugins-pgactivity
-Version: 2.0
+Version: 2.2~rc1
 Release: 1
 Summary: PostgreSQL monitoring plugin for Nagios
 License: PostgreSQL
@@ -32,24 +32,11 @@ install -D -p -m 0755 check_pgactivity %{buildroot}/%{_libdir}/nagios/plugins/ch
 %doc README.rst LICENSE
 
 %changelog
+* Tue Feb 28 2017 Jehan-Guillaume de Rorthais <jgdr@dalibo.com> 2.2~rc1-1
+- new release candidate 2.2~rc1
+
 * Mon Aug 29 2016 Jehan-Guillaume de Rorthais <jgdr@dalibo.com> 2.0-1
 - new major release 2.0
-- support various output format
-- add output format "nagios_strict"
-- add output format "debug"
-- add output format "binary"
-- add output format "human"
-- force UTF8 encoding
-- do not connect ot the cluster if using --dbinclude for service pg_dump_backup
-- add argument --dump-status-file, useful for debugging
-- add service "table_unlogged"
-- add basic support to timeline cross in service archive_folder
-- add service "settings"
-- add service "invalid_indexes"
-- fix a bug where pod2usage couldn't find the original script
-- fix wal size computation for 9.3+ (255 -vs- 256 seg of 16MB)
-- fix perl warning with pg_dump_backup related to unknown database
-- fix buffers_backend unit in check_bgwriter
 
 * Thu Jan 28 2016 Jehan-Guillaume de Rorthais <jgdr@dalibo.com> 1.25-1
 - update to release 1.25
