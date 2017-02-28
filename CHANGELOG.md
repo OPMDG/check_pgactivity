@@ -1,6 +1,36 @@
 Changelog
 =========
 
+2017-03-01 v2.2:
+  - add support for PostgreSQL 9.6
+  - add early-support for PostgreSQL 10
+  - add service sequences_exhausted to monitor sequence usage
+  - add service wait_events to account wait events (9.6+)
+  - add service stat_snapshot_age to detect a stuck stats collector process
+  - add service wal_receiver to monitor replication on standby's end
+  - add support for "pending restart" parameters from PostgreSQL 9.5+ in check_settings
+  - add support for pg_file_settings for PostgreSQL 9.5+ & pg_hba_file_rules for 10+ in check_settings
+  - add timeline id in perfdata output from wal_files
+  - fix wal_files, archiver, check_is_replay_paused, check_hot_standby_delta, check_streaming_delta and check_replication_slots for PostgreSQL 10
+  - fix archive_folder to handle compressed archived WAL properly
+  - fix backends_status for PostgreSQL 9.6
+  - improve and rename "ready_archives" to "archiver"
+  - warn when no rows are returned in custom_query service
+  - make thresholds optional in service hot_standby_delta
+  - make thresholds optional in service streaming_delta
+  - remove useless thresholds in backends/maximum_connections perfdata
+  - add warn/crit threshold to steaming_delta perfdatas
+  - use parameter server_version_num to detect PostgreSQL version
+  - fix a race condition in is_storable to handle concurrent executions
+    correctly
+  - fix a bug in service locks that occurs with PostgreSQL 8.2
+  - fix rounding in hit_ratio
+  - fix perl warning when some ENV variables are not defined
+  - fix bug in "human" output format
+  - fix version check for all hosts for service hot_standby_delta
+  - fix bug in pg_dump_backups related to age of global files
+  - fix documentation about default db connection
+
 2016-08-29 2.0:
   - support various output format
   - add output format "nagios_strict"
