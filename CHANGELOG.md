@@ -9,7 +9,6 @@ Changelog
   - add service wal_receiver to monitor replication on standby's end
   - add service pgdata_permission to monitor rights and ownership of the PGDATA
   - add support for "pending restart" parameters from PostgreSQL 9.5+ in check_settings
-  - add support for pg_file_settings for PostgreSQL 9.5+ & pg_hba_file_rules for 10+ in check_settings
   - add timeline id in perfdata output from wal_files
   - fix wal_files, archiver, check_is_replay_paused, check_hot_standby_delta, check_streaming_delta and check_replication_slots for PostgreSQL 10
   - fix archive_folder to handle compressed archived WAL properly
