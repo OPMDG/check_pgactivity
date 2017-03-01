@@ -6445,7 +6445,7 @@ sub check_wal_files {
             ELSE pg_current_xlog_location()
           END,
           current_setting('wal_keep_segments')::integer,
-          substring(s.f from 1 for 8)::integer AS tli
+          substring(s.f from 1 for 8) AS tli
         FROM pg_ls_dir('pg_xlog') AS s(f)
         CROSS JOIN wal_settings
         WHERE f ~ '^[0-9A-F]{24}$'
@@ -6465,7 +6465,7 @@ sub check_wal_files {
             ELSE pg_current_xlog_location()
           END,
           current_setting('wal_keep_segments')::integer,
-          substring(s.f from 1 for 8)::integer AS tli
+          substring(s.f from 1 for 8) AS tli
         FROM pg_ls_dir('pg_xlog') AS s(f)
         WHERE f ~ '^[0-9A-F]{24}$'
         ORDER BY
@@ -6477,7 +6477,7 @@ sub check_wal_files {
             current_setting('checkpoint_segments')::float4
             * ( 2 + current_setting('checkpoint_completion_target')::float4 )
           ), pg_current_xlog_location(),
-          NULL, substring(s.f from 1 for 8)::integer AS tli
+          NULL, substring(s.f from 1 for 8) AS tli
         FROM pg_ls_dir('pg_xlog') AS s(f)
         WHERE f ~ '^[0-9A-F]{24}$'
         ORDER BY
@@ -6486,7 +6486,7 @@ sub check_wal_files {
       $PG_VERSION_82 => q{
         SELECT s.f,
           1 + (current_setting('checkpoint_segments')::integer * 2), pg_current_xlog_location(),
-          NULL, substring(s.f from 1 for 8)::integer AS tli
+          NULL, substring(s.f from 1 for 8) AS tli
         FROM pg_ls_dir('pg_xlog') AS s(f)
         WHERE f ~ '^[0-9A-F]{24}$'
         ORDER BY
@@ -6495,7 +6495,7 @@ sub check_wal_files {
       $PG_VERSION_81 => q{
         SELECT s.f,
           1 + (current_setting('checkpoint_segments')::integer * 2),
-          NULL, NULL, substring(s.f from 1 for 8)::integer AS tli
+          NULL, NULL, substring(s.f from 1 for 8) AS tli
         FROM pg_ls_dir('pg_xlog') AS s(f)
         WHERE f ~ '^[0-9A-F]{24}$'
         ORDER BY
@@ -6533,7 +6533,7 @@ sub check_wal_files {
 
     $first_seg = $rs[0][0];
     $max_segs  = $rs[0][1];
-    $tli = $rs[0][4];
+    $tli = hex($rs[0][4]);
 
     foreach my $r (@rs) {
         $num_seg++;
