@@ -5514,6 +5514,7 @@ sub check_streaming_delta {
     my @hosts;
     my %slaves;
     my %args            = %{ $_[0] };
+    my @exclude      = @{ $args{'exclude'} };
     my $wal_size        = hex('ff000000');
     my $me              = 'POSTGRES_STREAMING_DELTA';
     my $master_location = '';
@@ -5551,6 +5552,18 @@ sub check_streaming_delta {
 
     @rs = @{ query_ver( $hosts[0], %queries ) };
 
+    my $index = 0;
+    if (@exclude){
+        foreach my $line (@rs){
+	    foreach my $exclude_re (@exclude){
+	        if (grep { $_ =~ $exclude_re } @{$line}){
+	            delete $rs[$index];
+	        }
+	    }
+	    $index++;
+	}
+    }
+	
     push @perfdata => [ '# of slaves', scalar @rs || 0 ];
 
     return unknown( $me, ['No slaves connected'], \@perfdata )
@@ -5663,7 +5676,7 @@ A critical alert is raised if an unlogged table is detected.
 
 This service supports both C<--dbexclude>  and C<--dbinclude> parameters.
 
-This service supports a C<--exclude REGEX>  parameter to exclude relations
+This service supports a C<--exclude REGEX>  parameter to exclud relations
 matching the given regular expression. The regular expression applies to
 "database.schema_name.relation_name". This allows you to filter either on a
 relation name for all schemas and databases, filter on a qualified named relation
