@@ -5490,6 +5490,12 @@ Either of the two following examples will check for the presence of two slaves:
   --slave 'slave1 192.168.1.11' --slave 'slave2 192.168.1.12'
   --slave 'slave1 192.168.1.11','slave2 192.168.1.12'
 
+This service supports a C<--exclude REGEX>  parameter to exclude every result
+matching the given regular expression. This allows you to filter either on an
+application_name or address IP or whatever you want.
+
+You can use multiple C<--exclude REGEX>  parameters.
+
 Perfdata returns the data delta in bytes between the master and all standbys
 found and the number of slaves connected.
 
@@ -5676,7 +5682,7 @@ A critical alert is raised if an unlogged table is detected.
 
 This service supports both C<--dbexclude>  and C<--dbinclude> parameters.
 
-This service supports a C<--exclude REGEX>  parameter to exclud relations
+This service supports a C<--exclude REGEX>  parameter to exclude relations
 matching the given regular expression. The regular expression applies to
 "database.schema_name.relation_name". This allows you to filter either on a
 relation name for all schemas and databases, filter on a qualified named relation
