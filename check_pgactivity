@@ -882,6 +882,10 @@ sub parse_hosts(\%) {
         }
     }
 
+    if (!@hosts) {
+	push(@hosts, {'name' => 'localhost/default'});
+    }
+
     dprint ('Hosts: '. Dumper(\@hosts));
 
     return \@hosts;
