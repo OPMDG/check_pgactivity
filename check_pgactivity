@@ -1826,6 +1826,10 @@ are raw numbers and empty lists are forbidden. Here is an example:
 
     -w 'waiting=5,idle_xact=10' -c 'waiting=20,idle_xact=30'
 
+Add s to the numbers for monitoring oldest backend in each state:
+
+    -w 'active=30s,idle_xact=40s' -c 'active=100s,idle_xact=200s'
+
 Perfdata contains the number of backends for each status and the oldest one for
 each of them, for 8.2+.
 
@@ -1840,8 +1844,10 @@ sub check_backends_status {
     my @perfdata;
     my @msg_warn;
     my @msg_crit;
-    my %warn;
-    my %crit;
+    my %warn_num;
+    my %warn_age;
+    my %crit_num;
+    my %crit_age;
     my $max_connections;
     my $num_backends = 0;
     my $me           = 'POSTGRES_BACKENDS_STATUS';
@@ -1985,7 +1991,7 @@ sub check_backends_status {
 
     if ( defined $args{'warning'} ) {
         my $threshods_re
-            = qr/(idle|idle_xact|aborted_xact|fastpath|active|waiting)\s*=\s*(\d+)/i;
+            = qr/(idle|idle_xact|aborted_xact|fastpath|active|waiting)\s*=\s*(\d+)(s?)/i;
 
         # warning and critical must be raw
         pod2usage(
@@ -1996,13 +2002,15 @@ sub check_backends_status {
             and $args{'critical'} =~ m/^$threshods_re(\s*,\s*$threshods_re)*$/ ;
 
         while ( $args{'warning'} =~ /$threshods_re/g ) {
-            my ($threshold, $value) = ($1, $2);
-            $warn{$threshold} = $value if $1 and defined $2;
+            my ($threshold, $value, $isage) = ($1, $2, $3);
+            $warn_num{$threshold} = $value if $1 and defined $2 and not $3;
+            $warn_age{$threshold} = $value if $1 and defined $2 and $3 eq 's';
         }
 
         while ( $args{'critical'} =~ /$threshods_re/g ) {
-            my ($threshold, $value) = ($1, $2);
-            $crit{$threshold} = $value if $1 and defined $2;
+            my ($threshold, $value, $isage) = ($1, $2, $3);
+            $crit_num{$threshold} = $value if $1 and defined $2 and not $3;
+            $crit_age{$threshold} = $value if $1 and defined $2 and $3 eq 's';
         }
     }
 
@@ -2032,25 +2040,31 @@ sub check_backends_status {
 
     STATUS_LOOP: foreach my $s (sort keys %status) {
         my @perf = ( $s, $status{$s}[0] );
-        push @perf, ( $warn{$s}, $crit{$s}, 0, $max_connections )
-            if exists $warn{$s} and exists $crit{$s};
+        push @perf, ( $warn_num{$s}, $crit_num{$s}, 0, $max_connections )
+            if exists $warn_num{$s} and exists $crit_num{$s};
         push @perfdata => [ @perf ];
 
-        push @perfdata => [ "oldest $s", $status{$s}[1], 's' ]
+        my @perf2 = ( "oldest $s", $status{$s}[1], 's' );
+        push @perf2, ( $warn_age{$s}, $crit_age{$s}, 0 )
+            if exists $warn_age{$s} and exists $crit_age{$s};
+
+        push @perfdata => [ @perf2 ]
             if $hosts[0]->{'version_num'} >= $PG_VERSION_83
                 and $s !~ '^(?:disabled|undefined|insufficient)';
 
-        # Criticals
-        if ( exists $crit{$s} and $status{$s}[0] >= $crit{$s} ) {
+        # Num - crit/warn
+        if ( exists $crit_num{$s} and $status{$s}[0] >= $crit_num{$s} ) {
             push @msg_crit => "$status{$s}[0] $s";
-            next STATUS_LOOP;
+        } elsif ( exists $warn_num{$s} and $status{$s}[0] >= $warn_num{$s} ) {
+            push @msg_warn => "$status{$s}[0] $s";
         }
 
-        # Warning
-        if ( exists $warn{$s} and $status{$s}[0] >= $warn{$s} ) {
-            push @msg_warn => "$status{$s}[0] $s";
-            next STATUS_LOOP;
+        if ( exists $crit_age{$s} and $status{$s}[1] >= $crit_age{$s} ) {
+            push @msg_crit => "$status{$s}[1]s oldest $s";
+        } elsif ( exists $warn_age{$s} and $status{$s}[1] >= $warn_age{$s} ) {
+            push @msg_warn => "$status{$s}[1]s oldest $s";
         }
+	
     }
 
     return critical( $me, [ @msg_crit, @msg_warn ], \@perfdata )
