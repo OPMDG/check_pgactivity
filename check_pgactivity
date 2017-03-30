@@ -5491,8 +5491,7 @@ Either of the two following examples will check for the presence of two slaves:
   --slave 'slave1 192.168.1.11','slave2 192.168.1.12'
 
 This service supports a C<--exclude REGEX>  parameter to exclude every result
-matching the given regular expression. This allows you to filter either on an
-application_name or address IP or whatever you want.
+matching the given regular expression on application_name or address ip fields.
 
 You can use multiple C<--exclude REGEX>  parameters.
 
@@ -5558,18 +5557,16 @@ sub check_streaming_delta {
 
     @rs = @{ query_ver( $hosts[0], %queries ) };
 
-    my $index = 0;
+    my $excluded = 0;
     if (@exclude){
         foreach my $line (@rs){
-	    foreach my $exclude_re (@exclude){
-	        if (grep { $_ =~ $exclude_re } @{$line}){
-	            delete $rs[$index];
+	        if ((grep { @{$line}[0] =~ m/$_/ } @exclude) || (grep { @{$line}[1] =~ m/$_/ } @exclude)){
+		        $excluded++;
 	        }
-	    }
-	    $index++;
-	}
+	     }
     }
-	
+
+	push @perfdata => [ '# of excluded slaves', $excluded ];
     push @perfdata => [ '# of slaves', scalar @rs || 0 ];
 
     return unknown( $me, ['No slaves connected'], \@perfdata )
