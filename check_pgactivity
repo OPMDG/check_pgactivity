@@ -1877,7 +1877,7 @@ sub check_backends_status {
                         THEN 'waiting for lock'
                     ELSE 'active'
                 END AS status,
-                NULL, s.current_query, current_setting('max_connections')
+                NULL, current_setting('max_connections')
             FROM pg_stat_activity AS s
                 JOIN pg_database d ON d.oid=s.datid
             WHERE d.datallowconn
@@ -1904,7 +1904,7 @@ sub check_backends_status {
                 extract('epoch' FROM
                     date_trunc('milliseconds', current_timestamp-s.xact_start)
                 ),
-                s.current_query, current_setting('max_connections')
+                current_setting('max_connections')
             FROM pg_stat_activity AS s
                 JOIN pg_database d ON d.oid=s.datid
             WHERE d.datallowconn
@@ -1933,7 +1933,7 @@ sub check_backends_status {
                 extract('epoch' FROM
                     date_trunc('milliseconds', current_timestamp-s.xact_start)
                 ),
-                s.current_query, current_setting('max_connections')
+                current_setting('max_connections')
             FROM pg_stat_activity AS s
                 JOIN pg_database d ON d.oid=s.datid
             WHERE d.datallowconn
@@ -1949,7 +1949,7 @@ sub check_backends_status {
               END,
               extract('epoch' FROM
                 date_trunc('milliseconds', current_timestamp-s.xact_start)
-              ), s.query, current_setting('max_connections')
+              ), current_setting('max_connections')
             FROM pg_stat_activity AS s
               JOIN pg_database d ON d.oid=s.datid
             WHERE d.datallowconn
@@ -1966,7 +1966,7 @@ sub check_backends_status {
               END,
               extract('epoch' FROM
                 date_trunc('milliseconds', current_timestamp-s.xact_start)
-              ), s.query, current_setting('max_connections')
+              ), current_setting('max_connections')
             FROM pg_stat_activity AS s
               JOIN pg_database d ON d.oid=s.datid
             WHERE d.datallowconn
@@ -2014,7 +2014,7 @@ sub check_backends_status {
     delete $status{'other wait event'}
         if $hosts[0]->{'version_num'} < $PG_VERSION_96;
 
-    $max_connections = $rs[0][3] if scalar @rs;
+    $max_connections = $rs[0][2] if scalar @rs;
 
     REC_LOOP: foreach my $r (@rs) {
 
