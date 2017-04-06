@@ -6418,7 +6418,7 @@ sub check_wal_files {
           FROM pg_settings
           WHERE name = 'max_wal_size'
         )
-        SELECT s.f,
+        SELECT s.name,
           max_nb_wal,
           CASE WHEN pg_is_in_recovery()
             THEN NULL
@@ -6426,12 +6426,12 @@ sub check_wal_files {
           END,
           current_setting('wal_keep_segments')::integer,
           (pg_control_checkpoint()).timeline_id AS tli
-        FROM pg_ls_dir('pg_wal') AS s(f)
+        FROM pg_ls_waldir() AS s
         CROSS JOIN wal_settings
-        WHERE f ~ '^[0-9A-F]{24}$'
+        WHERE name ~ '^[0-9A-F]{24}$'
         ORDER BY
-          (pg_stat_file('pg_wal/'||s,true)).modification DESC,
-          f DESC},
+          s.modification DESC,
+          name DESC},
      $PG_VERSION_95 => q{
         WITH wal_settings AS (
           SELECT setting::int + current_setting('wal_keep_segments')::int as max_nb_wal
