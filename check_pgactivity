@@ -1085,6 +1085,26 @@ sub is_compat($$$;$) {
     return 1;
 }
 
+# Check host compatibility
+sub silent_is_compat($$$;$) {
+    my $host    = shift;
+    my $service = shift;
+    my $min     = shift;
+    my $max     = shift() || 9999999;;
+    my $ver;
+
+    set_pgversion($host);
+    $ver = 100*int($host->{'version_num'}/100);
+
+    return 0 unless (
+        $ver >= $min
+        and $ver <= $max
+    );
+
+    return 1;
+
+}
+
 sub dprint {
     return unless $args{'debug'};
     foreach (@_) {
@@ -5206,7 +5226,7 @@ sub check_archiver {
 
     is_compat $hosts[0], 'archiver', $PG_VERSION_81 or exit 1;
 
-    if (is_compat $hosts[0], 'archiver', $PG_VERSION_81, $PG_VERSION_96) {
+    if (silent_is_compat $hosts[0], 'archiver', $PG_VERSION_81, $PG_VERSION_96) {
         # cf. pgarch_readyXlog in src/backend/postmaster/pgarch.c about how the
         # archiver process pick the next WAL to archive.
         # We try to reproduce the same algo here
