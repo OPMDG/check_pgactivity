@@ -6792,7 +6792,7 @@ sub check_sequences_exhausted {
         next ALLDB_LOOP if @dbinclude and not grep { $db =~ /$_/ } @dbinclude;
 
         # We have two code paths: one for < 10.0 and one for >=10.S
-        if (is_compat $hosts[0], 'sequences_exhausted', $PG_VERSION_82, $PG_VERSION_96)
+        if (silent_is_compat $hosts[0], 'sequences_exhausted', $PG_VERSION_82, $PG_VERSION_96)
         {
             # Search path is emptied so that ::regclass gives us full paths
             my $query  = qq{
