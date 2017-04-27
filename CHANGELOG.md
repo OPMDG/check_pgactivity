@@ -1,7 +1,7 @@
 Changelog
 =========
 
-2017-03-01 v2.2:
+2017-04-28 v2.2:
   - add support for PostgreSQL 9.6
   - add early-support for PostgreSQL 10
   - add service sequences_exhausted to monitor sequence usage
