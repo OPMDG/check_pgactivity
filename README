@@ -912,7 +912,7 @@ check_pgactivity
           check_pgactivity -p 5433 -h slave --service hit_ratio --dbinclude importantone -w 90% -c 80%
 
   VERSION
-    check_pgactivity version 2.2_rc1, released on Tue Feb 28 2017.
+    check_pgactivity version 2.2, released on Fri Apr 28 2017.
 
   LICENSING
     This program is open source, licensed under the PostgreSQL license. For
@@ -920,5 +920,5 @@ check_pgactivity
 
   AUTHORS
     Author: Open PostgreSQL Monitoring Development Group Copyright: (C)
-    2012-2016 Open PostgreSQL Development Group
+    2012-2017 Open PostgreSQL Development Group
 
