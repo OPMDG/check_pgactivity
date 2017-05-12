@@ -968,7 +968,7 @@ B<It has to be executed locally on the monitored server.>
 
 =head2 VERSION
 
-check_pgactivity version 2.2_rc2, released on Wed Mar 1 2017.
+check_pgactivity version 2.2, released on Fri Apr 28 2017.
 
 =head2 LICENSING
 
