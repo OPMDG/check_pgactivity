@@ -2,7 +2,7 @@
 # This program is open source, licensed under the PostgreSQL License.
 # For license terms, see the LICENSE file.
 #
-# Copyright (C) 2012-2016: Open PostgreSQL Monitoring Development Group
+# Copyright (C) 2012-2017: Open PostgreSQL Monitoring Development Group
 
 =head1 check_pgactivity
 
@@ -57,7 +57,7 @@ delete $ENV{'LANGUAGE'};
 
 $| = 1;
 
-$VERSION = '2.2_rc1';
+$VERSION = '2.2';
 $PROGRAM = 'check_pgactivity';
 
 my $PG_VERSION_MIN =  70400;
