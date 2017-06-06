@@ -5549,8 +5549,8 @@ matching the given regular expression on application_name or address ip fields.
 
 You can use multiple C<--exclude REGEX>  parameters.
 
-Perfdata returns the data delta in bytes between the master and all standbys
-found and the number of slaves connected.
+Perfdata returns the data delta in bytes between the master and every standbies
+found, the number of standbies connected and the number of excluded standbies.
 
 Critical and Warning thresholds are optional. They can take one or two values
 separated by a comma. If only one value is supplied, it applies to both flushed
@@ -5573,7 +5573,8 @@ sub check_streaming_delta {
     my @hosts;
     my %slaves;
     my %args            = %{ $_[0] };
-    my @exclude      = @{ $args{'exclude'} };
+    my @exclude         = @{ $args{'exclude'} };
+    my $excluded        = 0;
     my $wal_size        = hex('ff000000');
     my $me              = 'POSTGRES_STREAMING_DELTA';
     my $master_location = '';
@@ -5611,18 +5612,6 @@ sub check_streaming_delta {
 
     @rs = @{ query_ver( $hosts[0], %queries ) };
 
-    my $excluded = 0;
-    if (@exclude){
-        foreach my $line (@rs){
-	        if ((grep { @{$line}[0] =~ m/$_/ } @exclude) || (grep { @{$line}[1] =~ m/$_/ } @exclude)){
-		        $excluded++;
-	        }
-	     }
-    }
-
-	push @perfdata => [ '# of excluded slaves', $excluded ];
-    push @perfdata => [ '# of slaves', scalar @rs || 0 ];
-
     return unknown( $me, ['No slaves connected'], \@perfdata )
         unless scalar @rs;
 
@@ -5655,6 +5644,13 @@ sub check_streaming_delta {
         my $replay_delta;
         my $name;
 
+        if ( grep { $host->[0] =~ m/$_/ or $host->[1] =~ m/$_/ } @exclude ) {
+            $excluded++;
+            next;
+        }
+
+        $num_clusters++;
+
         $host->[3] =~ m{^([0-9A-F]+)/([0-9A-F]+)$};
         $send_delta = $master_location - ( $wal_size * hex($1) ) - hex($2);
 
@@ -5676,8 +5672,6 @@ sub check_streaming_delta {
             [ "replay delta $name",  $replay_delta, "B", $w_limit_replayed, $c_limit_replayed ],
             [ "pid $name", $host->[2] ]
         );
-
-        $num_clusters++;
 
         $slaves{"$host->[0] $host->[1]"} = 1;
 
@@ -5708,6 +5702,9 @@ sub check_streaming_delta {
             }
         }
     }
+
+    push @perfdata => [ '# of excluded slaves', $excluded ];
+    push @perfdata => [ '# of slaves', scalar @rs || 0 ];
 
     while ( my ( $host, $connected ) = each %slaves ) {
         unshift @msg_crit => "$host not connected" unless $connected;
