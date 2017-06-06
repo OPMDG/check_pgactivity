@@ -378,6 +378,10 @@ A list of the bloated indexes detail will be returned after the
 perfdata. This list contains the fully qualified bloated index name, the
 estimated bloat size, the index size and the bloat percentage.
 
+This service will work with PostgreSQL 10+ without superuser privileges
+if you grant SELECT on table pg_statistic to the pg_monitor role, in
+each database of the cluster : C<GRANT SELECT ON pg_statistic TO pg_monitor;>
+
 =item B<commit_ratio> (all)
 
 Check the commit and rollback rate per second since last call.
@@ -853,6 +857,10 @@ A list of the bloated tables detail will be returned after the
 perfdata. This list contains the fully qualified bloated table name, the
 estimated bloat size, the table size and the bloat percentage.
 
+This service will work with PostgreSQL 10+ without superuser privileges
+if you grant SELECT on table pg_statistic to the pg_monitor role, in
+each database of the cluster : C<GRANT SELECT ON pg_statistic TO pg_monitor;>
+
 =item B<temp_files> (8.1+)
 
 Check the number and size of temp files.
@@ -873,6 +881,8 @@ values separated by a comma.
 
 Threshols applied on current temp files beeing created AND the number/size
 of temp files created since last execution.
+
+This service will not work with PostgreSQL 10+ without superuser privileges.
 
 =item B<wal_files> (8.1+)
 
