@@ -3244,6 +3244,8 @@ sub check_database_size {
 
 Check the cache hit ratio on the cluster.
 
+This service uses the status file (see C<--status-file> parameter).
+
 Perfdata returns the cache hit ratio per database. Template databases and
 databases that do not allow connections will not be checked, nor will the
 databases which have never been accessed.
