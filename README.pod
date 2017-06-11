@@ -1,3 +1,5 @@
+=for html <a href="https://travis-ci.org/daamien/check_pgactivity"><img src="https://travis-ci.org/daamien/check_pgactivity.svg?branch=travis"></a>
+
 =head1 check_pgactivity
 
 check_pgactivity - PostgreSQL plugin for Nagios
