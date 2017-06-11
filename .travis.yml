@@ -1,0 +1,11 @@
+sudo: required
+
+services:
+  - docker
+
+script:
+- ./dockertest.sh 9.2
+- ./dockertest.sh 9.3
+- ./dockertest.sh 9.4
+- ./dockertest.sh 9.5
+- ./dockertest.sh 9.6
