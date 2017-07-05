@@ -52,6 +52,7 @@ sub check_example {
 ```
 
 Several other variables are defined :
+
 * @rs: array to store the result set of the monitoring query
 * @perfdata: array to store the returned perdata
 * @msg: array to store the returned messages
@@ -114,6 +115,18 @@ Populate the @perfdata array with the resulting metrics :
 push @perfdata => [ "connections_number", $num_connections, undef ];
 ```
 
+You must provide some mandatory data in the @perfdata array :
+
+* perfdata name
+* the data itself, in numerical form
+
+The following data are optional :
+
+* warning threshold
+* critical threshold
+* minimum value
+* maximum value
+
 Your service can return "ok" by calling the function of the same name :
 ```
 return ok( $me, \@msg, \@perfdata );
@@ -121,6 +134,7 @@ return ok( $me, \@msg, \@perfdata );
 
 check_pgactivity provides 4 functions for the 4 given A Nagios-compatible
 service states :
+
 * ok
 * warning
 * critical
@@ -252,12 +266,14 @@ statistics file.
 
 First, the load call will populate the data structure using the following
 arguments :
+
 * the host structure ref that holds the "host" and "port" parameters
 * the name of the structure to load
 * the path to the file storage
 
 As you may guess, there's also a save function to store the data structure into
 the statistics file with the following arguments :
+
 * the host structure ref that holds the "host" and "port" parameters
 * the name of the structure to save
 * the ref of the structure to save
