@@ -4538,7 +4538,7 @@ sub check_minor_version {
         our %get_methods = (
             'GET'    => "GET -t $timeout -H 'Pragma: no-cache' $url",
             'wget'   => "wget --quiet --timeout=$timeout --no-cache -O - $url",
-            'curl'   => "curl --silent --max-time $timeout -H 'Pragma: no-cache' $url",
+            'curl'   => "curl --silent --location --max-time $timeout -H 'Pragma: no-cache' $url",
             'fetch'  => "fetch -q -T $timeout -o - $url",
             'lynx'   => "lynx --connect-timeout=$timeout --dump $url",
             'links'  => 'links -dump $url',
@@ -4558,13 +4558,17 @@ sub check_minor_version {
                 -message => "FATAL: \"$args{'path'}\" is not a supported program.",
                 -exitval => 127
             ) unless $meth =~ 'GET|wget|curl|fetch|lynx|links|links2';
+
+            # fetch the latest versions via $path
+            $rss = qx{$get_methods{$meth} 2>/dev/null};
         }
+        else {
+            # fetch the latest versions
+            foreach my $exe (values %get_methods) {
+                $rss = qx{$exe 2>/dev/null};
 
-        # fetch the latest versions
-        foreach my $exe (values %get_methods) {
-            $rss = qx{$exe 2>/dev/null};
-
-            last if $rss =~ 'PostgreSQL latest versions';
+                last if $rss =~ 'PostgreSQL latest versions';
+            }
         }
 
         return unknown($me, [ 'Could not fetch PostgreSQL latest versions' ])
