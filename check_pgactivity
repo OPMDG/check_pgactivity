@@ -1770,6 +1770,20 @@ sub check_backends {
                 UNION ALL
                 SELECT 'replication', count(*)
                 FROM pg_catalog.pg_stat_replication
+            ) AS s },
+        # Only account client backends
+        $PG_VERSION_100 => q{
+            SELECT s.*, current_setting('max_connections')::int
+                - current_setting('superuser_reserved_connections')::int
+            FROM (
+                SELECT d.datname, count(*)
+                FROM pg_catalog.pg_stat_activity AS s
+                  JOIN pg_catalog.pg_database AS d ON d.oid = s.datid
+                WHERE backend_type = 'client backend'
+                GROUP BY d.datname
+                UNION ALL
+                SELECT 'replication', count(*)
+                FROM pg_catalog.pg_stat_replication
             ) AS s }
     );
 
@@ -1990,6 +2004,24 @@ sub check_backends_status {
             FROM pg_stat_activity AS s
               JOIN pg_database d ON d.oid=s.datid
             WHERE d.datallowconn
+        },
+        # pg_stat_activity now displays background processes
+        $PG_VERSION_100 => q{
+            SELECT CASE
+                WHEN s.wait_event_type = 'Lock' THEN 'waiting for lock'
+                WHEN s.wait_event_type IS NOT NULL AND s.wait_event_type <> 'Client' THEN 'other wait event'
+                WHEN s.query = '<insufficient privilege>'
+                    THEN 'insufficient privilege'
+                WHEN s.state IS NULL THEN 'undefined'
+                ELSE s.state
+              END,
+              extract('epoch' FROM
+                date_trunc('milliseconds', current_timestamp-s.xact_start)
+              ), current_setting('max_connections')
+            FROM pg_stat_activity AS s
+              JOIN pg_database d ON d.oid=s.datid
+            WHERE d.datallowconn
+              AND backend_type = 'client backend'
         }
     );
 
