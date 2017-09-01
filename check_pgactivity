@@ -6915,9 +6915,10 @@ SELECT
             }
             else
             {
-                # FIXME: do we need to support numeric ?
-                die "I don't know this type: ". $sequences{$seq}->{TYPE} . "for $seq";
-            }
+                # We're not going to try to guess. This is not a serial, trust the dba/developper
+                delete $sequences{$seq};
+                next;
+}
             my $max_val_seq;
             if ($sequences{$seq}->{INCREMENTBY}>=0) {
                 $max_val_seq=$sequences{$seq}->{MAXVALSEQ};
