@@ -1891,6 +1891,18 @@ sub check_backends_status {
         'insufficient privilege'        => [0, 0],
         'other wait event'              => [0, 0]
     );
+    my %translate    = (
+        'idle'                          => 'idle',
+        'idle in transaction'           => 'idle_xact',
+        'idle in transaction (aborted)' => 'aborted_xact',
+        'fastpath function call'        => 'fastpath',
+        'waiting for lock'              => 'waiting',
+        'active'                        => 'active',
+        'disabled'                      => 'unsupported',
+        'undefined'                     => 'unsupported',
+        'insufficient privilege'        => 'unsupported',
+        'other wait event'              => 'unsupported'
+    );
     my %queries      = (
         # doesn't support "idle in transaction (aborted)" and xact age
         $PG_VERSION_82 => q{
@@ -2083,6 +2095,7 @@ sub check_backends_status {
     }
 
     STATUS_LOOP: foreach my $s (sort keys %status) {
+        my $p = $translate{$s};
         my @perf = ( $s, $status{$s}[0] );
         push @perf, ( $warn{$s}, $crit{$s}, 0, $max_connections )
             if exists $warn{$s} and exists $crit{$s};
@@ -2093,13 +2106,13 @@ sub check_backends_status {
                 and $s !~ '^(?:disabled|undefined|insufficient)';
 
         # Criticals
-        if ( exists $crit{$s} and $status{$s}[0] >= $crit{$s} ) {
+        if ( exists $crit{$p} and $status{$s}[0] >= $crit{$p} ) {
             push @msg_crit => "$status{$s}[0] $s";
             next STATUS_LOOP;
         }
 
         # Warning
-        if ( exists $warn{$s} and $status{$s}[0] >= $warn{$s} ) {
+        if ( exists $warn{$p} and $status{$s}[0] >= $warn{$p} ) {
             push @msg_warn => "$status{$s}[0] $s";
             next STATUS_LOOP;
         }
