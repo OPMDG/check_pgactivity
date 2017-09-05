@@ -2092,14 +2092,21 @@ sub check_backends_status {
     }
 
     STATUS_LOOP: foreach my $s (sort keys %status) {
-        my @perf = ( $s, $status{$s}[0] );
+        my @perf = ( $s, $status{$s}[0], undef );
+
         push @perf, ( $warn{$s}, $crit{$s}, 0, $max_connections )
-            if exists $warn{$s} and exists $crit{$s};
+          if ( exists $warn{$s} and exists $crit{$s}
+               and $warn{$s} =~ /\d+$/ and $crit{$s} =~ /\d+$/ );
         push @perfdata => [ @perf ];
 
-        push @perfdata => [ "oldest $s", $status{$s}[1], 's' ]
-            if $hosts[0]->{'version_num'} >= $PG_VERSION_83
-                and $s !~ '^(?:disabled|undefined|insufficient)';
+        if ( $hosts[0]->{'version_num'} >= $PG_VERSION_83
+             and $s !~ '^(?:disabled|undefined|insufficient)' ) {
+          my @perf = ("oldest $s", $status{$s}[1], 's' );
+          push @perf, ( $warn{$s}, $crit{$s}, 0, $max_connections )
+            if ( exists $warn{$s} and exists $crit{$s}
+                 and $warn{$s} =~ /\d+\s*[smhd]/ and $crit{$s} =~ /\d+\s*[smhd]/ );
+          push @perfdata => [ @perf ];
+        }
 
         # Criticals
         if ( exists $crit{$s} ) {
