@@ -1893,16 +1893,12 @@ sub check_backends_status {
         'other wait event'              => [0, 0]
     );
     my %translate    = (
-        'idle'                          => 'idle',
-        'idle in transaction'           => 'idle_xact',
-        'idle in transaction (aborted)' => 'aborted_xact',
-        'fastpath function call'        => 'fastpath',
-        'waiting for lock'              => 'waiting',
-        'active'                        => 'active',
-        'disabled'                      => 'unsupported',
-        'undefined'                     => 'unsupported',
-        'insufficient privilege'        => 'unsupported',
-        'other wait event'              => 'unsupported'
+        'idle'         => 'idle',
+        'idle_xact'    => 'idle in transaction',
+        'aborted_xact' => 'idle in transaction (aborted)',
+        'fastpath'     => 'fastpath function call',
+        'waiting'      => 'waiting for lock',
+        'active'       => 'active'
     );
     my %queries      = (
         # doesn't support "idle in transaction (aborted)" and xact age
@@ -2062,12 +2058,12 @@ sub check_backends_status {
 
         while ( $args{'warning'} =~ /$threshods_re/g ) {
             my ($threshold, $value) = ($1, $2);
-            $warn{$threshold} = $value if $1 and defined $2;
+            $warn{$translate{$threshold}} = $value if $1 and defined $2;
         }
 
         while ( $args{'critical'} =~ /$threshods_re/g ) {
             my ($threshold, $value) = ($1, $2);
-            $crit{$threshold} = $value if $1 and defined $2;
+            $crit{$translate{$threshold}} = $value if $1 and defined $2;
         }
     }
 
@@ -2096,8 +2092,6 @@ sub check_backends_status {
     }
 
     STATUS_LOOP: foreach my $s (sort keys %status) {
-	    print $s."\n";
-        my $p = $translate{$s};
         my @perf = ( $s, $status{$s}[0] );
         push @perf, ( $warn{$s}, $crit{$s}, 0, $max_connections )
             if exists $warn{$s} and exists $crit{$s};
@@ -2108,24 +2102,24 @@ sub check_backends_status {
                 and $s !~ '^(?:disabled|undefined|insufficient)';
 
         # Criticals
-        if ( exists $crit{$p} ) {
-            if ( $crit{$p} =~ /\d+\s*[smhd]/ and $status{$s}[1] >= get_time($crit{$p}) ) {
+        if ( exists $crit{$s} ) {
+            if ( $crit{$s} =~ /\d+\s*[smhd]/ and $status{$s}[1] >= get_time($crit{$s}) ) {
               push @msg_crit => "$status{$s}[0] $s for $status{$s}[1] seconds";
               next STATUS_LOOP;
 	    }
-            elsif ( $status{$s}[0] >= $crit{$p} ) {
+            elsif ( $status{$s}[0] >= $crit{$s} ) {
               push @msg_crit => "$status{$s}[0] $s";
               next STATUS_LOOP;
 	    }
         }
 
         # Warning
-        if ( exists $warn{$p} ) {
-            if ( $warn{$p} =~ /\d+\s*[smhd]/ and $status{$s}[0] >= get_time($warn{$p}) ) {
+        if ( exists $warn{$s} ) {
+            if ( $warn{$s} =~ /\d+\s*[smhd]/ and $status{$s}[0] >= get_time($warn{$s}) ) {
               push @msg_warn => "$status{$s}[0] $s for $status{$s}[1] seconds";
               next STATUS_LOOP;
 	    }
-            elsif ( $status{$s}[0] >= $warn{$p} ) {
+            elsif ( $status{$s}[0] >= $warn{$s} ) {
               push @msg_warn => "$status{$s}[0] $s";
               next STATUS_LOOP;
             }
