@@ -153,8 +153,8 @@ See also the releasing.md file to see how to regenerate the documentation.
 
 ### Test your new service
 
-Test your service in several conditions, verify that it returns a warning or
-critical alert by simulating each conditions.
+Test your service in several conditions, verify that it returns a OK, a warning
+or critical alert by simulating each conditions.
 
 Test your service upon several PostgreSQL versions. Verify that the service
 returns an error for unsupported versions, and that every other versions work
