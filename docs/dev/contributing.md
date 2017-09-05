@@ -53,11 +53,11 @@ sub check_example {
 
 Several other variables are defined :
 
-* @rs: array to store the result set of the monitoring query
-* @perfdata: array to store the returned perdata
-* @msg: array to store the returned messages
-* @hosts: array to know the host(s) to query
-* %args
+* `@rs`: array to store the result set of the monitoring query
+* `@perfdata`: array to store the returned perdata
+* `@msg`: array to store the returned messages
+* `@hosts`: array to know the host(s) to query
+* `%args`: hash containing service arguments
 
 Consider using these variables names as a convention.
 
@@ -119,6 +119,7 @@ You must provide some mandatory data in the @perfdata array :
 
 * perfdata name
 * the data itself, in numerical form
+* the unit used:'B' for bytes, 's' for secondes or undef for raw numbers
 
 The following data are optional :
 
