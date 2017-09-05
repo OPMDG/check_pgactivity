@@ -669,6 +669,7 @@ sub is_time($){
     return 0;
 }
 
+
 # Takes an interval (with units) as parameter and returns a duration in second.
 
 sub get_time($) {
@@ -1856,9 +1857,9 @@ You can use multiple C<--exclude REGEX> arguments.
 Critical and Warning thresholds are optional. They accept a list of
 'status_label=value' separated by a comma. Available labels are C<idle>,
 C<idle_xact>, C<aborted_xact>, C<fastpath>, C<active> and C<waiting>. Values
-are raw numbers and empty lists are forbidden. Here is an example:
+are raw numbers or time units and empty lists are forbidden. Here is an example:
 
-    -w 'waiting=5,idle_xact=10' -c 'waiting=20,idle_xact=30'
+    -w 'waiting=5,idle_xact=10' -c 'waiting=20,idle_xact=30,active=1d'
 
 Perfdata contains the number of backends for each status and the oldest one for
 each of them, for 8.2+.
@@ -2049,7 +2050,7 @@ sub check_backends_status {
 
     if ( defined $args{'warning'} ) {
         my $threshods_re
-            = qr/(idle|idle_xact|aborted_xact|fastpath|active|waiting)\s*=\s*(\d+)/i;
+            = qr/(idle|idle_xact|aborted_xact|fastpath|active|waiting)\s*=\s*(\d+\s*[smhd]?)/i;
 
         # warning and critical must be raw
         pod2usage(
@@ -2095,6 +2096,7 @@ sub check_backends_status {
     }
 
     STATUS_LOOP: foreach my $s (sort keys %status) {
+	    print $s."\n";
         my $p = $translate{$s};
         my @perf = ( $s, $status{$s}[0] );
         push @perf, ( $warn{$s}, $crit{$s}, 0, $max_connections )
@@ -2106,15 +2108,27 @@ sub check_backends_status {
                 and $s !~ '^(?:disabled|undefined|insufficient)';
 
         # Criticals
-        if ( exists $crit{$p} and $status{$s}[0] >= $crit{$p} ) {
-            push @msg_crit => "$status{$s}[0] $s";
-            next STATUS_LOOP;
+        if ( exists $crit{$p} ) {
+            if ( $crit{$p} =~ /\d+\s*[smhd]/ and $status{$s}[1] >= get_time($crit{$p}) ) {
+              push @msg_crit => "$status{$s}[0] $s for $status{$s}[1] seconds";
+              next STATUS_LOOP;
+	    }
+            elsif ( $status{$s}[0] >= $crit{$p} ) {
+              push @msg_crit => "$status{$s}[0] $s";
+              next STATUS_LOOP;
+	    }
         }
 
         # Warning
-        if ( exists $warn{$p} and $status{$s}[0] >= $warn{$p} ) {
-            push @msg_warn => "$status{$s}[0] $s";
-            next STATUS_LOOP;
+        if ( exists $warn{$p} ) {
+            if ( $warn{$p} =~ /\d+\s*[smhd]/ and $status{$s}[0] >= get_time($warn{$p}) ) {
+              push @msg_warn => "$status{$s}[0] $s for $status{$s}[1] seconds";
+              next STATUS_LOOP;
+	    }
+            elsif ( $status{$s}[0] >= $warn{$p} ) {
+              push @msg_warn => "$status{$s}[0] $s";
+              next STATUS_LOOP;
+            }
         }
     }
 
