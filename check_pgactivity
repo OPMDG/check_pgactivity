@@ -2103,9 +2103,11 @@ sub check_backends_status {
 
         # Criticals
         if ( exists $crit{$s} ) {
-            if ( $crit{$s} =~ /\d+\s*[smhd]/ and $status{$s}[1] >= get_time($crit{$s}) ) {
-              push @msg_crit => "$status{$s}[0] $s for $status{$s}[1] seconds";
-              next STATUS_LOOP;
+            if ( $crit{$s} =~ /\d+\s*[smhd]/ ) {
+              if ( $status{$s}[1] >= get_time($crit{$s}) ) {
+                push @msg_crit => "$status{$s}[0] $s for $status{$s}[1] seconds";
+                next STATUS_LOOP;
+              }
 	    }
             elsif ( $status{$s}[0] >= $crit{$s} ) {
               push @msg_crit => "$status{$s}[0] $s";
@@ -2115,9 +2117,11 @@ sub check_backends_status {
 
         # Warning
         if ( exists $warn{$s} ) {
-            if ( $warn{$s} =~ /\d+\s*[smhd]/ and $status{$s}[0] >= get_time($warn{$s}) ) {
-              push @msg_warn => "$status{$s}[0] $s for $status{$s}[1] seconds";
-              next STATUS_LOOP;
+            if ( $warn{$s} =~ /\d+\s*[smhd]/ ) {
+              if ( $status{$s}[1] >= get_time($warn{$s}) ) {
+                push @msg_warn => "$status{$s}[0] $s for $status{$s}[1] seconds";
+                next STATUS_LOOP;
+              }
 	    }
             elsif ( $status{$s}[0] >= $warn{$s} ) {
               push @msg_warn => "$status{$s}[0] $s";
