@@ -5302,7 +5302,7 @@ sub check_archiver {
         # cf. pgarch_readyXlog in src/backend/postmaster/pgarch.c about how the
         # archiver process pick the next WAL to archive.
         # We try to reproduce the same algo here
-        my $query = qq{
+        my $query = q{
            SELECT s.f,
              extract(epoch from (pg_stat_file('pg_xlog/archive_status/'||s.f)).modification),
              extract(epoch from current_timestamp)
