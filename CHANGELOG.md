@@ -1,6 +1,15 @@
 Changelog
 =========
 
+2017-XX-XX v2.3:
+  - add complete support for PostgreSQL 10, including non-privileged monitoring
+    features
+  - add some documentation to help new contributors
+  - add ability to use time units for thresholds in service backend_status
+  - fix a long-standing bug in service backends_status
+  - fix sequences_exhausted to work with sequences attached to unusual types
+  - fix fetching method for service minor_version
+
 2017-04-28 v2.2:
   - add support for PostgreSQL 9.6
   - add early-support for PostgreSQL 10
