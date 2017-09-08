@@ -5343,7 +5343,7 @@ sub check_archiver {
     else {
 	# Version 10.0 and higher: use pg_stat_archiver as the monitoring
 	# user may not be super-user.
-        my $query = qq{
+        my $query = q{
         SELECT (('x' || substr(current_wal, 9, 8))::bit(32)::int *256 + ('x' || substr(current_wal, 17, 8))::bit(32)::int)
              - (('x' || substr(last_failed_wal, 9, 8))::bit(32)::int * 256 + ('x' || substr(last_failed_wal, 17, 8))::bit(32)::int) AS ready_archives,
                extract('epoch' from (current_timestamp - last_failed_time)) AS oldest_archive_failure
@@ -6768,7 +6768,7 @@ sub check_stat_snapshot_age {
     my %args     = %{ $_[0] };
     my $stats_age;
 
-    my $query  = qq{ SELECT extract(epoch from (pg_stat_get_snapshot_timestamp() - now())) AS age };
+    my $query  = q{ SELECT extract(epoch from (pg_stat_get_snapshot_timestamp() - now())) AS age };
 
     if ( defined $args{'warning'} ) {
         # warning and critical are mandatory.
@@ -6880,7 +6880,7 @@ sub check_sequences_exhausted {
         if (check_compat $hosts[0], 'sequences_exhausted', $PG_VERSION_82, $PG_VERSION_96)
         {
             # Search path is emptied so that ::regclass gives us full paths
-            my $query  = qq{
+            my $query  = q{
 SET search_path TO 'pg_catalog';
 SELECT t.typname,
        seq.oid::regclass as name,
@@ -6928,7 +6928,7 @@ WHERE seq.relkind='S'
         else
         {
             # Version 10.0 and bigger: we have pg_sequence now, and functions to get info directly from the sequence
-            my $query = qq{
+            my $query = q{
 SET search_path TO 'pg_catalog';
 SELECT
     t.typname,
@@ -7068,7 +7068,7 @@ sub check_pgdata_permission {
     is_compat $hosts[0], 'pgdata_permission', $PG_VERSION_82 or exit 1;
 
     # Get the data directory
-    $query = qq{
+    $query = q{
         SELECT setting FROM pg_settings WHERE name='data_directory'
     };
 
