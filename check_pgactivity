@@ -5344,8 +5344,9 @@ sub check_archiver {
 	# Version 10.0 and higher: use pg_stat_archiver as the monitoring
 	# user may not be super-user.
         my $query = q{
-        SELECT (('x' || substr(current_wal, 9, 8))::bit(32)::int *256 + ('x' || substr(current_wal, 17, 8))::bit(32)::int)
-             - (('x' || substr(last_failed_wal, 9, 8))::bit(32)::int * 256 + ('x' || substr(last_failed_wal, 17, 8))::bit(32)::int) AS ready_archives,
+        SELECT COALESCE( (('x' || substr(current_wal, 9, 8))::bit(32)::int *256 + ('x' || substr(current_wal, 17, 8))::bit(32)::int)
+                       - (('x' || substr(last_failed_wal, 9, 8))::bit(32)::int * 256 + ('x' || substr(last_failed_wal, 17, 8))::bit(32)::int),
+		 0 /* return 0 if NULL */) AS ready_archives,
                extract('epoch' from (current_timestamp - last_failed_time)) AS oldest_archive_failure
           FROM (SELECT CASE WHEN   (last_failed_time >= last_archived_time)
                                 OR (last_archived_time IS NULL AND last_failed_time IS NOT NULL)
