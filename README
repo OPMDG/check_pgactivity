@@ -281,10 +281,10 @@ check_pgactivity
         Critical and Warning thresholds are optional. They accept a list of
         'status_label=value' separated by a comma. Available labels are
         "idle", "idle_xact", "aborted_xact", "fastpath", "active" and
-        "waiting". Values are raw numbers and empty lists are forbidden.
-        Here is an example:
+        "waiting". Values are raw numbers or time units and empty lists are
+        forbidden. Here is an example:
 
-            -w 'waiting=5,idle_xact=10' -c 'waiting=20,idle_xact=30'
+            -w 'waiting=5,idle_xact=10' -c 'waiting=20,idle_xact=30,active=1d'
 
         Perfdata contains the number of backends for each status and the
         oldest one for each of them, for 8.2+.
@@ -343,9 +343,10 @@ check_pgactivity
         perfdata. This list contains the fully qualified bloated index name,
         the estimated bloat size, the index size and the bloat percentage.
 
-        This service will work with PostgreSQL 10+ without superuser privileges
-        if you grant SELECT on table pg_statistic to the pg_monitor role, in
-        each database of the cluster : GRANT SELECT ON pg_statistic TO pg_monitor;
+        This service will work with PostgreSQL 10+ without superuser
+        privileges if you grant SELECT on table pg_statistic to the
+        pg_monitor role, in each database of the cluster : "GRANT SELECT ON
+        pg_statistic TO pg_monitor;"
 
     commit_ratio (all)
         Check the commit and rollback rate per second since last call.
@@ -417,6 +418,8 @@ check_pgactivity
 
     hit_ratio (all)
         Check the cache hit ratio on the cluster.
+
+        This service uses the status file (see "--status-file" parameter).
 
         Perfdata returns the cache hit ratio per database. Template
         databases and databases that do not allow connections will not be
@@ -747,8 +750,15 @@ check_pgactivity
           --slave 'slave1 192.168.1.11' --slave 'slave2 192.168.1.12'
           --slave 'slave1 192.168.1.11','slave2 192.168.1.12'
 
-        Perfdata returns the data delta in bytes between the master and all
-        standbys found and the number of slaves connected.
+        This service supports a "--exclude REGEX" parameter to exclude every
+        result matching the given regular expression on application_name or
+        address ip fields.
+
+        You can use multiple "--exclude REGEX" parameters.
+
+        Perfdata returns the data delta in bytes between the master and
+        every standbies found, the number of standbies connected and the
+        number of excluded standbies.
 
         Critical and Warning thresholds are optional. They can take one or
         two values separated by a comma. If only one value is supplied, it
@@ -817,9 +827,10 @@ check_pgactivity
         perfdata. This list contains the fully qualified bloated table name,
         the estimated bloat size, the table size and the bloat percentage.
 
-        This service will work with PostgreSQL 10+ without superuser privileges
-        if you grant SELECT on table pg_statistic to the pg_monitor role, in
-        each database of the cluster : GRANT SELECT ON pg_statistic TO pg_monitor;
+        This service will work with PostgreSQL 10+ without superuser
+        privileges if you grant SELECT on table pg_statistic to the
+        pg_monitor role, in each database of the cluster : "GRANT SELECT ON
+        pg_statistic TO pg_monitor;"
 
     temp_files (8.1+)
         Check the number and size of temp files.
@@ -923,7 +934,7 @@ check_pgactivity
           check_pgactivity -p 5433 -h slave --service hit_ratio --dbinclude importantone -w 90% -c 80%
 
   VERSION
-    check_pgactivity version 2.2, released on Fri Apr 28 2017.
+    check_pgactivity version 2.3_beta1, released on Wed Sep 20 2017.
 
   LICENSING
     This program is open source, licensed under the PostgreSQL license. For
@@ -931,5 +942,5 @@ check_pgactivity
 
   AUTHORS
     Author: Open PostgreSQL Monitoring Development Group Copyright: (C)
-    2012-2017 Open PostgreSQL Development Group
+    2012-2017 Open PostgreSQL Monitoring Development Group
 
