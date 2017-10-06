@@ -6534,11 +6534,16 @@ For PostgreSQL 8.1 and 8.2:
 
   100% = 1 + checkpoint_segments * 2
 
-If C<wal_keep_segments> is set for 9.0 and above, the limit is the greatest
-of the following formulas :
+If C<wal_keep_segments> is set for 9.0 to 9.4, the limit is the greatest
+of the following formulas:
 
   100% = 1 + checkpoint_segments * (2 + checkpoint_completion_target)
   100% = 1 + wal_keep_segments + 2 * checkpoint_segments
+
+For 9.5 and above, the limit is:
+
+  100% =  max_wal_size      (as a number of WAL)
+        + wal_keep_segments (if set)
 
 =cut
 
