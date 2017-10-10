@@ -42,13 +42,13 @@ use Storable qw(lock_store lock_retrieve);
 use Config;
 use FindBin;
 
-# messing with PATH so pod2usage always find this script
+# messing with PATH so pod2usage always finds this script
 my @path = split /$Config{'path_sep'}/ => $ENV{'PATH'};
 push @path => $FindBin::Bin;
 $ENV{'PATH'} = join $Config{'path_sep'} => @path;
 undef @path;
 
-# force the env in english
+# force the env in English
 delete $ENV{'LC_ALL'};
 $ENV{'LC_ALL'} = 'C';
 setlocale( LC_ALL, 'C' );
@@ -81,16 +81,16 @@ my $output_fmt;
 
 # Available services and descriptions.
 #
-# The referenced sub called to exec each service takes one parameters: a
+# The referenced sub called to exec each service takes one parameter: a
 # reference to the arguments hash (%args)
 #
-# Note that we can not use perl prototype for these subroutine as they are
+# Note that we cannot use Perl prototype for these subroutine as they are
 # called indirectly (thus the args given by references).
 
 my %services = (
     # 'service_name' => {
     #    'sub'     => sub reference to call to run this service
-    #    'desc'    => 'a desctiption of the service'
+    #    'desc'    => 'a description of the service'
     # }
 
     'autovacuum' => {
@@ -115,7 +115,7 @@ my %services = (
     },
     'table_unlogged' => {
         'sub'  => \&check_table_unlogged,
-        'desc' => 'Check unlogged table'
+        'desc' => 'Check unlogged tables'
     },
 
     'wal_files' => {
@@ -142,7 +142,7 @@ my %services = (
     },
     'oldest_2pc' => {
         'sub'  => \&check_oldest_2pc,
-        'desc' => 'Check the oldest two phase commit transaction.'
+        'desc' => 'Check the oldest two-phase commit transaction.'
     },
     'oldest_idlexact' => {
         'sub'  => \&check_oldest_idlexact,
@@ -166,7 +166,7 @@ my %services = (
     },
     'hot_standby_delta' => {
         'sub'  => \&check_hot_standby_delta,
-        'desc' => 'Check delta in bytes between a master and its Hot standbys.',
+        'desc' => 'Check delta in bytes between a master and its hot standbys.',
     },
     'streaming_delta' => {
         'sub'  => \&check_streaming_delta,
@@ -259,7 +259,7 @@ my %services = (
 
 =item B<-s>, B<--service> SERVICE
 
-The nagios service to run. See section SERVICES for a description of
+The Nagios service to run. See section SERVICES for a description of
 available services or use C<--list> for a short service and description
 list.
 
@@ -288,10 +288,10 @@ The connection service name from pg_service.conf to use.
 
 =item B<--dbexclude> REGEXP
 
-Some services are automatically checking all the databases of your
+Some services automatically check all the databases of your
 cluster (note: that does not mean they always need to connect on all
 of them to check them though). C<--dbexclude> allows to exclude any
-database whose name matches the given perl regular expression. You
+database whose name matches the given Perl regular expression. You
 can repeat this option as many time as needed.
 
 See C<--dbinclude> as well. If a database match both dbexclude and
@@ -299,10 +299,10 @@ dbinclude arguments, it is excluded.
 
 =item B<--dbinclude> REGEXP
 
-Some services are automatically checking all the databases of your
-cluster(note: that does not mean they always need to connect on all
+Some services automatically check all the databases of your
+cluster (note: that does not mean they always need to connect on all
 of them to check them though). C<--dbinclude> allows to B<ONLY> check
-databases whose names match the given perl regular expression. You
+databases whose names match the given Perl regular expression. You
 can repeat this option as many time as needed.
 
 See C<--dbexclude> as well. If a database match both dbexclude and
@@ -326,8 +326,8 @@ module C<Storable>) given in argument C<--output>. If no output is given,
 defaults to file C<check_pgactivity.out> in the same directory as the script.
 
 The C<nagios_strict> format is equivalent to the C<nagios> format. The only
-difference is that it enforces the unit follow the strict nagios specs: B, c, s
-or %. Any unit not beeing in this list is dropped (Bps, Tps, etc).
+difference is that it enforces the unit follow the strict Nagios specs: B, c, s
+or %. Any unit absent from this list is dropped (Bps, Tps, etc).
 
 =item B<--tmpdir> DIRECTORY
 
@@ -340,13 +340,13 @@ Path to the C<psql> executable (default: "psql").
 
 =item B<--status-file> PATH
 
-PATH to the file where service status information will be kept between
+Path to the file where service status information will be kept between
 successive calls. Default is to save check_pgactivity.data in the same
 directory as the script.
 
 =item B<--dump-status-file>
 
-Dump the content of the status file and exit. This is useful for debug purpose.
+Dump the content of the status file and exit. This is useful for debugging purpose.
 
 =item B<--dump-bin-file> [PATH]
 
@@ -571,7 +571,7 @@ sub dump_status_file {
     exit 0;
 }
 
-# Returns formated size string with units.
+# Returns formatted size string with units.
 # Takes a size in bytes as parameter.
 sub to_size($) {
     my $val  = shift;
@@ -594,7 +594,7 @@ sub to_size($) {
     return "${val}$units[$i]";
 }
 
-# Returns formated time string with units.
+# Returns formatted time string with units.
 # Takes a duration in seconds as parameter.
 sub to_interval($) {
     my $val      = shift;
@@ -633,8 +633,8 @@ sub to_interval($) {
 
 =head2 THRESHOLDS
 
-THRESHOLDS provided as warning and critical values can be a raw numbers,
-percentages, intervals or a sizes. Each available service supports one or more
+THRESHOLDS provided as warning and critical values can be raw numbers,
+percentages, intervals or sizes. Each available service supports one or more
 formats (eg. a size and a percentage).
 
 =over
@@ -670,7 +670,7 @@ sub is_time($){
 }
 
 
-# Takes an interval (with units) as parameter and returns a duration in second.
+# Takes an interval (with units) as parameter and returns a duration in seconds.
 
 sub get_time($) {
     my $str_time = lc( shift() );
@@ -681,7 +681,7 @@ sub get_time($) {
             . "Authorized unit are: dD, hH, mM, sS\n" )
         unless is_time($str_time);
 
-    # no bad units should exists after this line!
+    # no bad units should exist after this line!
 
     @date = split( /([smhd])/, $str_time );
 
@@ -721,20 +721,20 @@ If THRESHOLD is a size, the following units are accepted (not case sensitive):
 b (Byte), k (KB), m (MB), g (GB), t (TB), p (PB), e (EB) or Z (ZB). Only
 integers are accepted. Eg. C<1.5MB> will be refused, use C<1500kB>.
 
-The factor between units is 1024 Bytes. Eg. C<1g = 1G = 1024*1024*1024.>
+The factor between units is 1024 bytes. Eg. C<1g = 1G = 1024*1024*1024.>
 
 =back
 
 =cut
 
 # Takes a size with unit as parameter and returns it in bytes.
-# If unit is '%', use the second parameter to compute the size in byte.
+# If unit is '%', use the second parameter to compute the size in bytes.
 sub get_size($;$) {
     my $str_size = shift;
     my $size     = 0;
     my $unit     = '';
 
-    die "Only integers are accepted as size. Ajust the unit for your need."
+    die "Only integers are accepted as size. Adjust the unit to your need."
         if $str_size =~ /[.,]/;
 
     $str_size =~ /^([0-9]+)(.*)$/;
@@ -896,7 +896,7 @@ sub parse_hosts(\%) {
 #   * query
 #   * (optional) database
 #   * (optional) get_fields
-# The result is an array of array:
+# The result is an array of arrays:
 #   [
 #     [column1, ...] # line1
 #     ...
@@ -982,13 +982,13 @@ sub query($$;$$) {
 #   }
 #
 # Where pg_version_num is the minimum PostgreSQL version which can run the
-# query. The given versions are in numric version. See "set_pgversion" about
+# query. The given versions are numeric. See "set_pgversion" about
 # how to compute a PostgreSQL num version, or globals $PG_VERSION_*.
 sub query_ver($\%;$) {
     my $host    = shift;
     my %queries = %{ shift() };
 
-    # shift returns undef if he db is not given. The value is then set in
+    # shift returns undef if the db is not given. The value is then set in
     # "query" sub
     my $db = shift;
 
@@ -1351,7 +1351,7 @@ size of .gz, .xz or .zip files:
 
 Default behaviour is to check the WALs size.
 
-Perfdata contains the number of WALs archived and the age of the most recent
+Perfdata contains the number of archived WALs and the age of the most recent
 one.
 
 Critical and Warning define the max age of the latest archived WAL as an
@@ -1495,8 +1495,8 @@ sub check_archive_folder {
     die "Unknown WAL XLOG_PAGE_MAGIC $wal_version!"
         unless grep /^$wal_version$/ => values %wal_versions;
 
-    # FIXME: As there is no consensus about XLOG_PAGE_MAGIC algo accros postrges
-    # versions this piece of code should checked for compatibility for each new
+    # FIXME: As there is no consensus about XLOG_PAGE_MAGIC algo across PostgreSQL
+    # versions this piece of code should be checked for compatibility for each new
     # PostgreSQL version to confirm the new XLOG_PAGE_MAGIC is still greater
     # than the previous one (or at least the 9.2 one).
     $seg_per_wal++ if $wal_version >= $wal_versions{'93'};
@@ -1865,7 +1865,7 @@ Perfdata contains the number of backends for each status and the oldest one for
 each of them, for 8.2+.
 
 Note that the number of backends reported in Nagios message B<includes>
-excluded backend.
+excluded backends.
 
 =cut
 
@@ -2314,8 +2314,8 @@ sub check_bgwriter {
     save $hosts[0], 'bgwriter', \%new_bgw, $args{'status-file'};
 
     return ok( $me, ['First call'] ) unless keys %bgw
-        and defined $bgw{'ts'}; # 'ts' was added in 1.25, check for existance
-                                # instead of raising some ugly perl errors
+        and defined $bgw{'ts'}; # 'ts' was added in 1.25, check for existence
+                                # instead of raising some ugly Perl errors
                                 # when upgrading.
 
     return ok( $me, ['Stats reseted since last call'] )
@@ -2367,7 +2367,7 @@ sub check_bgwriter {
     }
 
     # Alarm if asked.
-    # FIXME: threshold should accept a % and a minimal writen size
+    # FIXME: threshold should accept a % and a minimal written size
     if ( defined $args{'warning'}
         and defined $args{'critical'}
         and $delta_buff_total
@@ -2398,8 +2398,8 @@ values are passed, check_pgactivity will choose the largest (bloat size) value.
 This service supports both C<--dbexclude> and C<--dbinclude> parameters.
 
 It also supports a C<--exclude REGEX> parameter to exclude relations matching
- the given regular expression. The regular expression applies to
- "database.schema_name.relation_name". This allows you to filter either on a
+the given regular expression. The regular expression applies to
+"database.schema_name.relation_name". This allows you to filter either on a
 relation name for all schemas and databases, filter on a qualified named relation
 (schema + relation) for all databases or filter on a qualified named relation in
 only one database.
@@ -2812,11 +2812,11 @@ This service uses the status file (see --status-file parameter).
 Perfdata contains the commit rate, rollback rate, transaction rate and rollback
 ratio for each database since last call.
 
-Critical and Warning thresholds are optional. They accept a list of coma
-separated 'label=value'. Available label are B<rollbacks>, B<rollback_rate>
-and B<rollback_ratio>, which will be compared to the number of rollback, the
+Critical and Warning thresholds are optional. They accept a list of comma
+separated 'label=value'. Available labels are B<rollbacks>, B<rollback_rate>
+and B<rollback_ratio>, which will be compared to the number of rollbacks, the
 rollback rate and the rollback ratio of each database. Warning or critical will
-be raised if reported value is greater than B<rollbacks>, B<rollback_rate> or
+be raised if the reported value is greater than B<rollbacks>, B<rollback_rate> or
 B<rollback_ratio>.
 
 =cut
@@ -3074,7 +3074,7 @@ or less if the C<--reverse> option is used.
 
 All other columns will be used to generate the perfdata. Each field name is used
 as the name of the perfdata. The field value must contain your perfdata value
-and its unit append to it. You can add as many field as needed. Eg.:
+and its unit appended to it. You can add as many fields as needed. Eg.:
 
   SELECT pg_database_size('postgres'),
          pg_database_size('postgres')||'B' AS db_size
@@ -3438,11 +3438,11 @@ sub check_hit_ratio {
 
 =item B<hot_standby_delta> (9.0)
 
-Check the data delta between a cluster and its Hot standbys.
+Check the data delta between a cluster and its hot standbys.
 
 You must give the connection parameters for two or more clusters.
 
-Perfdata returns the data delta in bytes between the master and each Hot
+Perfdata returns the data delta in bytes between the master and each hot
 standby cluster listed.
 
 Critical and Warning thresholds are optional. They can take one or two values
@@ -3552,7 +3552,7 @@ sub check_hot_standby_delta {
 
     $wal_size = 4294967296 if $hosts[0]{'version_num'} >= $PG_VERSION_93;
 
-    # we recycle this one to count the number of slave
+    # we recycle this one to count the number of slaves
     $num_clusters = 0;
 
     $master_location =~ m{^([0-9A-F]+)/([0-9A-F]+)$};
@@ -3710,7 +3710,7 @@ Perfdata will return the number of invalid indexes per database.
 
 A list of invalid indexes detail will be returned after the
 perfdata. This list contains the fully qualified index name. If
-excluded index is set, the number of exclude index is returned.
+excluded index is set, the number of exclude indexes is returned.
 
 =cut
 
@@ -3720,8 +3720,8 @@ sub check_invalid_indexes {
     my @rs;
     my @hosts;
     my @all_db;
-    my $total_idx   = 0; # num of table checked, without excluded ones
-    my $total_extbl = 0; # num of excluded table
+    my $total_idx   = 0; # num of tables checked, without excluded ones
+    my $total_extbl = 0; # num of excluded tables
     my $c_count     = 0;
     my %args        = %{ $_[0] };
     my @dbinclude   = @{ $args{'dbinclude'} };
@@ -3890,7 +3890,7 @@ sub check_is_replay_paused {
     # Always return ok if replay is not paused
     return ok( $me, [ ' replay is not paused' ], \@perfdata ) if not $rs[1];
 
-    # Do we have thresholds ?
+    # Do we have thresholds?
     if ( $c_limit != -1 ) {
         return critical( $me, [' replay lag time: ' . to_interval( $rs[2] ) ], \@perfdata )
             if $rs[3] and $rs[2] > $c_limit;
@@ -4598,7 +4598,7 @@ sub check_minor_version {
     if (not defined $args{'warning'}
         and not defined $args{'critical'}
     ) {
-        # These methods comes from check_postgres,
+        # These methods come from check_postgres,
         # by Greg Sabino Mullane <greg@endpoint.com>,
         # licenced under BSD
         our %get_methods = (
@@ -4685,11 +4685,11 @@ sub check_minor_version {
 
 =item B<oldest_2pc> (8.1+)
 
-Check the oldest I<two phase commit transaction> (aka. prepared transaction) in
+Check the oldest I<two-phase commit transaction> (aka. prepared transaction) in
 the cluster.
 
 Perfdata contains the max/avg age time and the number of prepared
-transaction per databases.
+transactions per databases.
 
 Critical and Warning thresholds only accept an interval.
 
@@ -4936,7 +4936,7 @@ This service uses the status file (see C<--status-file> parameter).
 
 The C<--path> argument contains the location to the backup folder. The supported
 format is a glob pattern to match every folder or file you need to check. If
-appropriate, the probe should be run as user with sufficient privileges to check
+appropriate, the probe should be run as a user with sufficient privileges to check
 for the existence of files.
 
 The C<--pattern> is required, and must contain a regular expression matching
@@ -4962,7 +4962,7 @@ as a size or a percentage.
 This service supports the arguments C<--dbinclude> and C<--dbexclude>, to
 respectively test for the presence of include or exclude files.
 
-The argument C<--exclude> allows to exclude file younger than the given
+The argument C<--exclude> allows to exclude files younger than the given
 interval. This is useful to ignore files from a backup in progress. Eg., if
 your backup process takes 2h, set this to '125m'.
 
@@ -5263,7 +5263,7 @@ archive.
 
 Perfdata returns the number of WAL files waiting to be archived.
 
-Critical and Warning thresholds are optional. They apply on the number of file
+Critical and Warning thresholds are optional. They apply on the number of files
 waiting to be archived. They only accept a raw number of files.
 
 Whatever the given threshold, a critical alert is raised if the archiver process
@@ -5391,7 +5391,7 @@ sub check_archiver {
 
 =item B<replication_slots> (9.4+)
 
-Check the number of WAL retained by each replication slots.
+Check the number of WAL files retained by each replication slots.
 
 Perfdata returns the number of WAL that each replication slot has to keep.
 
@@ -5605,13 +5605,13 @@ PARAM_LOOP: foreach my $row (@rs) {
 
 =item B<streaming_delta> (9.1+)
 
-Check the data delta between a cluster and its standbys in Streaming Replication.
+Check the data delta between a cluster and its standbys in streaming replication.
 
 Optional argument C<--slave> allows you to specify some slaves that MUST be
 connected. This argument can be used as many times as desired to check multiple
 slave connections, or you can specify multiple slaves connections at one time,
 using comma separated values. Both methods can be used in a single call. The
-given value must be of the form "APPLICATION_NAME IP".
+given values must be of the form "APPLICATION_NAME IP".
 Either of the two following examples will check for the presence of two slaves:
 
   --slave 'slave1 192.168.1.11' --slave 'slave2 192.168.1.12'
@@ -5794,7 +5794,7 @@ sub check_streaming_delta {
 
 =item B<table_unlogged>
 
-Check if table are changed to unlogged. In 9.5, you can switch between logged and unlogged.
+Check if tables are changed to unlogged. In 9.5, you can switch between logged and unlogged.
 
 Without C<--critical>  or C<--warning> parameters, this service attempts to fetch
 all unlogged tables.
@@ -5826,8 +5826,8 @@ sub check_table_unlogged {
     my @rs;
     my @hosts;
     my @all_db;
-    my $total_tbl   = 0; # num of table checked, without excluded ones
-    my $total_extbl = 0; # num of excluded table
+    my $total_tbl   = 0; # num of tables checked, without excluded ones
+    my $total_extbl = 0; # num of excluded tables
     my $c_count     = 0;
     my %args        = %{ $_[0] };
     my @dbinclude   = @{ $args{'dbinclude'} };
@@ -5877,7 +5877,7 @@ sub check_table_unlogged {
 
             }
 
-            # unlogged table count
+            # unlogged tables count
             if ($unlogged->[3] eq "u") {
                 # long message info :
                 push @longmsg => sprintf "%s.%s.%s (unlogged);",
@@ -5897,7 +5897,7 @@ sub check_table_unlogged {
     push @longmsg => sprintf "%i exclude table from check", $total_extbl
         if $total_extbl > 0;
 
-    # we use the critical count for the **total** number of unlogged table
+    # we use the critical count for the **total** number of unlogged tables
     return critical $me,
         [ "$c_count/$total_tbl table(s) unlogged" ],
         \@perfdata, \@longmsg
@@ -6187,7 +6187,7 @@ sub check_table_bloat {
         push @perfdata => [ "table bloated in $db", $tbl_bloated ];
     }
 
-    # we use the warning count for the **total** number of bloated table
+    # we use the warning count for the **total** number of bloated tables
     return critical $me,
         [ "$w_count/$total_tbl table(s) bloated" ],
         \@perfdata, [ @longmsg ]
@@ -6211,14 +6211,14 @@ C<pgsql_tmp> folders. They are aggregated by database until 8.2, then
 by tablespace (see GUC temp_tablespaces).
 
 Starting with 9.2, perfdata returns as well the number of temp files per
-database since last run, the total size of temp file per database since last
+database since last run, the total size of temp files per database since last
 run and the rate at which temp files were generated.
 
 Critical and Warning thresholds are optional. They accept either a number
 of file (raw value), a size (unit is B<mandatory> to define a size) or both
 values separated by a comma.
 
-Threshols applied on current temp files beeing created AND the number/size
+Threshols applied on current temp files being created AND the number/size
 of temp files created since last execution.
 
 This service will not work with PostgreSQL 10+ without superuser privileges.
@@ -6246,7 +6246,7 @@ sub check_temp_files {
 
     my %queries   = (
         # WARNING: these queries might have a race condition between pg_ls_dir and pg_stat_file!
-        # temp folders are per databases
+        # temp folders are per database
         $PG_VERSION_81 => q{
           SELECT 'live', agg.datname, sum(CASE WHEN agg.tmpfile <> '' THEN 1 ELSE 0 END),
             sum(CASE
@@ -6273,7 +6273,7 @@ sub check_temp_files {
           ) AS agg
           GROUP BY 1,2
         },
-        # temp folders are per tablespaces
+        # temp folders are per tablespace
         $PG_VERSION_83 => q{
           SELECT 'live', agg.spcname, sum(CASE WHEN agg.tmpfile <> '' THEN 1 ELSE 0 END),
             sum(CASE
@@ -6974,7 +6974,7 @@ SELECT
         foreach my $seq (keys %sequences)
         {
             my $max_value;
-            # We don't make the differenc between positive and negative limit
+            # We don't make the difference between positive and negative limit
             # It's only 1 of difference, so these is no point…
             if ($sequences{$seq}->{TYPE} eq 'int2') {
                 $max_value=32767;
@@ -7098,7 +7098,7 @@ sub check_pgdata_permission {
         push @msg, ( "Permission is ok on $data_directory" );
     }
 
-    # Now see who this directory belongs to, and if it matches the user running
+    # Now look at who this directory belongs to, and if it matches the user running
     # the instance.
     if ( defined $args{'uid'} ) {
          $pg_uid = getpwnam( $args{'uid'} );
