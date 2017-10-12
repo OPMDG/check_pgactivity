@@ -6221,7 +6221,8 @@ values separated by a comma.
 Threshols applied on current temp files being created AND the number/size
 of temp files created since last execution.
 
-This service will not work with PostgreSQL 10+ without superuser privileges.
+This service works with PostgreSQL 10+ without superuser privileges but it will
+not monitor live temp files.
 
 =cut
 
