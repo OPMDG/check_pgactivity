@@ -12,7 +12,7 @@ check_pgactivity
     metrics.
 
     -s, --service SERVICE
-        The nagios service to run. See section SERVICES for a description of
+        The Nagios service to run. See section SERVICES for a description of
         available services or use "--list" for a short service and
         description list.
 
@@ -35,21 +35,21 @@ check_pgactivity
         The connection service name from pg_service.conf to use.
 
     --dbexclude REGEXP
-        Some services are automatically checking all the databases of your
-        cluster (note: that does not mean they always need to connect on all
-        of them to check them though). "--dbexclude" allows to exclude any
-        database whose name matches the given perl regular expression. You
-        can repeat this option as many time as needed.
+        Some services automatically check all the databases of your cluster
+        (note: that does not mean they always need to connect on all of them
+        to check them though). "--dbexclude" allows to exclude any database
+        whose name matches the given Perl regular expression. You can repeat
+        this option as many time as needed.
 
         See "--dbinclude" as well. If a database match both dbexclude and
         dbinclude arguments, it is excluded.
 
     --dbinclude REGEXP
-        Some services are automatically checking all the databases of your
-        cluster(note: that does not mean they always need to connect on all
-        of them to check them though). "--dbinclude" allows to ONLY check
-        databases whose names match the given perl regular expression. You
-        can repeat this option as many time as needed.
+        Some services automatically check all the databases of your cluster
+        (note: that does not mean they always need to connect on all of them
+        to check them though). "--dbinclude" allows to ONLY check databases
+        whose names match the given Perl regular expression. You can repeat
+        this option as many time as needed.
 
         See "--dbexclude" as well. If a database match both dbexclude and
         dbinclude arguments, it is excluded.
@@ -71,7 +71,7 @@ check_pgactivity
 
         The "nagios_strict" format is equivalent to the "nagios" format. The
         only difference is that it enforces the unit follow the strict
-        nagios specs: B, c, s or %. Any unit not beeing in this list is
+        Nagios specs: B, c, s or %. Any unit absent from this list is
         dropped (Bps, Tps, etc).
 
     --tmpdir DIRECTORY
@@ -82,13 +82,13 @@ check_pgactivity
         Path to the "psql" executable (default: "psql").
 
     --status-file PATH
-        PATH to the file where service status information will be kept
+        Path to the file where service status information will be kept
         between successive calls. Default is to save check_pgactivity.data
         in the same directory as the script.
 
     --dump-status-file
         Dump the content of the status file and exit. This is useful for
-        debug purpose.
+        debugging purpose.
 
     --dump-bin-file [PATH]
         Dump the content of the given binary file previously created using
@@ -114,9 +114,9 @@ check_pgactivity
         Show this help page.
 
   THRESHOLDS
-    THRESHOLDS provided as warning and critical values can be a raw numbers,
-    percentages, intervals or a sizes. Each available service supports one
-    or more formats (eg. a size and a percentage).
+    THRESHOLDS provided as warning and critical values can be raw numbers,
+    percentages, intervals or sizes. Each available service supports one or
+    more formats (eg. a size and a percentage).
 
     Percentage
         If threshold is a percentage, the value should end with a '%' (no
@@ -134,7 +134,7 @@ check_pgactivity
         or Z (ZB). Only integers are accepted. Eg. "1.5MB" will be refused,
         use "1500kB".
 
-        The factor between units is 1024 Bytes. Eg. "1g = 1G =
+        The factor between units is 1024 bytes. Eg. "1g = 1G =
         1024*1024*1024."
 
   CONNECTIONS
@@ -233,7 +233,7 @@ check_pgactivity
 
         Default behaviour is to check the WALs size.
 
-        Perfdata contains the number of WALs archived and the age of the
+        Perfdata contains the number of archived WALs and the age of the
         most recent one.
 
         Critical and Warning define the max age of the latest archived WAL
@@ -290,7 +290,7 @@ check_pgactivity
         oldest one for each of them, for 8.2+.
 
         Note that the number of backends reported in Nagios message includes
-        excluded backend.
+        excluded backends.
 
     backup_label_age (8.1+)
         Check the age of the backup label file.
@@ -357,11 +357,11 @@ check_pgactivity
         and rollback ratio for each database since last call.
 
         Critical and Warning thresholds are optional. They accept a list of
-        coma separated 'label=value'. Available label are rollbacks,
+        comma separated 'label=value'. Available labels are rollbacks,
         rollback_rate and rollback_ratio, which will be compared to the
-        number of rollback, the rollback rate and the rollback ratio of each
-        database. Warning or critical will be raised if reported value is
-        greater than rollbacks, rollback_rate or rollback_ratio.
+        number of rollbacks, the rollback rate and the rollback ratio of
+        each database. Warning or critical will be raised if the reported
+        value is greater than rollbacks, rollback_rate or rollback_ratio.
 
     configuration (8.0+)
         Check the most important settings.
@@ -394,8 +394,8 @@ check_pgactivity
 
         All other columns will be used to generate the perfdata. Each field
         name is used as the name of the perfdata. The field value must
-        contain your perfdata value and its unit append to it. You can add
-        as many field as needed. Eg.:
+        contain your perfdata value and its unit appended to it. You can add
+        as many fields as needed. Eg.:
 
           SELECT pg_database_size('postgres'),
                  pg_database_size('postgres')||'B' AS db_size
@@ -432,12 +432,12 @@ check_pgactivity
         parameters.
 
     hot_standby_delta (9.0)
-        Check the data delta between a cluster and its Hot standbys.
+        Check the data delta between a cluster and its hot standbys.
 
         You must give the connection parameters for two or more clusters.
 
         Perfdata returns the data delta in bytes between the master and each
-        Hot standby cluster listed.
+        hot standby cluster listed.
 
         Critical and Warning thresholds are optional. They can take one or
         two values separated by a comma. If only one value given, it applies
@@ -485,7 +485,7 @@ check_pgactivity
 
         A list of invalid indexes detail will be returned after the
         perfdata. This list contains the fully qualified index name. If
-        excluded index is set, the number of exclude index is returned.
+        excluded index is set, the number of exclude indexes is returned.
 
     is_replay_paused (9.1+)
         Checks if the replication is paused. The service will return UNKNOWN
@@ -631,11 +631,11 @@ check_pgactivity
         Perfdata returns the numerical version of PostgreSQL.
 
     oldest_2pc (8.1+)
-        Check the oldest *two phase commit transaction* (aka. prepared
+        Check the oldest *two-phase commit transaction* (aka. prepared
         transaction) in the cluster.
 
         Perfdata contains the max/avg age time and the number of prepared
-        transaction per databases.
+        transactions per databases.
 
         Critical and Warning thresholds only accept an interval.
 
@@ -657,7 +657,7 @@ check_pgactivity
 
         The "--path" argument contains the location to the backup folder.
         The supported format is a glob pattern to match every folder or file
-        you need to check. If appropriate, the probe should be run as user
+        you need to check. If appropriate, the probe should be run as a user
         with sufficient privileges to check for the existence of files.
 
         The "--pattern" is required, and must contain a regular expression
@@ -683,7 +683,7 @@ check_pgactivity
         This service supports the arguments "--dbinclude" and "--dbexclude",
         to respectively test for the presence of include or exclude files.
 
-        The argument "--exclude" allows to exclude file younger than the
+        The argument "--exclude" allows to exclude files younger than the
         given interval. This is useful to ignore files from a backup in
         progress. Eg., if your backup process takes 2h, set this to '125m'.
 
@@ -704,15 +704,15 @@ check_pgactivity
         Perfdata returns the number of WAL files waiting to be archived.
 
         Critical and Warning thresholds are optional. They apply on the
-        number of file waiting to be archived. They only accept a raw number
-        of files.
+        number of files waiting to be archived. They only accept a raw
+        number of files.
 
         Whatever the given threshold, a critical alert is raised if the
         archiver process did not archive the oldest waiting WAL to be
         archived since last call.
 
     replication_slots (9.4+)
-        Check the number of WAL retained by each replication slots.
+        Check the number of WAL files retained by each replication slots.
 
         Perfdata returns the number of WAL that each replication slot has to
         keep.
@@ -736,14 +736,14 @@ check_pgactivity
         A CRITICAL is raised if at least one parameter changed.
 
     streaming_delta (9.1+)
-        Check the data delta between a cluster and its standbys in Streaming
-        Replication.
+        Check the data delta between a cluster and its standbys in streaming
+        replication.
 
         Optional argument "--slave" allows you to specify some slaves that
         MUST be connected. This argument can be used as many times as
         desired to check multiple slave connections, or you can specify
         multiple slaves connections at one time, using comma separated
-        values. Both methods can be used in a single call. The given value
+        values. Both methods can be used in a single call. The given values
         must be of the form "APPLICATION_NAME IP". Either of the two
         following examples will check for the presence of two slaves:
 
@@ -767,7 +767,7 @@ check_pgactivity
         replayed data. These thresholds only accept a size (eg. 2.5G).
 
     table_unlogged
-        Check if table are changed to unlogged. In 9.5, you can switch
+        Check if tables are changed to unlogged. In 9.5, you can switch
         between logged and unlogged.
 
         Without "--critical" or "--warning" parameters, this service
@@ -843,7 +843,7 @@ check_pgactivity
         by tablespace (see GUC temp_tablespaces).
 
         Starting with 9.2, perfdata returns as well the number of temp files
-        per database since last run, the total size of temp file per
+        per database since last run, the total size of temp files per
         database since last run and the rate at which temp files were
         generated.
 
@@ -851,11 +851,11 @@ check_pgactivity
         number of file (raw value), a size (unit is mandatory to define a
         size) or both values separated by a comma.
 
-        Threshols applied on current temp files beeing created AND the
+        Threshols applied on current temp files being created AND the
         number/size of temp files created since last execution.
 
-        This service will not work with PostgreSQL 10+ without superuser
-        privileges.
+        This service works with PostgreSQL 10+ without superuser privileges
+        but it will not monitor live temp files.
 
     wal_files (8.1+)
         Check the number of WAL files.
@@ -875,11 +875,16 @@ check_pgactivity
 
           100% = 1 + checkpoint_segments * 2
 
-        If "wal_keep_segments" is set for 9.0 and above, the limit is the
-        greatest of the following formulas :
+        If "wal_keep_segments" is set for 9.0 to 9.4, the limit is the
+        greatest of the following formulas:
 
           100% = 1 + checkpoint_segments * (2 + checkpoint_completion_target)
           100% = 1 + wal_keep_segments + 2 * checkpoint_segments
+
+        For 9.5 and above, the limit is:
+
+          100% =  max_wal_size      (as a number of WAL)
+                + wal_keep_segments (if set)
 
     stat_snapshot_age (9.5+)
         Check the age of the statistics snapshot (statistics collector's
