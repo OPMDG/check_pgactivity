@@ -6221,7 +6221,8 @@ values separated by a comma.
 Threshols applied on current temp files being created AND the number/size
 of temp files created since last execution.
 
-This service will not work with PostgreSQL 10+ without superuser privileges.
+This service works with PostgreSQL 10+ without superuser privileges but it will
+not monitor live temp files.
 
 =cut
 
@@ -6364,6 +6365,38 @@ sub check_temp_files {
           JOIN pg_stat_database AS s ON s.datid=d.oid
           WHERE datallowconn
         },
+        # Specific query to handle superuser and non-superuser roles in PostgreSQL 10
+	# the WHERE current_setting('is_superuser')::bool clause does all the magic
+	# Also, the previous query was not working with PostgreSQL 10
+        $PG_VERSION_100 => q{
+          SELECT 'live', agg.spcname, count(agg.tmpfile),
+                 SUM((pg_stat_file(agg.dir||'/'||agg.tmpfile)).size) AS SIZE
+            FROM ( SELECT ls.oid, ls.spcname AS spcname,
+                          ls.dir||'/'||ls.sub AS dir,
+                          pg_ls_dir(ls.dir||'/'||ls.sub) AS tmpfile
+                     FROM ( SELECT sr.oid, sr.spcname,
+                                   'pg_tblspc/'||sr.oid||'/'||sr.spc_root AS dir,
+                                   pg_ls_dir('pg_tblspc/'||sr.oid||'/'||sr.spc_root) AS sub
+                              FROM ( SELECT spc.oid, spc.spcname,
+                                            pg_ls_dir('pg_tblspc/'||spc.oid) AS spc_root,
+                                            trim(TRAILING e'\n ' FROM pg_read_file('PG_VERSION')) AS v
+                                       FROM ( SELECT oid, spcname
+                                                FROM pg_tablespace
+                                               WHERE spcname !~ '^pg_' ) AS spc ) sr
+                             WHERE sr.spc_root ~ ('^PG_'||sr.v)
+                             UNION ALL
+			     SELECT 0, 'pg_default', 'base' AS dir, 'pgsql_tmp' AS sub
+                               FROM pg_ls_dir('base') AS l
+                              WHERE l='pgsql_tmp'
+			  ) AS ls
+                 ) AS agg
+           WHERE current_setting('is_superuser')::bool
+           GROUP BY 1, 2
+          UNION ALL
+          SELECT 'db', d.datname, s.temp_files, s.temp_bytes
+            FROM pg_database AS d
+            JOIN pg_stat_database AS s ON s.datid=d.oid
+	},
     );
 
     @hosts = @{ parse_hosts %args };
