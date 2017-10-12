@@ -17,7 +17,7 @@ offers many options to measure and monitor useful performance metrics.
 
 =item B<-s>, B<--service> SERVICE
 
-The nagios service to run. See section SERVICES for a description of
+The Nagios service to run. See section SERVICES for a description of
 available services or use C<--list> for a short service and description
 list.
 
@@ -46,10 +46,10 @@ The connection service name from pg_service.conf to use.
 
 =item B<--dbexclude> REGEXP
 
-Some services are automatically checking all the databases of your
+Some services automatically check all the databases of your
 cluster (note: that does not mean they always need to connect on all
 of them to check them though). C<--dbexclude> allows to exclude any
-database whose name matches the given perl regular expression. You
+database whose name matches the given Perl regular expression. You
 can repeat this option as many time as needed.
 
 See C<--dbinclude> as well. If a database match both dbexclude and
@@ -57,10 +57,10 @@ dbinclude arguments, it is excluded.
 
 =item B<--dbinclude> REGEXP
 
-Some services are automatically checking all the databases of your
-cluster(note: that does not mean they always need to connect on all
+Some services automatically check all the databases of your
+cluster (note: that does not mean they always need to connect on all
 of them to check them though). C<--dbinclude> allows to B<ONLY> check
-databases whose names match the given perl regular expression. You
+databases whose names match the given Perl regular expression. You
 can repeat this option as many time as needed.
 
 See C<--dbexclude> as well. If a database match both dbexclude and
@@ -84,8 +84,8 @@ module C<Storable>) given in argument C<--output>. If no output is given,
 defaults to file C<check_pgactivity.out> in the same directory as the script.
 
 The C<nagios_strict> format is equivalent to the C<nagios> format. The only
-difference is that it enforces the unit follow the strict nagios specs: B, c, s
-or %. Any unit not beeing in this list is dropped (Bps, Tps, etc).
+difference is that it enforces the unit follow the strict Nagios specs: B, c, s
+or %. Any unit absent from this list is dropped (Bps, Tps, etc).
 
 =item B<--tmpdir> DIRECTORY
 
@@ -98,13 +98,13 @@ Path to the C<psql> executable (default: "psql").
 
 =item B<--status-file> PATH
 
-PATH to the file where service status information will be kept between
+Path to the file where service status information will be kept between
 successive calls. Default is to save check_pgactivity.data in the same
 directory as the script.
 
 =item B<--dump-status-file>
 
-Dump the content of the status file and exit. This is useful for debug purpose.
+Dump the content of the status file and exit. This is useful for debugging purpose.
 
 =item B<--dump-bin-file> [PATH]
 
@@ -138,8 +138,8 @@ Show this help page.
 
 =head2 THRESHOLDS
 
-THRESHOLDS provided as warning and critical values can be a raw numbers,
-percentages, intervals or a sizes. Each available service supports one or more
+THRESHOLDS provided as warning and critical values can be raw numbers,
+percentages, intervals or sizes. Each available service supports one or more
 formats (eg. a size and a percentage).
 
 =over
@@ -164,7 +164,7 @@ If THRESHOLD is a size, the following units are accepted (not case sensitive):
 b (Byte), k (KB), m (MB), g (GB), t (TB), p (PB), e (EB) or Z (ZB). Only
 integers are accepted. Eg. C<1.5MB> will be refused, use C<1500kB>.
 
-The factor between units is 1024 Bytes. Eg. C<1g = 1G = 1024*1024*1024.>
+The factor between units is 1024 bytes. Eg. C<1g = 1G = 1024*1024*1024.>
 
 =back
 
@@ -269,7 +269,7 @@ size of .gz, .xz or .zip files:
 
 Default behaviour is to check the WALs size.
 
-Perfdata contains the number of WALs archived and the age of the most recent
+Perfdata contains the number of archived WALs and the age of the most recent
 one.
 
 Critical and Warning define the max age of the latest archived WAL as an
@@ -327,7 +327,7 @@ Perfdata contains the number of backends for each status and the oldest one for
 each of them, for 8.2+.
 
 Note that the number of backends reported in Nagios message B<includes>
-excluded backend.
+excluded backends.
 
 =item B<backup_label_age> (8.1+)
 
@@ -363,8 +363,8 @@ values are passed, check_pgactivity will choose the largest (bloat size) value.
 This service supports both C<--dbexclude> and C<--dbinclude> parameters.
 
 It also supports a C<--exclude REGEX> parameter to exclude relations matching
- the given regular expression. The regular expression applies to
- "database.schema_name.relation_name". This allows you to filter either on a
+the given regular expression. The regular expression applies to
+"database.schema_name.relation_name". This allows you to filter either on a
 relation name for all schemas and databases, filter on a qualified named relation
 (schema + relation) for all databases or filter on a qualified named relation in
 only one database.
@@ -391,11 +391,11 @@ This service uses the status file (see --status-file parameter).
 Perfdata contains the commit rate, rollback rate, transaction rate and rollback
 ratio for each database since last call.
 
-Critical and Warning thresholds are optional. They accept a list of coma
-separated 'label=value'. Available label are B<rollbacks>, B<rollback_rate>
-and B<rollback_ratio>, which will be compared to the number of rollback, the
+Critical and Warning thresholds are optional. They accept a list of comma
+separated 'label=value'. Available labels are B<rollbacks>, B<rollback_rate>
+and B<rollback_ratio>, which will be compared to the number of rollbacks, the
 rollback rate and the rollback ratio of each database. Warning or critical will
-be raised if reported value is greater than B<rollbacks>, B<rollback_rate> or
+be raised if the reported value is greater than B<rollbacks>, B<rollback_rate> or
 B<rollback_ratio>.
 
 =item B<configuration> (8.0+)
@@ -431,7 +431,7 @@ or less if the C<--reverse> option is used.
 
 All other columns will be used to generate the perfdata. Each field name is used
 as the name of the perfdata. The field value must contain your perfdata value
-and its unit append to it. You can add as many field as needed. Eg.:
+and its unit appended to it. You can add as many fields as needed. Eg.:
 
   SELECT pg_database_size('postgres'),
          pg_database_size('postgres')||'B' AS db_size
@@ -468,11 +468,11 @@ This service supports both C<--dbexclude> and C<--dbinclude> parameters.
 
 =item B<hot_standby_delta> (9.0)
 
-Check the data delta between a cluster and its Hot standbys.
+Check the data delta between a cluster and its hot standbys.
 
 You must give the connection parameters for two or more clusters.
 
-Perfdata returns the data delta in bytes between the master and each Hot
+Perfdata returns the data delta in bytes between the master and each hot
 standby cluster listed.
 
 Critical and Warning thresholds are optional. They can take one or two values
@@ -522,7 +522,7 @@ Perfdata will return the number of invalid indexes per database.
 
 A list of invalid indexes detail will be returned after the
 perfdata. This list contains the fully qualified index name. If
-excluded index is set, the number of exclude index is returned.
+excluded index is set, the number of exclude indexes is returned.
 
 =item B<is_replay_paused> (9.1+)
 
@@ -671,11 +671,11 @@ Perfdata returns the numerical version of PostgreSQL.
 
 =item B<oldest_2pc> (8.1+)
 
-Check the oldest I<two phase commit transaction> (aka. prepared transaction) in
+Check the oldest I<two-phase commit transaction> (aka. prepared transaction) in
 the cluster.
 
 Perfdata contains the max/avg age time and the number of prepared
-transaction per databases.
+transactions per databases.
 
 Critical and Warning thresholds only accept an interval.
 
@@ -698,7 +698,7 @@ This service uses the status file (see C<--status-file> parameter).
 
 The C<--path> argument contains the location to the backup folder. The supported
 format is a glob pattern to match every folder or file you need to check. If
-appropriate, the probe should be run as user with sufficient privileges to check
+appropriate, the probe should be run as a user with sufficient privileges to check
 for the existence of files.
 
 The C<--pattern> is required, and must contain a regular expression matching
@@ -724,7 +724,7 @@ as a size or a percentage.
 This service supports the arguments C<--dbinclude> and C<--dbexclude>, to
 respectively test for the presence of include or exclude files.
 
-The argument C<--exclude> allows to exclude file younger than the given
+The argument C<--exclude> allows to exclude files younger than the given
 interval. This is useful to ignore files from a backup in progress. Eg., if
 your backup process takes 2h, set this to '125m'.
 
@@ -746,7 +746,7 @@ archive.
 
 Perfdata returns the number of WAL files waiting to be archived.
 
-Critical and Warning thresholds are optional. They apply on the number of file
+Critical and Warning thresholds are optional. They apply on the number of files
 waiting to be archived. They only accept a raw number of files.
 
 Whatever the given threshold, a critical alert is raised if the archiver process
@@ -754,7 +754,7 @@ did not archive the oldest waiting WAL to be archived since last call.
 
 =item B<replication_slots> (9.4+)
 
-Check the number of WAL retained by each replication slots.
+Check the number of WAL files retained by each replication slots.
 
 Perfdata returns the number of WAL that each replication slot has to keep.
 
@@ -779,13 +779,13 @@ A CRITICAL is raised if at least one parameter changed.
 
 =item B<streaming_delta> (9.1+)
 
-Check the data delta between a cluster and its standbys in Streaming Replication.
+Check the data delta between a cluster and its standbys in streaming replication.
 
 Optional argument C<--slave> allows you to specify some slaves that MUST be
 connected. This argument can be used as many times as desired to check multiple
 slave connections, or you can specify multiple slaves connections at one time,
 using comma separated values. Both methods can be used in a single call. The
-given value must be of the form "APPLICATION_NAME IP".
+given values must be of the form "APPLICATION_NAME IP".
 Either of the two following examples will check for the presence of two slaves:
 
   --slave 'slave1 192.168.1.11' --slave 'slave2 192.168.1.12'
@@ -807,7 +807,7 @@ data, the second one to replayed data. These thresholds only accept a size
 
 =item B<table_unlogged>
 
-Check if table are changed to unlogged. In 9.5, you can switch between logged and unlogged.
+Check if tables are changed to unlogged. In 9.5, you can switch between logged and unlogged.
 
 Without C<--critical>  or C<--warning> parameters, this service attempts to fetch
 all unlogged tables.
@@ -879,17 +879,18 @@ C<pgsql_tmp> folders. They are aggregated by database until 8.2, then
 by tablespace (see GUC temp_tablespaces).
 
 Starting with 9.2, perfdata returns as well the number of temp files per
-database since last run, the total size of temp file per database since last
+database since last run, the total size of temp files per database since last
 run and the rate at which temp files were generated.
 
 Critical and Warning thresholds are optional. They accept either a number
 of file (raw value), a size (unit is B<mandatory> to define a size) or both
 values separated by a comma.
 
-Threshols applied on current temp files beeing created AND the number/size
+Threshols applied on current temp files being created AND the number/size
 of temp files created since last execution.
 
-This service will not work with PostgreSQL 10+ without superuser privileges.
+This service works with PostgreSQL 10+ without superuser privileges but it will
+not monitor live temp files.
 
 =item B<wal_files> (8.1+)
 
@@ -908,11 +909,16 @@ For PostgreSQL 8.1 and 8.2:
 
   100% = 1 + checkpoint_segments * 2
 
-If C<wal_keep_segments> is set for 9.0 and above, the limit is the greatest
-of the following formulas :
+If C<wal_keep_segments> is set for 9.0 to 9.4, the limit is the greatest
+of the following formulas:
 
   100% = 1 + checkpoint_segments * (2 + checkpoint_completion_target)
   100% = 1 + wal_keep_segments + 2 * checkpoint_segments
+
+For 9.5 and above, the limit is:
+
+  100% =  max_wal_size      (as a number of WAL)
+        + wal_keep_segments (if set)
 
 =item B<stat_snapshot_age> (9.5+)
 
