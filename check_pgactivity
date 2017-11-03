@@ -3411,12 +3411,12 @@ sub check_hit_ratio {
         push @perfdata => \@perfdata_value;
 
         if ( defined $args{'critical'} ) {
-            if ( $db->[1] < $args{'critical'} ) {
+            if ( $ratio < $args{'critical'} ) {
                 push @msg_crit => sprintf "%s: %s%%", $db->[0], $ratio;
                 next DB_LOOP;
             }
 
-            if ( defined $args{'warning'} and $db->[1] < $args{'warning'} ) {
+            if ( defined $args{'warning'} and $ratio < $args{'warning'} ) {
                 push @msg_warn => sprintf "%s: %s%%", $db->[0], $ratio;
             }
         }
