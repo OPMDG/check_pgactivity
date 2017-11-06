@@ -5808,6 +5808,7 @@ all unlogged tables.
 A critical alert is raised if an unlogged table is detected.
 
 This service supports both C<--dbexclude>  and C<--dbinclude> parameters.
+The 'postgres' database and templates are always excluded.
 
 This service supports a C<--exclude REGEX>  parameter to exclude relations
 matching the given regular expression. The regular expression applies to
