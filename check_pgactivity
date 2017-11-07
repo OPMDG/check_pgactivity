@@ -301,7 +301,8 @@ dbinclude arguments, it is excluded.
 
 Some services automatically check all the databases of your
 cluster (note: that does not mean they always need to connect on all
-of them to check them though). C<--dbinclude> allows to B<ONLY> check
+of them to check them though). Some always exclude the 'postgres'
+database and templates. C<--dbinclude> allows to B<ONLY> check
 databases whose names match the given Perl regular expression. You
 can repeat this option as many time as needed.
 
@@ -2396,6 +2397,7 @@ apply to the bloat size compared to the total index size. If multiple threshold
 values are passed, check_pgactivity will choose the largest (bloat size) value.
 
 This service supports both C<--dbexclude> and C<--dbinclude> parameters.
+The 'postgres' database and templates are always excluded.
 
 It also supports a C<--exclude REGEX> parameter to exclude relations matching
 the given regular expression. The regular expression applies to
@@ -3696,6 +3698,7 @@ Check if there is any invalid indexes in a database.
 A critical alert is raised if an invalid index is detected.
 
 This service supports both C<--dbexclude>  and C<--dbinclude> parameters.
+The 'postgres' database and templates are always excluded.
 
 This service supports a C<--exclude REGEX>  parameter to exclude indexes
 matching the given regular expression. The regular expression applies to
@@ -4037,6 +4040,7 @@ Critical and Warning thresholds only accept an interval (eg. 1h30m25s)
 and apply to the oldest execution of analyse.
 
 This service supports both C<--dbexclude> and C<--dbinclude> parameters.
+The 'postgres' database and templates are always excluded.
 
 =cut
 
@@ -4061,6 +4065,8 @@ Critical and Warning thresholds only accept an interval (eg. 1h30m25s)
 and apply to the oldest vacuum.
 
 This service supports both C<--dbexclude> and C<--dbinclude> parameters.
+The 'postgres' database and templates are always excluded.
+
 
 =cut
 
@@ -5802,6 +5808,7 @@ all unlogged tables.
 A critical alert is raised if an unlogged table is detected.
 
 This service supports both C<--dbexclude>  and C<--dbinclude> parameters.
+The 'postgres' database and templates are always excluded.
 
 This service supports a C<--exclude REGEX>  parameter to exclude relations
 matching the given regular expression. The regular expression applies to
@@ -5920,6 +5927,7 @@ If multiple threshold values are passed, check_pgactivity will choose the
 largest (bloat size) value.
 
 This service supports both C<--dbexclude> and C<--dbinclude> parameters.
+The 'postgres' database and templates are always excluded.
 
 This service supports a C<--exclude REGEX> parameter to exclude relations
 matching the given regular expression. The regular expression applies to
@@ -6859,6 +6867,8 @@ Check all sequences assigned to a column (the smallserial,serial and bigserial t
 and raise an alarm if the column or sequences gets too close to its maximum value.
 
 Perfdata returns the sequence(s) that may have trigger the alert.
+
+The 'postgres' database and templates are always excluded.
 
 Critical and Warning thresholds accept a percentage of the sequence filled.
 
