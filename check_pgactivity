@@ -5798,7 +5798,7 @@ sub check_streaming_delta {
 }
 
 
-=item B<table_unlogged>
+=item B<table_unlogged> (9.5+)
 
 Check if tables are changed to unlogged. In 9.5, you can switch between logged and unlogged.
 
@@ -5823,7 +5823,7 @@ Perfdata will return the number of unlogged tables per database.
 
 A list of the unlogged tables detail will be returned after the
 perfdata. This list contains the fully qualified table name. If
-excluded table is set, the number of exclude table is returned.
+C<--exclude REGEX> is set, the number of excluded tables is returned.
 
 
 =cut
@@ -5901,7 +5901,7 @@ sub check_table_unlogged {
         push @perfdata => [ "table unlogged in $db", $tbl_unlogged ];
     }
 
-    push @longmsg => sprintf "%i exclude table from check", $total_extbl
+    push @longmsg => sprintf "%i excluded table(s) from check", $total_extbl
         if $total_extbl > 0;
 
     # we use the critical count for the **total** number of unlogged tables
