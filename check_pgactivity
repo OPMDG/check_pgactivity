@@ -5732,6 +5732,70 @@ PARAM_LOOP: foreach my $row (@rs) {
     return ok( $me, [ "Setting OK" ] );
 }
 
+=item B<stat_snapshot_age> (9.5+)
+
+Check the age of the statistics snapshot (statistics collector's statistics).
+This probe help to detect a frozen stats collector process.
+
+Perfdata returns the statistics snapshot age.
+
+Critical and Warning thresholds accept a raw number of seconds.
+
+=cut
+sub check_stat_snapshot_age {
+    my $me       = 'POSTGRES_STAT_SNAPSHOT_AGE';
+    my @rs;
+    my @perfdata;
+    my @msg;
+    my @hosts;
+    my %args     = %{ $_[0] };
+    my $stats_age;
+
+    my $query  = q{ SELECT extract(epoch from (pg_stat_get_snapshot_timestamp() - now())) AS age };
+
+    if ( defined $args{'warning'} ) {
+        # warning and critical are mandatory.
+        pod2usage(
+            -message => "FATAL: you must specify critical and warning thresholds.",
+            -exitval => 127
+        ) unless defined $args{'warning'} and defined $args{'critical'} ;
+
+        # warning and critical must be raw or %.
+        pod2usage(
+            -message => "FATAL: critical and warning thresholds only accept raw numbers.",
+            -exitval => 127
+        ) unless $args{'warning'}  =~ m/^([0-9.]+)/
+            and  $args{'critical'} =~ m/^([0-9.]+)/;
+    }
+
+    @hosts = @{ parse_hosts %args };
+
+    pod2usage(
+        -message => 'FATAL: you must give only one host with service "stat_snapshot_age".',
+        -exitval => 127
+    ) if @hosts != 1;
+
+    is_compat $hosts[0], 'stat_snapshot_age', $PG_VERSION_95 or exit 1;
+
+    @rs = @{ query ( $hosts[0], $query ) };
+
+    # Get statistics age in seconds
+    $stats_age = $rs[0][0];
+
+    push @perfdata => [ "statistics_age", $stats_age, undef ];
+
+    if ( defined $args{'warning'} ) {
+        my $w_limit = $args{'warning'};
+        my $c_limit = $args{'critical'};
+
+        push @{ $perfdata[0] } => ( $w_limit, $c_limit );
+
+        return critical( $me, \@msg, \@perfdata ) if $stats_age >= $c_limit;
+        return warning( $me, \@msg, \@perfdata )  if $stats_age >= $w_limit;
+    }
+
+    return ok( $me, \@msg, \@perfdata );
+}
 
 =item B<streaming_delta> (9.1+)
 
@@ -6914,72 +6978,6 @@ sub check_wal_files {
 
         return critical( $me, \@msg, \@perfdata ) if $num_seg >= $c_limit;
         return warning( $me, \@msg, \@perfdata )  if $num_seg >= $w_limit;
-    }
-
-    return ok( $me, \@msg, \@perfdata );
-}
-
-=item B<stat_snapshot_age> (9.5+)
-
-Check the age of the statistics snapshot (statistics collector's statistics).
-This probe help to detect a frozen stats collector process.
-
-Perfdata returns the statistics snapshot age.
-
-Critical and Warning thresholds accept a raw number of seconds.
-
-=cut
-
-sub check_stat_snapshot_age {
-    my $me       = 'POSTGRES_STAT_SNAPSHOT_AGE';
-    my @rs;
-    my @perfdata;
-    my @msg;
-    my @hosts;
-    my %args     = %{ $_[0] };
-    my $stats_age;
-
-    my $query  = q{ SELECT extract(epoch from (pg_stat_get_snapshot_timestamp() - now())) AS age };
-
-    if ( defined $args{'warning'} ) {
-        # warning and critical are mandatory.
-        pod2usage(
-            -message => "FATAL: you must specify critical and warning thresholds.",
-            -exitval => 127
-        ) unless defined $args{'warning'} and defined $args{'critical'} ;
-
-        # warning and critical must be raw or %.
-        pod2usage(
-            -message => "FATAL: critical and warning thresholds only accept raw numbers.",
-            -exitval => 127
-        ) unless $args{'warning'}  =~ m/^([0-9.]+)/
-            and  $args{'critical'} =~ m/^([0-9.]+)/;
-    }
-
-    @hosts = @{ parse_hosts %args };
-
-    pod2usage(
-        -message => 'FATAL: you must give only one host with service "stat_snapshot_age".',
-        -exitval => 127
-    ) if @hosts != 1;
-
-    is_compat $hosts[0], 'stat_snapshot_age', $PG_VERSION_95 or exit 1;
-
-    @rs = @{ query ( $hosts[0], $query ) };
-
-    # Get statistics age in seconds
-    $stats_age = $rs[0][0];
-
-    push @perfdata => [ "statistics_age", $stats_age, undef ];
-
-    if ( defined $args{'warning'} ) {
-        my $w_limit = $args{'warning'};
-        my $c_limit = $args{'critical'};
-
-        push @{ $perfdata[0] } => ( $w_limit, $c_limit );
-
-        return critical( $me, \@msg, \@perfdata ) if $stats_age >= $c_limit;
-        return warning( $me, \@msg, \@perfdata )  if $stats_age >= $w_limit;
     }
 
     return ok( $me, \@msg, \@perfdata );
