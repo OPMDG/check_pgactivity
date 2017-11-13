@@ -1322,7 +1322,9 @@ files from ONE cluster. The version of PostgreSQL that created the archives is
 only checked on the last one, for performance consideration.
 
 This service requires the argument C<--path> on the command line to specify the
-archive folder path to check.
+archive folder path to check. Obviously, it must have access to this
+folder at the filesystem level: you may have to execute it on the archiving
+server rather than on the PostgreSQL instance.
 
 Optional argument C<--suffix> allows you define the suffix of your archived
 WALs. Useful if they are compressed with an extension (eg. .gz, .bz2, ...).
