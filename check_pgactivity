@@ -1592,6 +1592,139 @@ sub check_archive_folder {
     return ok( $me, \@msg, \@perfdata, \@longmsg );
 }
 
+=item B<archiver> (8.1+)
+
+Check if the archiver is working properly and the number of WAL files ready to
+archive.
+
+Perfdata returns the number of WAL files waiting to be archived.
+
+Critical and Warning thresholds are optional. They apply on the number of files
+waiting to be archived. They only accept a raw number of files.
+
+Whatever the given threshold, a critical alert is raised if the archiver process
+did not archive the oldest waiting WAL to be archived since last call.
+
+=cut
+
+sub check_archiver {
+    my @rs;
+    my @perfdata;
+    my @msg;
+    my @longmsg;
+    my @hosts;
+    my $prev_archiving;
+    my $nb_files;
+    my %args  = %{ $_[0] };
+    my $me    = 'POSTGRES_ARCHIVER';
+
+    # warning and critical must be raw
+    pod2usage(
+        -message => "FATAL: critical and warning thresholds only accept raw numbers.",
+        -exitval => 127
+    ) if defined $args{'critical'} and $args{'warning'} !~ m/^([0-9]+)$/
+        and  $args{'critical'} !~ m/^([0-9]+)$/;
+
+    @hosts = @{ parse_hosts %args };
+
+    pod2usage(
+        -message => 'FATAL: you must give only one host with service "archiver".',
+        -exitval => 127
+    ) if @hosts != 1;
+
+    is_compat $hosts[0], 'archiver', $PG_VERSION_81 or exit 1;
+
+    if (check_compat $hosts[0], 'archiver', $PG_VERSION_81, $PG_VERSION_96) {
+        # cf. pgarch_readyXlog in src/backend/postmaster/pgarch.c about how the
+        # archiver process pick the next WAL to archive.
+        # We try to reproduce the same algo here
+        my $query = q{
+           SELECT s.f,
+             extract(epoch from (pg_stat_file('pg_xlog/archive_status/'||s.f)).modification),
+             extract(epoch from current_timestamp)
+           FROM pg_ls_dir('pg_xlog/archive_status') AS s(f)
+           WHERE f ~ '^[0123456789ABCDEF.history.backup.partial]{16,40}\.ready$'
+           ORDER BY s.f ASC};
+
+
+        $prev_archiving = load( $hosts[0], 'archiver', $args{'status-file'} ) || '';
+
+        @rs = @{ query( $hosts[0], $query ) };
+
+        $nb_files = scalar @rs;
+
+        push @perfdata => [ 'ready_archive', $nb_files, undef, $args{'warning'}, $args{'critical'}, 0 ];
+
+        if ( $nb_files > 0 ) {
+            push @perfdata => [ 'oldest_ready_wal', int( $rs[0][2] - $rs[0][1] ), 's',
+                                undef, undef, 0 ];
+
+            if ( $rs[0][0] ne $prev_archiving ) {
+                save $hosts[0], 'archiver', $rs[0][0], $args{'status-file'};
+            }
+            else {
+                push @msg => sprintf 'archiver stalling', substr($rs[0][0], 0, 24);
+                push @longmsg => sprintf '"%s" not archived since last check',
+                                    substr($rs[0][0], 0, -6);
+            }
+        }
+        else {
+            push @perfdata => [ 'oldest_ready_wal', 0, 's', undef, undef, 0 ];
+            save $hosts[0], 'archiver', '', $args{'status-file'};
+        }
+
+        push @msg => "$nb_files WAL files ready to archive";
+
+    }
+    else {
+        # Version 10.0 and higher: use pg_stat_archiver as the monitoring
+        # user may not be super-user.
+        my $query = q{
+        SELECT COALESCE( (('x' || substr(current_wal, 9, 8))::bit(32)::int *256 + ('x' || substr(current_wal, 17, 8))::bit(32)::int)
+                       - (('x' || substr(last_failed_wal, 9, 8))::bit(32)::int * 256 + ('x' || substr(last_failed_wal, 17, 8))::bit(32)::int),
+                 0 /* return 0 if NULL */) AS ready_archives,
+               extract('epoch' from (current_timestamp - last_failed_time)) AS oldest_archive_failure
+          FROM (SELECT CASE WHEN   (last_failed_time >= last_archived_time)
+                                OR (last_archived_time IS NULL AND last_failed_time IS NOT NULL)
+                            THEN last_failed_wal
+                            ELSE NULL
+                       END AS last_failed_wal,
+                       pg_walfile_name(pg_current_wal_lsn()) as current_wal,
+                       last_failed_time
+                  FROM pg_stat_archiver) stats
+        };
+
+        @rs = @{ query( $hosts[0], $query ) };
+
+        $nb_files = $rs[0][0];
+
+        push @perfdata => [ 'ready_archive', $nb_files, undef, $args{'warning'}, $args{'critical'}, 0 ];
+
+        if ( $nb_files > 0 ) {
+            push @perfdata => [ 'oldest_ready_wal', int( $rs[0][1] ), 's',
+                                undef, undef, 0 ];
+        }
+        else {
+            push @perfdata => [ 'oldest_ready_wal', 0, 's', undef, undef, 0 ];
+        }
+
+        push @msg => "$nb_files WAL files ready to archive";
+
+    }
+
+    return critical( $me, \@msg, \@perfdata, \@longmsg ) if scalar @msg > 1;
+
+    if ( defined $args{'critical'} and $nb_files >= $args{'critical'} ) {
+        return critical( $me, \@msg, \@perfdata );
+    }
+    elsif ( defined $args{'warning'} and $nb_files >= $args{'warning'} ) {
+        return warning( $me, \@msg, \@perfdata );
+    }
+
+    return ok( $me, \@msg, \@perfdata );
+}
+
+
 =item B<autovacuum> (8.1+)
 
 Check the autovacuum activity on the cluster.
@@ -5274,139 +5407,6 @@ sub check_pga_version {
     ) if defined $args{'warning'} and $VERSION ne $args{'warning'};
 
     return ok( $me, [ sprintf($msg, "", $^V) ] );
-}
-
-
-=item B<archiver> (8.1+)
-
-Check if the archiver is working properly and the number of WAL files ready to
-archive.
-
-Perfdata returns the number of WAL files waiting to be archived.
-
-Critical and Warning thresholds are optional. They apply on the number of files
-waiting to be archived. They only accept a raw number of files.
-
-Whatever the given threshold, a critical alert is raised if the archiver process
-did not archive the oldest waiting WAL to be archived since last call.
-
-=cut
-
-sub check_archiver {
-    my @rs;
-    my @perfdata;
-    my @msg;
-    my @longmsg;
-    my @hosts;
-    my $prev_archiving;
-    my $nb_files;
-    my %args  = %{ $_[0] };
-    my $me    = 'POSTGRES_ARCHIVER';
-
-    # warning and critical must be raw
-    pod2usage(
-        -message => "FATAL: critical and warning thresholds only accept raw numbers.",
-        -exitval => 127
-    ) if defined $args{'critical'} and $args{'warning'} !~ m/^([0-9]+)$/
-        and  $args{'critical'} !~ m/^([0-9]+)$/;
-
-    @hosts = @{ parse_hosts %args };
-
-    pod2usage(
-        -message => 'FATAL: you must give only one host with service "archiver".',
-        -exitval => 127
-    ) if @hosts != 1;
-
-    is_compat $hosts[0], 'archiver', $PG_VERSION_81 or exit 1;
-
-    if (check_compat $hosts[0], 'archiver', $PG_VERSION_81, $PG_VERSION_96) {
-        # cf. pgarch_readyXlog in src/backend/postmaster/pgarch.c about how the
-        # archiver process pick the next WAL to archive.
-        # We try to reproduce the same algo here
-        my $query = q{
-           SELECT s.f,
-             extract(epoch from (pg_stat_file('pg_xlog/archive_status/'||s.f)).modification),
-             extract(epoch from current_timestamp)
-           FROM pg_ls_dir('pg_xlog/archive_status') AS s(f)
-           WHERE f ~ '^[0123456789ABCDEF.history.backup.partial]{16,40}\.ready$'
-           ORDER BY s.f ASC};
-
-
-        $prev_archiving = load( $hosts[0], 'archiver', $args{'status-file'} ) || '';
-
-        @rs = @{ query( $hosts[0], $query ) };
-
-        $nb_files = scalar @rs;
-
-        push @perfdata => [ 'ready_archive', $nb_files, undef, $args{'warning'}, $args{'critical'}, 0 ];
-
-        if ( $nb_files > 0 ) {
-            push @perfdata => [ 'oldest_ready_wal', int( $rs[0][2] - $rs[0][1] ), 's',
-                                undef, undef, 0 ];
-
-            if ( $rs[0][0] ne $prev_archiving ) {
-                save $hosts[0], 'archiver', $rs[0][0], $args{'status-file'};
-            }
-            else {
-                push @msg => sprintf 'archiver stalling', substr($rs[0][0], 0, 24);
-                push @longmsg => sprintf '"%s" not archived since last check',
-                                    substr($rs[0][0], 0, -6);
-            }
-        }
-        else {
-            push @perfdata => [ 'oldest_ready_wal', 0, 's', undef, undef, 0 ];
-            save $hosts[0], 'archiver', '', $args{'status-file'};
-        }
-
-        push @msg => "$nb_files WAL files ready to archive";
-
-    }
-    else {
-	# Version 10.0 and higher: use pg_stat_archiver as the monitoring
-	# user may not be super-user.
-        my $query = q{
-        SELECT COALESCE( (('x' || substr(current_wal, 9, 8))::bit(32)::int *256 + ('x' || substr(current_wal, 17, 8))::bit(32)::int)
-                       - (('x' || substr(last_failed_wal, 9, 8))::bit(32)::int * 256 + ('x' || substr(last_failed_wal, 17, 8))::bit(32)::int),
-		 0 /* return 0 if NULL */) AS ready_archives,
-               extract('epoch' from (current_timestamp - last_failed_time)) AS oldest_archive_failure
-          FROM (SELECT CASE WHEN   (last_failed_time >= last_archived_time)
-                                OR (last_archived_time IS NULL AND last_failed_time IS NOT NULL)
-                            THEN last_failed_wal
-                            ELSE NULL
-                       END AS last_failed_wal,
-                       pg_walfile_name(pg_current_wal_lsn()) as current_wal,
-                       last_failed_time
-                  FROM pg_stat_archiver) stats 
-        };
-
-        @rs = @{ query( $hosts[0], $query ) };
-
-        $nb_files = $rs[0][0];
-
-        push @perfdata => [ 'ready_archive', $nb_files, undef, $args{'warning'}, $args{'critical'}, 0 ];
-
-        if ( $nb_files > 0 ) {
-            push @perfdata => [ 'oldest_ready_wal', int( $rs[0][1] ), 's',
-                                undef, undef, 0 ];
-        }
-        else {
-            push @perfdata => [ 'oldest_ready_wal', 0, 's', undef, undef, 0 ];
-        }
-
-        push @msg => "$nb_files WAL files ready to archive";
-
-    }
-
-    return critical( $me, \@msg, \@perfdata, \@longmsg ) if scalar @msg > 1;
-
-    if ( defined $args{'critical'} and $nb_files >= $args{'critical'} ) {
-        return critical( $me, \@msg, \@perfdata );
-    }
-    elsif ( defined $args{'warning'} and $nb_files >= $args{'warning'} ) {
-        return warning( $me, \@msg, \@perfdata );
-    }
-
-    return ok( $me, \@msg, \@perfdata );
 }
 
 
