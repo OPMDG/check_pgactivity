@@ -1,7 +1,7 @@
 Changelog
 =========
 
-2017-XX-XX v2.3:
+2017-11-13 v2.3:
   - add complete support for PostgreSQL 10, including non-privileged monitoring
     features
   - add some documentation to help new contributors
