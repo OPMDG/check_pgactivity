@@ -5906,6 +5906,12 @@ SELECT
                 next;
             }
 
+	    if ($sequences{$seq}->{LASTVALSEQ} eq '') {
+                # Skip sequences having lastvalue not initialized
+                delete $sequences{$seq};
+                next;
+            }
+
             my $max_val_seq;
             if ($sequences{$seq}->{INCREMENTBY}>=0) {
                 $max_val_seq=$sequences{$seq}->{MAXVALSEQ};
@@ -5925,11 +5931,6 @@ SELECT
             my $real_max_value=$sequences{$seq}->{REALMAXVALUE};
             my $lim_warning=$real_max_value-get_size($args{'warning'},$real_max_value);
             my $lim_critical=$real_max_value-get_size($args{'critical'},$real_max_value);
-
-print Data::Dumper::Dumper($sequences{$seq}) . "\n";
-print Data::Dumper::Dumper($sequences{$seq}->{ABSVALSEQ}) . "\n";
-print Data::Dumper::Dumper($real_max_value) . "\n";
-
             my $how_much_left=$real_max_value-$sequences{$seq}->{ABSVALSEQ};
             my $seq_desc="$db." . $sequences{$seq}->{COLNAME};
             my $long_seq_desc="$db.$seq(owned by " . $sequences{$seq}->{COLNAME} . ')';
