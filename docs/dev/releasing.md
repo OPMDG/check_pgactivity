@@ -24,17 +24,17 @@ podselect check_pgactivity > README.pod
 ## Tagging and building tar file
 
 ```
-TAG=REL2.2
+TAG=REL2_3
 git -a $TAG
 git push --tags
-git archive --prefix=PAF-$TAG/ -o /tmp/PAF-$TAG.tgz $TAG
+git archive --prefix=check_pgactivity-$TAG/ -o /tmp/check_pgactivity-$TAG.tgz $TAG
 ```
 
 ## Release on github
 
   - go to (https://github.com/OPMDG/check_pgactivity/tags)
   - edit the release notes for the new tag
-  - set "check_pgactivity $VERSION" as title, eg. "check_pgactivity 2.2"
+  - set "check_pgactivity $VERSION" as title, eg. "check_pgactivity 2.3"
   - here is the format of the release node itself:
     YYYY-MM-DD -  Version X.Y
     
@@ -63,8 +63,8 @@ useradd makerpm
 su - makerpm
 rpmdev-setuptree
 git clone https://github.com/OPMDG/check_pgactivity.git
-spectool -R -g check_pgactivity/resource-agents-paf.spec
-rpmbuild -ba check_pgactivity/resource-agents-paf.spec
+spectool -R -g check_pgactivity/check_pgactivity.spec
+rpmbuild -ba check_pgactivity/check_pgactivity.spec
 ```
 
 Don't forget to upload the package on github release page.
