@@ -59,7 +59,8 @@ dbinclude arguments, it is excluded.
 
 Some services automatically check all the databases of your
 cluster (note: that does not mean they always need to connect on all
-of them to check them though). C<--dbinclude> allows to B<ONLY> check
+of them to check them though). Some always exclude the 'postgres'
+database and templates. C<--dbinclude> allows to B<ONLY> check
 databases whose names match the given Perl regular expression. You
 can repeat this option as many time as needed.
 
@@ -282,6 +283,19 @@ Sample commands:
   check_pgactivity -s archive_folder --path /path/to/archives --ignore-wal-size --suffix .bz2 -w 15m -c 30m
   check_pgactivity -s archive_folder --path /path/to/archives --unarchiver "unrar p" --ignore-wal-size --suffix .rar -w 15m -c 30m
 
+=item B<archiver> (8.1+)
+
+Check if the archiver is working properly and the number of WAL files ready to
+archive.
+
+Perfdata returns the number of WAL files waiting to be archived.
+
+Critical and Warning thresholds are optional. They apply on the number of files
+waiting to be archived. They only accept a raw number of files.
+
+Whatever the given threshold, a critical alert is raised if the archiver process
+did not archive the oldest waiting WAL to be archived since last call.
+
 =item B<autovacuum> (8.1+)
 
 Check the autovacuum activity on the cluster.
@@ -361,6 +375,7 @@ apply to the bloat size compared to the total index size. If multiple threshold
 values are passed, check_pgactivity will choose the largest (bloat size) value.
 
 This service supports both C<--dbexclude> and C<--dbinclude> parameters.
+The 'postgres' database and templates are always excluded.
 
 It also supports a C<--exclude REGEX> parameter to exclude relations matching
 the given regular expression. The regular expression applies to
@@ -508,6 +523,7 @@ Check if there is any invalid indexes in a database.
 A critical alert is raised if an invalid index is detected.
 
 This service supports both C<--dbexclude>  and C<--dbinclude> parameters.
+The 'postgres' database and templates are always excluded.
 
 This service supports a C<--exclude REGEX>  parameter to exclude indexes
 matching the given regular expression. The regular expression applies to
@@ -560,6 +576,7 @@ Critical and Warning thresholds only accept an interval (eg. 1h30m25s)
 and apply to the oldest execution of analyse.
 
 This service supports both C<--dbexclude> and C<--dbinclude> parameters.
+The 'postgres' database and templates are always excluded.
 
 =item B<last_vacuum> (8.2+)
 
@@ -577,6 +594,8 @@ Critical and Warning thresholds only accept an interval (eg. 1h30m25s)
 and apply to the oldest vacuum.
 
 This service supports both C<--dbexclude> and C<--dbinclude> parameters.
+The 'postgres' database and templates are always excluded.
+
 
 =item B<locks> (all)
 
@@ -655,13 +674,14 @@ seperated by anything but a '.'.
 
 For instance, the following parameters are all equivalent:
 
-  --critical "9.3.2 9.2.6 9.1.11 9.0.15 8.4.19"
-  --critical "9.3.2, 9.2.6, 9.1.11, 9.0.15, 8.4.19"
-  --critical 9.3.2,9.2.6,9.1.11,9.0.15,8.4.19
-  --critical 9.3.2/9.2.6/9.1.11/9.0.15/8.4.19
+  --critical "10.1 9.6.6 9.5.10 9.4.15 9.3.20 9.2.24 9.1.24 9.0.23 8.4.22"
+  --critical "10.1, 9.6.6, 9.5.10, 9.4.15, 9.3.20, 9.2.24, 9.1.24, 9.0.23, 8.4.22"
+  --critical "10.1,9.6.6,9.5.10,9.4.15,9.3.20,9.2.24,9.1.24,9.0.23,8.4.22"
+  --critical "10.1/9.6.6/9.5.10/9.4.15/9.3.20/9.2.24/9.1.24/9.0.23/8.4.22"
 
-Any value other than 3 numbers separated by dots will be ignored.
-if the running PostgreSQL major version is not found, the service raises an
+Any value other than 3 numbers separated by dots (before version 10.x)
+or 2 numbers separated by dots (version 10 and above) will be ignored.
+If the running PostgreSQL major version is not found, the service raises an
 unknown status.
 
 Using the offline version raises either a critical or a warning depending
@@ -739,18 +759,18 @@ C<--critical>.
 
 No perfdata is returned.
 
-=item B<archiver> (8.1+)
+=item B<pgdata_permission> (8.2+)
 
-Check if the archiver is working properly and the number of WAL files ready to
-archive.
+Check that the data directory of the instance has 700 as permission, and belongs
+to the system user running postgresql currently.
 
-Perfdata returns the number of WAL files waiting to be archived.
+Checking permission works on all Unix systems.
 
-Critical and Warning thresholds are optional. They apply on the number of files
-waiting to be archived. They only accept a raw number of files.
+Checking user works only in Linux systems (it uses /proc to not add
+dependencies). Before 9.3, you need to give the expected owner using the
+C<--uid> argument. Without this argument, the owner will not be checked.
 
-Whatever the given threshold, a critical alert is raised if the archiver process
-did not archive the oldest waiting WAL to be archived since last call.
+B<It has to be executed locally on the monitored server.>
 
 =item B<replication_slots> (9.4+)
 
@@ -776,6 +796,26 @@ No perfdata.
 Critical and Warning thresholds are ignored.
 
 A CRITICAL is raised if at least one parameter changed.
+
+=item B<sequences_exhausted> (7.4+)
+
+Check all sequences assigned to a column (the smallserial,serial and bigserial types),
+and raise an alarm if the column or sequences gets too close to its maximum value.
+
+Perfdata returns the sequence(s) that may have trigger the alert.
+
+The 'postgres' database and templates are always excluded.
+
+Critical and Warning thresholds accept a percentage of the sequence filled.
+
+=item B<stat_snapshot_age> (9.5+)
+
+Check the age of the statistics snapshot (statistics collector's statistics).
+This probe help to detect a frozen stats collector process.
+
+Perfdata returns the statistics snapshot age.
+
+Critical and Warning thresholds accept a raw number of seconds.
 
 =item B<streaming_delta> (9.1+)
 
@@ -805,7 +845,7 @@ and replayed data. If two values are supplied, the first one applies to flushed
 data, the second one to replayed data. These thresholds only accept a size
 (eg. 2.5G).
 
-=item B<table_unlogged>
+=item B<table_unlogged> (9.5+)
 
 Check if tables are changed to unlogged. In 9.5, you can switch between logged and unlogged.
 
@@ -815,6 +855,7 @@ all unlogged tables.
 A critical alert is raised if an unlogged table is detected.
 
 This service supports both C<--dbexclude>  and C<--dbinclude> parameters.
+The 'postgres' database and templates are always excluded.
 
 This service supports a C<--exclude REGEX>  parameter to exclude relations
 matching the given regular expression. The regular expression applies to
@@ -829,7 +870,7 @@ Perfdata will return the number of unlogged tables per database.
 
 A list of the unlogged tables detail will be returned after the
 perfdata. This list contains the fully qualified table name. If
-excluded table is set, the number of exclude table is returned.
+C<--exclude REGEX> is set, the number of excluded tables is returned.
 
 
 =item B<table_bloat>
@@ -844,6 +885,7 @@ If multiple threshold values are passed, check_pgactivity will choose the
 largest (bloat size) value.
 
 This service supports both C<--dbexclude> and C<--dbinclude> parameters.
+The 'postgres' database and templates are always excluded.
 
 This service supports a C<--exclude REGEX> parameter to exclude relations
 matching the given regular expression. The regular expression applies to
@@ -919,37 +961,6 @@ For 9.5 and above, the limit is:
 
   100% =  max_wal_size      (as a number of WAL)
         + wal_keep_segments (if set)
-
-=item B<stat_snapshot_age> (9.5+)
-
-Check the age of the statistics snapshot (statistics collector's statistics).
-This probe help to detect a frozen stats collector process.
-
-Perfdata returns the statistics snapshot age.
-
-Critical and Warning thresholds accept a raw number of seconds.
-
-=item B<sequences_exhausted> (7.4+)
-
-Check all sequences assigned to a column (the smallserial,serial and bigserial types),
-and raise an alarm if the column or sequences gets too close to its maximum value.
-
-Perfdata returns the sequence(s) that may have trigger the alert.
-
-Critical and Warning thresholds accept a percentage of the sequence filled.
-
-=item B<pgdata_permission> (8.2+)
-
-Check that the data directory of the instance has 700 as permission, and belongs
-to the system user running postgresql currently.
-
-Checking permission works on all Unix systems.
-
-Checking user works only in Linux systems (it uses /proc to not add
-dependencies). Before 9.3, you need to give the expected owner using the
-C<--uid> argument. Without this argument, the owner will not be checked.
-
-B<It has to be executed locally on the monitored server.>
 
 =back
 
