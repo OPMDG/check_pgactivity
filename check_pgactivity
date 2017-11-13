@@ -4564,13 +4564,14 @@ seperated by anything but a '.'.
 
 For instance, the following parameters are all equivalent:
 
-  --critical "9.3.2 9.2.6 9.1.11 9.0.15 8.4.19"
-  --critical "9.3.2, 9.2.6, 9.1.11, 9.0.15, 8.4.19"
-  --critical 9.3.2,9.2.6,9.1.11,9.0.15,8.4.19
-  --critical 9.3.2/9.2.6/9.1.11/9.0.15/8.4.19
+  --critical "10.1 9.6.6 9.5.10 9.4.15 9.3.20 9.2.24 9.1.24 9.0.23 8.4.22"
+  --critical "10.1, 9.6.6, 9.5.10, 9.4.15, 9.3.20, 9.2.24, 9.1.24, 9.0.23, 8.4.22"
+  --critical "10.1,9.6.6,9.5.10,9.4.15,9.3.20,9.2.24,9.1.24,9.0.23,8.4.22"
+  --critical "10.1/9.6.6/9.5.10/9.4.15/9.3.20/9.2.24/9.1.24/9.0.23/8.4.22"
 
-Any value other than 3 numbers separated by dots will be ignored.
-if the running PostgreSQL major version is not found, the service raises an
+Any value other than 3 numbers separated by dots (before version 10.x)
+or 2 numbers separated by dots (version 10 and above) will be ignored.
+If the running PostgreSQL major version is not found, the service raises an
 unknown status.
 
 Using the offline version raises either a critical or a warning depending
@@ -4646,8 +4647,13 @@ sub check_minor_version {
         return unknown($me, [ 'Could not fetch PostgreSQL latest versions' ])
             unless $rss;
 
+        # versions until 9.6
         $latest_versions{"$1.$2"} = [$1 * 10000 + $2 * 100 + $3, "$1.$2.$3"]
-            while $rss =~ m/<title>(\d+)\.(\d+)\.(\d+)/g;
+            while ($rss =~ m/<title>(\d+)\.(\d+)\.(\d+)/g  && $1<10);
+        # versions from 10
+        $latest_versions{"$1"} = [$1 * 10000 + $2, "$1.$2"]
+            while ($rss =~ m/<title>(\d+)\.(\d+)/g && $1>=10);
+
     }
     else {
         pod2usage(
@@ -4659,13 +4665,22 @@ sub check_minor_version {
             $args{'critical'}
             : $args{'warning'};
 
-        while ( $given_version =~ m/(\d+)\.(\d+)\.(\d+)/g ) {
-            $latest_versions{"$1.$2"} = [$1 * 10000 + $2 * 100 + $3, "$1.$2.$3"];
+        while ( $given_version =~ m/(\d+)\.(\d+)\.(\d*)/g ) {
+            $latest_versions{"$1.$2"} = [$1 * 10000 + $2 * 100 + $3, "$1.$2.$3"] if $1<10 ; # v9.6.5=90605
+        }
+        while ( $given_version =~ m/(\d+)\.(\d+)/g ) {
+            $latest_versions{"$1"} = [$1 * 10000 + $2, "$1.$2"] if $1>=10 ;  # v10.1 = 100001, v11.0=110000
         }
     }
-
-    $hosts[0]{'version'} =~ '^(\d+\.\d+).*$';
-    $major_version = $1;
+    if ( $hosts[0]{'version_num'} < 100000 ) {
+      #eg 90605 for 9.6.5 -> major is 9.6
+      $hosts[0]{'version'} =~ '^(\d+\.\d+).*$';
+      $major_version = $1;
+    } else {
+      # eg 100001 for 10.1  -> major is 10
+      $major_version = int($hosts[0]{'version_num'}/10000) ;
+    }
+	dprint ("major version: $major_version");
 
     unless ( defined $latest_versions{$major_version} ) {
         push @msg => "Unknown major PostgreSQL version $major_version";
