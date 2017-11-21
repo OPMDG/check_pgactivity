@@ -4967,6 +4967,9 @@ Critical and Warning thresholds only accept an interval.
 
 This service supports both C<--dbexclude> and C<--dbinclude> parameters.
 
+Above 9.2, it supports C<--exclude> to filter out connections. Eg., to 
+filter out pg_dump and pg_dumpall, set this to 'pg_dump,pg_dumpall'.
+
 =cut
 
 sub check_oldest_idlexact {
@@ -4998,6 +5001,11 @@ sub check_oldest_idlexact {
             LEFT JOIN pg_stat_activity AS a ON (a.datid = d.oid AND state='idle in transaction')
         }
     );
+
+    # exclude some apps
+    if(defined $args{'exclude'}[0]){
+        $queries{$PG_VERSION_92}.=" WHERE a.application_name NOT IN ('".join("','", split(',', $args{'exclude'}[0]))."')";
+    }
 
     # warning and critical are mandatory.
     pod2usage(
@@ -7358,7 +7366,7 @@ unless ($args{'psql'}) {
 }
 
 # pre-compile given regexp
-unless ( $args{'service'} eq 'pg_dump_backup' ) {
+unless (($args{'service'} eq 'pg_dump_backup') or ($args{'service'} eq 'oldest_idlexact')) {
     $_ = qr/$_/ for @{ $args{'exclude'} } ;
     $_ = qr/$_/ for @{ $args{'dbinclude'} };
 }
