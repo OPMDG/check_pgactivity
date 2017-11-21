@@ -5109,6 +5109,11 @@ the form:
 Optionally, a C<--global-pattern> option can be supplied to check for an
 additional global file.
 
+Tip : For compatibility with pg_back, you should use 
+		C<--path> '/path/*{dump,sql}' 
+		C<--pattern> '(\w+)_[0-9-_]+.dump' 
+		C<--global-pattern> 'pg_global_[0-9-_]+.sql'
+
 The C<--critical> and C<--warning> thresholds are optional. They accept a list
 of 'metric=value' separated by a comma. Available metric are C<oldest> and
 C<newest>, respectively the age of the oldest and newest backups, and C<size>,
