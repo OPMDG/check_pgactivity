@@ -5109,11 +5109,17 @@ the form:
 Optionally, a C<--global-pattern> option can be supplied to check for an
 additional global file.
 
+Tip : For compatibility with pg_back, you should use 
+		C<--path> '/path/*{dump,sql}' 
+		C<--pattern> '(\w+)_[0-9-_]+.dump' 
+		C<--global-pattern> 'pg_global_[0-9-_]+.sql'
+
 The C<--critical> and C<--warning> thresholds are optional. They accept a list
 of 'metric=value' separated by a comma. Available metric are C<oldest> and
 C<newest>, respectively the age of the oldest and newest backups, and C<size>,
 which must be the maximum variation of size since the last check, expressed
-as a size or a percentage.
+as a size or a percentage. C<mindeltasize>, expressed in B, is the minimum variation 
+of size needed to raise an alert.
 
 This service supports the arguments C<--dbinclude> and C<--dbexclude>, to
 respectively test for the presence of include or exclude files.
@@ -5151,7 +5157,7 @@ sub check_pg_dump_backup {
     my $min_age        = 0;
     my $backup_path    = $args{'path'};
     my $pattern        = $args{'pattern'};
-    my $thresholds_re  = qr/(oldest|newest|size)\s*=\s*(\d+[^,]*)/i;
+    my $thresholds_re  = qr/(oldest|newest|size|mindeltasize)\s*=\s*(\d+[^,]*)/i;
     my $global_pattern = $args{'global-pattern'};
 
     pod2usage(
@@ -5348,10 +5354,15 @@ sub check_pg_dump_backup {
             push @perf_delta => ( defined $w_delta ? $w_delta: undef );
             push @perf_delta => ( defined $c_delta ? $c_delta: undef );
 
-            if ( defined $c_delta and $delta > $c_delta ) {
+            my $w_mindeltasize = 0;
+            my $c_mindeltasize = 0;
+            $w_mindeltasize = $warn{'mindeltasize'} if exists $warn{'mindeltasize'};
+            $c_mindeltasize = $crit{'mindeltasize'} if exists $crit{'mindeltasize'};
+
+            if ( defined $c_delta and $delta > $c_delta and $delta >= $c_mindeltasize ) {
                 push @msg_crit => sprintf("'%s_delta'=%dB", $db, $lasts{$db}[1]);
             }
-            elsif ( defined $w_delta and $delta > $w_delta ) {
+            elsif ( defined $w_delta and $delta > $w_delta and $delta >= $w_mindeltasize ) {
                 push @msg_warn => sprintf("'%s_delta'=%dB", $db, $lasts{$db}[1]);
             }
         }
