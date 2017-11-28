@@ -92,97 +92,45 @@ my %services = (
     #    'sub'     => sub reference to call to run this service
     #    'desc'    => 'a description of the service'
     # }
-
+    'archive_folder' => {
+        'sub'  => \&check_archive_folder,
+        'desc' => 'Check archives in given folder.'
+    },
+    'archiver' => {
+        'sub'  => \&check_archiver,
+        'desc' => 'Check the archiver status and number of wal files ready to archive.'
+    },
     'autovacuum' => {
         'sub'  => \&check_autovacuum,
         'desc' => 'Check the autovacuum activity.'
-    },
-    'backends' => {
-        'sub'  => \&check_backends,
-        'desc' => 'Number of connections, compared to max_connections.'
     },
     'backends_status' => {
         'sub'  => \&check_backends_status,
         'desc' => 'Number of connections in relation to their status.'
     },
+    'backends' => {
+        'sub'  => \&check_backends,
+        'desc' => 'Number of connections, compared to max_connections.'
+    },
+    'backup_label_age' => {
+        'sub'  => \&check_backup_label_age,
+        'desc' => 'Check age of backup_label file.'
+    },
+    'bgwriter' => {
+        'sub'  => \&check_bgwriter,
+        'desc' => 'Check the bgwriter activity.'
+    },
+    'btree_bloat' => {
+        'sub'  => \&check_btree_bloat,
+        'desc' => 'Check B-tree index bloat.'
+    },
     'commit_ratio' => {
         'sub'  => \&check_commit_ratio,
         'desc' => 'Commit and rollback rate per second and commit ratio since last execution.'
     },
-    'database_size' => {
-        'sub'  => \&check_database_size,
-        'desc' => 'Variation of database sizes.',
-    },
-    'table_unlogged' => {
-        'sub'  => \&check_table_unlogged,
-        'desc' => 'Check unlogged tables'
-    },
-
-    'wal_files' => {
-        'sub'  => \&check_wal_files,
-        'desc' => 'Total number of WAL files.',
-    },
-    'archiver' => {
-        'sub'  => \&check_archiver,
-        'desc' => 'Check the archiver status and number of wal files ready to archive.',
-    },
-    'last_vacuum' => {
-        'sub'  => \&check_last_vacuum,
-        'desc' =>
-            'Check the oldest vacuum (from autovacuum or not) on the database.',
-    },
-    'last_analyze' => {
-        'sub'  => \&check_last_analyze,
-        'desc' =>
-            'Check the oldest analyze (from autovacuum or not) on the database.',
-    },
-    'locks' => {
-        'sub'  => \&check_locks,
-        'desc' => 'Check the number of locks on the hosts.'
-    },
-    'oldest_2pc' => {
-        'sub'  => \&check_oldest_2pc,
-        'desc' => 'Check the oldest two-phase commit transaction.'
-    },
-    'oldest_idlexact' => {
-        'sub'  => \&check_oldest_idlexact,
-        'desc' => 'Check the oldest idle transaction.'
-    },
-    'longest_query' => {
-        'sub'  => \&check_longest_query,
-        'desc' => 'Check the longest running query.'
-    },
-    'bgwriter' => {
-        'sub'  => \&check_bgwriter,
-        'desc' => 'Check the bgwriter activity.',
-    },
-    'archive_folder' => {
-        'sub'  => \&check_archive_folder,
-        'desc' => 'Check archives in given folder.',
-    },
-    'minor_version' => {
-        'sub'  => \&check_minor_version,
-        'desc' => 'Check if the PostgreSQL minor version is the latest one.',
-    },
-    'hot_standby_delta' => {
-        'sub'  => \&check_hot_standby_delta,
-        'desc' => 'Check delta in bytes between a master and its hot standbys.',
-    },
-    'streaming_delta' => {
-        'sub'  => \&check_streaming_delta,
-        'desc' => 'Check delta in bytes between a master and its standbys in streaming replication.',
-    },
-    'settings' => {
-        'sub'  => \&check_settings,
-        'desc' => 'Check if the configuration file changed.',
-    },
-    'hit_ratio' => {
-        'sub'  => \&check_hit_ratio,
-        'desc' => 'Check hit ratio on databases.'
-    },
-    'backup_label_age' => {
-        'sub'  => \&check_backup_label_age,
-        'desc' => 'Check age of backup_label file.',
+    'configuration' => {
+        'sub'  => \&check_configuration,
+        'desc' => 'Check the most important settings.'
     },
     'connection' => {
         'sub'  => \&check_connection,
@@ -192,65 +140,115 @@ my %services = (
         'sub'  => \&check_custom_query,
         'desc' => 'Perform the given user query.'
     },
-    'configuration' => {
-        'sub'  => \&check_configuration,
-        'desc' => 'Check the most important settings.',
+    'database_size' => {
+        'sub'  => \&check_database_size,
+        'desc' => 'Variation of database sizes.'
     },
-    'btree_bloat' => {
-        'sub'  => \&check_btree_bloat,
-        'desc' => 'Check B-tree index bloat.'
+    'hit_ratio' => {
+        'sub'  => \&check_hit_ratio,
+        'desc' => 'Check hit ratio on databases.'
     },
-    'max_freeze_age' => {
-        'sub'  => \&check_max_freeze_age,
-        'desc' => 'Check oldest database in transaction age.'
+    'hot_standby_delta' => {
+        'sub'  => \&check_hot_standby_delta,
+        'desc' => 'Check delta in bytes between a master and its hot standbys.'
     },
-        'invalid_indexes' => {
+    'invalid_indexes' => {
         'sub'  => \&check_invalid_indexes,
         'desc' => 'Check for invalid indexes.'
-    },
-    'is_master' => {
-        'sub'  => \&check_is_master,
-        'desc' => 'Check if cluster is in production.'
     },
     'is_hot_standby' => {
         'sub'  => \&check_is_hot_standby,
         'desc' => 'Check if cluster is a hot standby.'
     },
-    'pga_version' => {
-        'sub'  => \&check_pga_version,
-        'desc' => 'Check the version of this check_pgactivity script.'
+    'is_master' => {
+        'sub'  => \&check_is_master,
+        'desc' => 'Check if cluster is in production.'
     },
     'is_replay_paused' => {
         'sub'  => \&check_is_replay_paused,
         'desc' => 'Check if the replication is paused.'
     },
-    'table_bloat' => {
-        'sub'  => \&check_table_bloat,
-        'desc' => 'Check tables bloat.'
+    'last_analyze' => {
+        'sub'  => \&check_last_analyze,
+        'desc' =>
+            'Check the oldest analyze (from autovacuum or not) on the database.'
     },
-    'temp_files' => {
-        'sub'  => \&check_temp_files,
-        'desc' => 'Check temp files generation'
+    'last_vacuum' => {
+        'sub'  => \&check_last_vacuum,
+        'desc' =>
+            'Check the oldest vacuum (from autovacuum or not) on the database.'
     },
-    'replication_slots' => {
-        'sub'  => \&check_replication_slots,
-        'desc' => 'Check delta in bytes of the replication slots.'
+    'locks' => {
+        'sub'  => \&check_locks,
+        'desc' => 'Check the number of locks on the hosts.'
+    },
+    'longest_query' => {
+        'sub'  => \&check_longest_query,
+        'desc' => 'Check the longest running query.'
+    },
+    'minor_version' => {
+        'sub'  => \&check_minor_version,
+        'desc' => 'Check if the PostgreSQL minor version is the latest one.'
+    },
+    'oldest_2pc' => {
+        'sub'  => \&check_oldest_2pc,
+        'desc' => 'Check the oldest two-phase commit transaction.'
+    },
+    'oldest_idlexact' => {
+        'sub'  => \&check_oldest_idlexact,
+        'desc' => 'Check the oldest idle transaction.'
+    },
+    'max_freeze_age' => {
+        'sub'  => \&check_max_freeze_age,
+        'desc' => 'Check oldest database in transaction age.'
     },
     'pg_dump_backup' => {
         'sub'  => \&check_pg_dump_backup,
         'desc' => 'Check pg_dump backups age and retention policy'
     },
-    'stat_snapshot_age' => {
-        'sub'  => \&check_stat_snapshot_age,
-        'desc' => 'Check stats collector\'s stats age'
+    'pga_version' => {
+        'sub'  => \&check_pga_version,
+        'desc' => 'Check the version of this check_pgactivity script.'
+    },
+    'pgdata_permission' => {
+        'sub'  => \&check_pgdata_permission,
+        'desc' => 'Check that the permission on PGDATA is 700'
+    },
+    'replication_slots' => {
+        'sub'  => \&check_replication_slots,
+        'desc' => 'Check delta in bytes of the replication slots.'
     },
     'sequences_exhausted' => {
         'sub'  => \&check_sequences_exhausted,
         'desc' => 'Check that auto-incremented colums aren\'t reaching their upper limit'
     },
-    'pgdata_permission' => {
-        'sub'  => \&check_pgdata_permission,
-        'desc' => 'Check that the permission on PGDATA is 700'
+    'settings' => {
+        'sub'  => \&check_settings,
+        'desc' => 'Check if the configuration file changed.'
+    },
+    'stat_snapshot_age' => {
+        'sub'  => \&check_stat_snapshot_age,
+        'desc' => 'Check stats collector\'s stats age'
+    },
+    'streaming_delta' => {
+        'sub'  => \&check_streaming_delta,
+        'desc' => 'Check delta in bytes between a master and its standbys in streaming replication.'
+    },
+    'table_bloat' => {
+        'sub'  => \&check_table_bloat,
+        'desc' => 'Check tables bloat.'
+    },
+    'table_unlogged' => {
+        'sub'  => \&check_table_unlogged,
+        'desc' => 'Check unlogged tables'
+    },
+    'temp_files' => {
+        'sub'  => \&check_temp_files,
+        'desc' => 'Check temp files generation'
+    },
+    'wal_files' => {
+        'sub'  => \&check_wal_files,
+        'desc' => 'Total number of WAL files.'
     }
 );
 
