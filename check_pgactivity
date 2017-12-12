@@ -5778,7 +5778,6 @@ sub check_sequences_exhausted {
     my @all_db;
     my @dbinclude = @{ $args{'dbinclude'} };
     my @dbexclude = @{ $args{'dbexclude'} };
-    my %sequences;
     my $criticity=0; # 0=ok, 1=warn, 2=critical
 
 
@@ -5811,11 +5810,12 @@ sub check_sequences_exhausted {
 
     @all_db = @{ get_all_dbname( $hosts[0] ) };
 
-
     # Iterate over all db
     ALLDB_LOOP: foreach my $db (sort @all_db) {
         next ALLDB_LOOP if grep { $db =~ /$_/ } @dbexclude;
         next ALLDB_LOOP if @dbinclude and not grep { $db =~ /$_/ } @dbinclude;
+
+        my %sequences;
 
         # We have two code paths: one for < 10.0 and one for >=10.S
         if (check_compat $hosts[0], 'sequences_exhausted', $PG_VERSION_82, $PG_VERSION_96)
@@ -5950,8 +5950,9 @@ SELECT
         foreach my $seq(keys %sequences) {
             # First, get all info
             my $real_max_value=$sequences{$seq}->{REALMAXVALUE};
-            my $lim_warning=$real_max_value-get_size($args{'warning'},$real_max_value);
-            my $lim_critical=$real_max_value-get_size($args{'critical'},$real_max_value);
+            my $usable_amount=$real_max_value - $sequences{$seq}->{MINVALSEQ} + 1;
+            my $lim_warning=$usable_amount-get_size($args{'warning'},$usable_amount);
+            my $lim_critical=$usable_amount-get_size($args{'critical'},$usable_amount);
             my $how_much_left=$real_max_value-$sequences{$seq}->{ABSVALSEQ};
             my $seq_desc="$db." . $sequences{$seq}->{COLNAME};
             my $long_seq_desc="$db.$seq(owned by " . $sequences{$seq}->{COLNAME} . ')';
