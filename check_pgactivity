@@ -5950,8 +5950,9 @@ SELECT
         foreach my $seq(keys %sequences) {
             # First, get all info
             my $real_max_value=$sequences{$seq}->{REALMAXVALUE};
-            my $lim_warning=$real_max_value-get_size($args{'warning'},$real_max_value);
-            my $lim_critical=$real_max_value-get_size($args{'critical'},$real_max_value);
+            my $usable_amount=$real_max_value - $sequences{$seq}->{MINVALSEQ} + 1;
+            my $lim_warning=$usable_amount-get_size($args{'warning'},$usable_amount);
+            my $lim_critical=$usable_amount-get_size($args{'critical'},$usable_amount);
             my $how_much_left=$real_max_value-$sequences{$seq}->{ABSVALSEQ};
             my $seq_desc="$db." . $sequences{$seq}->{COLNAME};
             my $long_seq_desc="$db.$seq(owned by " . $sequences{$seq}->{COLNAME} . ')';
