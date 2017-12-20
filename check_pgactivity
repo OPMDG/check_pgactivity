@@ -4967,7 +4967,7 @@ Critical and Warning thresholds only accept an interval.
 
 This service supports both C<--dbexclude> and C<--dbinclude> parameters.
 
-Above 9.2, it supports C<--exclude> to filter out connections. Eg., to 
+Above 9.2, it supports C<--exclude> to filter out connections. Eg., to
 filter out pg_dump and pg_dumpall, set this to 'pg_dump,pg_dumpall'.
 
 =cut
@@ -5117,16 +5117,16 @@ the form:
 Optionally, a C<--global-pattern> option can be supplied to check for an
 additional global file.
 
-Tip : For compatibility with pg_back, you should use 
-		C<--path> '/path/*{dump,sql}' 
-		C<--pattern> '(\w+)_[0-9-_]+.dump' 
+Tip : For compatibility with pg_back, you should use
+		C<--path> '/path/*{dump,sql}'
+		C<--pattern> '(\w+)_[0-9-_]+.dump'
 		C<--global-pattern> 'pg_global_[0-9-_]+.sql'
 
 The C<--critical> and C<--warning> thresholds are optional. They accept a list
 of 'metric=value' separated by a comma. Available metric are C<oldest> and
 C<newest>, respectively the age of the oldest and newest backups, and C<size>,
 which must be the maximum variation of size since the last check, expressed
-as a size or a percentage. C<mindeltasize>, expressed in B, is the minimum variation 
+as a size or a percentage. C<mindeltasize>, expressed in B, is the minimum variation
 of size needed to raise an alert.
 
 This service supports the arguments C<--dbinclude> and C<--dbexclude>, to
