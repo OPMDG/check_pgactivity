@@ -5416,8 +5416,8 @@ sub check_pga_version {
     pod2usage(
         -message => "FATAL: given version does not look like a check_pgactivity version!",
         -exitval => 127
-    ) if ( defined $args{'critical'} and $args{'critical'} !~ m/^\d\.\d+(?:_?(?:beta|rc)\d*)?$/ )
-        or (defined $args{'warning'} and $args{'warning'} !~ m/^\d\.\d+(?:_?(?:beta|rc)\d*)?$/ );
+    ) if ( defined $args{'critical'} and $args{'critical'} !~ m/^\d\.\d+(?:_?(?:dev|beta|rc)\d*)?$/ )
+        or (defined $args{'warning'} and $args{'warning'} !~ m/^\d\.\d+(?:_?(?:dev|beta|rc)\d*)?$/ );
 
     return critical( $me,
         [ sprintf($msg, "(should be $args{'critical'}!)", $^V) ]
