@@ -4412,6 +4412,8 @@ This service supports both C<--dbexclude> and C<--dbinclude> parameters.
 It also supports argument C<--exclude REGEX> to exclude queries matching the
 given regular expression from the check.
 
+Above 9.0, it also supports C<--exclude REGEX> to filter out application_name.
+
 You can use multiple C<--exclude REGEX> parameters.
 
 =cut
@@ -4445,15 +4447,33 @@ sub check_longest_query {
             ) AS s ON (d.datname=s.datname)
             WHERE d.datallowconn
         },
+        $PG_VERSION_90 => q{SELECT d.datname,
+                COALESCE(elapsed, -1),
+                COALESCE(query, ''),
+                application_name
+            FROM pg_database AS d
+            LEFT JOIN (
+                SELECT datname, current_query AS query,
+                    extract('epoch' FROM
+                        date_trunc('second', current_timestamp-query_start)
+                    ) AS elapsed,
+                    application_name
+                FROM pg_stat_activity
+                WHERE current_query NOT LIKE '<IDLE>%'
+            ) AS s ON (d.datname=s.datname)
+            WHERE d.datallowconn
+        },
         $PG_VERSION_92 => q{SELECT d.datname,
                 COALESCE(elapsed, 0),
-                COALESCE(query, '')
+                COALESCE(query, ''),
+                application_name
             FROM pg_database AS d
             LEFT JOIN (
                 SELECT datname, query,
                     extract('epoch' FROM
                         date_trunc('second', current_timestamp-state_change)
-                    ) AS elapsed
+                    ) AS elapsed,
+                    application_name
                 FROM pg_stat_activity
                 WHERE state = 'active'
             ) AS s ON (d.datname=s.datname)
@@ -4496,6 +4516,7 @@ sub check_longest_query {
         # exclude on query text
         foreach my $exclude_re ( @{ $args{'exclude'} } ) {
             next REC_LOOP if $r->[2] =~ /$exclude_re/;
+            next REC_LOOP if defined($r->[3]) && $r->[3]  =~ /$exclude_re/;
         }
 
         $stats{$r->[0]} = {
