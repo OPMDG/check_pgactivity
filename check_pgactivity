@@ -2223,10 +2223,12 @@ sub check_backends_status {
             next REC_LOOP if $r->[3] =~ /$exclude_re/;
         }
 
-        $status{$r->[0]}[0]++;
+        if (exists $status{$r->[0]}) {
+          $status{$r->[0]}[0]++;
 
-        $status{$r->[0]}[1] = $r->[1]
-            if $r->[1] and $r->[1] > $status{$r->[0]}[1];
+          $status{$r->[0]}[1] = $r->[1]
+              if $r->[1] and $r->[1] > $status{$r->[0]}[1];
+        }
     }
 
     STATUS_LOOP: foreach my $s (sort keys %status) {
