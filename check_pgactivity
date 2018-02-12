@@ -3540,6 +3540,7 @@ sub check_hit_ratio {
         }
         # this database has no reported activity yet
         else {
+            $ratio='NaN';
             $new_db_hitratio{ $db->[0] }[2] = 'NaN';
             @perfdata_value = ( $db->[0], 'NaN', '%' );
         }
