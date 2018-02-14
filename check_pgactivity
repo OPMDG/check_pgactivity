@@ -7062,17 +7062,20 @@ sub check_wal_files {
     my %queries  = (
      $PG_VERSION_100 => q{
         WITH wal_settings AS (
-          SELECT setting::int + current_setting('wal_keep_segments')::int as max_nb_wal
+          SELECT sum(setting::int) filter (WHERE name='max_wal_size') as max_wal_size,
+                 sum(setting::int) filter (WHERE name='wal_segment_size') as wal_segment_size,
+                 sum(setting::int) filter (WHERE name='wal_block_size') as wal_block_size,
+                 sum(setting::int) filter (WHERE name='wal_keep_segments') as wal_keep_segments
           FROM pg_settings
-          WHERE name = 'max_wal_size'
+          WHERE name IN ('max_wal_size','wal_segment_size','wal_block_size','wal_keep_segments')
         )
         SELECT s.name,
-          max_nb_wal,
+          max_wal_size / (wal_block_size * wal_segment_size / 1024^2) max_nb_wal,
           CASE WHEN pg_is_in_recovery()
             THEN NULL
             ELSE pg_current_wal_lsn()
           END,
-          current_setting('wal_keep_segments')::integer,
+          wal_keep_segments,
           (pg_control_checkpoint()).timeline_id AS tli
         FROM pg_ls_waldir() AS s
         CROSS JOIN wal_settings
