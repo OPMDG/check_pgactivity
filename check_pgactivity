@@ -3987,7 +3987,7 @@ sub check_is_replay_paused {
             ELSE NULL::int
         END AS lag,
         CASE
-            WHEN pg_is_in_recovery() AND pg_last_wal_replay_location() <> pg_last_wal_receive_location()
+            WHEN pg_is_in_recovery() AND pg_last_wal_replay_lsn() <> pg_last_wal_receive_lsn()
                 THEN 1::int
             WHEN pg_is_in_recovery() THEN 0::int
             ELSE NULL
