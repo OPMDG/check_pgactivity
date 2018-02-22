@@ -5596,7 +5596,11 @@ sub check_replication_slots {
         SELECT slot.slot_name,
         COALESCE(
             floor(
-                (pg_xlog_location_diff(pg_current_xlog_location(), slot.restart_lsn)
+                (pg_xlog_location_diff(
+                     CASE WHEN pg_is_in_recovery() THEN pg_last_xlog_receive_location()
+                          ELSE pg_current_xlog_location()
+                      END
+		, slot.restart_lsn)
                 - (pg_xlogfile_name_offset(restart_lsn)).file_offset
                 )
                 / (s.val)
@@ -5613,7 +5617,11 @@ sub check_replication_slots {
         SELECT slot.slot_name,
         COALESCE(
             floor(
-                (pg_wal_lsn_diff(pg_current_wal_lsn(), slot.restart_lsn)
+                (pg_wal_lsn_diff(
+                     CASE WHEN pg_is_in_recovery() THEN pg_last_wal_receive_lsn()
+                          ELSE pg_current_wal_lsn()
+                      END,
+		     slot.restart_lsn)
                 - (pg_walfile_name_offset(restart_lsn)).file_offset
                 )
                 / (s.val)
