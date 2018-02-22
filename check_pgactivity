@@ -1691,7 +1691,9 @@ sub check_archiver {
                             THEN last_failed_wal
                             ELSE NULL
                        END AS last_failed_wal,
-                       pg_walfile_name(pg_current_wal_lsn()) as current_wal,
+		       CASE WHEN pg_is_in_recovery() THEN pg_walfile_name(pg_last_wal_receive_lsn())
+		            ELSE pg_walfile_name(pg_current_wal_lsn())
+		        END as current_wal,
                        last_failed_time
                   FROM pg_stat_archiver) stats
         };
