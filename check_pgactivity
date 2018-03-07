@@ -6019,7 +6019,7 @@ sub check_stat_snapshot_age {
     my %args     = %{ $_[0] };
     my $stats_age;
 
-    my $query  = q{ SELECT extract(epoch from (pg_stat_get_snapshot_timestamp() - now())) AS age };
+    my $query  = q{ SELECT extract(epoch from (now() - pg_stat_get_snapshot_timestamp())) AS age };
 
     if ( defined $args{'warning'} ) {
         # warning and critical are mandatory.
