@@ -193,7 +193,7 @@ have to write the same query for each major release, you can simply store the
 appropriate query for the version that enters the incompatibility, it will be
 used for each following version.
 
-For example, the probe autovacuum, implemeted in the check_autovacuum function
+For example, the probe autovacuum, implemented in the check_autovacuum function
 provides the following hash :
 ```
     my %queries      = (
