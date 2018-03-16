@@ -1767,7 +1767,8 @@ sub check_autovacuum {
         'VACUUM'            => 0,
         'VACUUM_ANALYZE'    => 0,
         'ANALYZE'           => 0,
-        'VACUUM_FREEZE'     => 0
+        'VACUUM_FREEZE'     => 0,
+        'BRIN_SUMMARIZE'    => 0
     );
 
     my %queries      = (
@@ -1817,6 +1818,10 @@ sub check_autovacuum {
 
     is_compat $hosts[0], 'autovacuum', $PG_VERSION_81 or exit 1;
 
+    if (check_compat $hosts[0], 'archiver', $PG_VERSION_81, $PG_VERSION_96) {
+        delete $activity{BRIN_SUMMARIZE};
+    }
+
     @rs = @{ query_ver( $hosts[0], %queries ) };
 
     REC_LOOP: foreach my $r (@rs) {
@@ -1833,6 +1838,8 @@ sub check_autovacuum {
                 $activity{'VACUUM_ANALYZE'}++;
             } elsif ( $r->[0] =~ 'autovacuum: VACUUM' ) {
                 $activity{'VACUUM'}++;
+            } elsif ( $r->[0] =~ 'autovacuum: BRIN summarize' ) {
+                $activity{'BRIN_SUMMARIZE'}++;
             } else {
                 $activity{'ANALYZE'}++;
             };
