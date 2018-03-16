@@ -251,7 +251,11 @@ my %services = (
     'pgdata_permission' => {
         'sub'  => \&check_pgdata_permission,
         'desc' => 'Check that the permission on PGDATA is 700'
-    }
+    },
+    'uptime' => {
+        'sub'  => \&check_uptime,
+        'desc' => 'Time since postmaster start or configurtion reload'
+    },
 );
 
 
@@ -7105,6 +7109,92 @@ DB_LOOP: foreach my $stat (@rs) {
 }
 
 
+=item B<uptime> (8.1+)
+
+Returns time since postmaster start (from 8.1) and configuration reload (from 8.4).
+
+Critical and Warning thresholds are optional. If both are set, Critical is
+raised when the postmaster uptime is less than the critical threshold, and
+Warning is raised when the configuration uptime is less than the warning thereshold.
+If only a warning or critical threshold is given, it will be used for both cases.
+Obviously these alerts will disappear from themselves once enough time has passed.
+
+Perfdata contain the duration since postmaster start and duration since
+configuration reload.
+
+=cut
+
+sub check_uptime {
+    my @rs;
+    my @hosts;
+    my @perfdata;
+    my @msg_warn;
+    my @msg_crit;
+    my $uptime;
+    my $reload_conf_time;
+    my $reload_conf_flag;
+    my $msg_uptime ;
+    my $msg_reload_conf;
+    my $c_limit;
+    my $w_limit;
+    my $me           = 'POSTGRES_UPTIME';
+    my %queries      = (
+        $PG_VERSION_81 => q{
+            SELECT extract('epoch' from (current_timestamp - pg_postmaster_start_time())) AS time_since_postmaster_start,
+                   null,
+                   pg_postmaster_start_time() as postmaster_start_time
+        },
+        $PG_VERSION_84 => q{
+            SELECT extract('epoch' from (current_timestamp - pg_postmaster_start_time())) AS time_since_postmaster_star,
+                   extract('epoch' from (current_timestamp - pg_conf_load_time())) AS time_since_conf_reload,
+                   pg_postmaster_start_time(),
+                   pg_conf_load_time()
+        }
+    );
+
+    @hosts = @{ parse_hosts %args };
+
+    pod2usage(
+        -message => 'FATAL: you must give only one host with service "uptime".',
+        -exitval => 127
+    ) if @hosts != 1;
+
+    is_compat $hosts[0], 'uptime', $PG_VERSION_81 or exit 1;
+
+    $c_limit = get_time $args{'critical'} if (defined $args{'critical'}) ;
+    $w_limit = get_time $args{'warning'}  if (defined $args{'warning'});
+
+    @rs = @{ query_ver( $hosts[0], %queries ) };
+    # uptime since postmaster start
+    $uptime = int( $rs[0][0] );
+    $msg_uptime = "instance started for ".to_interval($uptime)."s (since $rs[0][2])" ;
+    push @perfdata => [ 'postmaster uptime', $uptime , 's', undef, undef, 0 ];
+    # time since configuration reload
+    $reload_conf_flag = !(check_compat $hosts[0], 'uptime', $PG_VERSION_81, $PG_VERSION_84);
+    if ($reload_conf_flag) {
+      $reload_conf_time = int( $rs[0][1] );
+      $msg_reload_conf = "configuration reloaded for ".to_interval($reload_conf_time)."s (since $rs[0][3])";
+      push @perfdata => [ 'configuration uptime', $reload_conf_time , 's',
+          undef, undef, 0 ];
+    } else {
+        $msg_reload_conf = "";
+    };
+
+   if ( defined $c_limit and $uptime < $c_limit ) {
+       push @msg_crit => $msg_uptime;
+    } elsif (not defined $c_limit  and defined $w_limit and $uptime < $w_limit ) {
+        push @msg_warn => $msg_uptime;
+    } elsif ($reload_conf_flag and defined $c_limit and not defined $w_limit and $reload_conf_time < $c_limit ) {
+        push @msg_crit => $msg_reload_conf;
+    } elsif ($reload_conf_flag and defined $w_limit and $reload_conf_time < $w_limit) {
+        push @msg_warn =>  $msg_reload_conf;
+    } ;
+
+    return critical ( $me, \@msg_crit, \@perfdata) if ( @msg_crit ) ;
+    return warning  ( $me, \@msg_warn, \@perfdata) if ( @msg_warn ) ;
+    return ok( $me, [ "$msg_uptime $msg_reload_conf"  ], \@perfdata );
+}
+
 =item B<wal_files> (8.1+)
 
 Check the number of WAL files.
@@ -7436,11 +7526,11 @@ pod2usage(
 ) if not -d $args{'tmpdir'} or not -x $args{'tmpdir'};
 
 # Both critical and warning must be given is optional,
-# but for pga_version and minor_version which use only one of them.
+# but for pga_version, minor_version and uptime which use only one of them or none
 pod2usage(
     -message => 'FATAL: you must provide both warning and critical thresholds.',
     -exitval => 127
-) if $args{'service'} !~ m/^(pga_version|minor_version)$/ and (
+) if $args{'service'} !~ m/^(pga_version|minor_version|uptime)$/ and (
     ( defined $args{'critical'} and not defined $args{'warning'} )
     or ( not defined $args{'critical'} and defined $args{'warning'} ));
 
