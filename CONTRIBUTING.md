@@ -119,7 +119,7 @@ You must provide some mandatory data in the @perfdata array :
 
 * perfdata name
 * the data itself, in numerical form
-* the unit used:'B' for bytes, 's' for secondes or undef for raw numbers
+* the unit used:'B' for bytes, 's' for seconds or undef for raw numbers
 
 The following data are optional :
 
@@ -233,7 +233,7 @@ provides the following hash :
             ORDER BY a.query_start ASC
         }
     );
-``` 
+```
 
 Then, call the query_ver() function, giving the host you want to query, usually
 $host[0], and the %queries hash :
@@ -290,5 +290,3 @@ Use the --debug option to enable the debug output.
 
 Use dprint() function to output some specific debugging messages to the
 developer or the user.
-
-
