@@ -1360,6 +1360,9 @@ one.
 Critical and Warning define the max age of the latest archived WAL as an
 interval (eg. 5m or 300s ).
 
+Required privileges: unprivileged role; the system user needs read access
+to archived WAL files.
+
 Sample commands:
 
   check_pgactivity -s archive_folder --path /path/to/archives -w 15m -c 30m
@@ -1607,6 +1610,8 @@ waiting to be archived. They only accept a raw number of files.
 Whatever the given threshold, a critical alert is raised if the archiver process
 did not archive the oldest waiting WAL to be archived since last call.
 
+Required privileges: unprivileged role (10+); superuser (<10).
+
 =cut
 
 sub check_archiver {
@@ -1738,6 +1743,8 @@ by type (VACUUM, VACUUM ANALYZE, ANALYZE, VACUUM FREEZE).
 
 Thresholds, if any, are ignored.
 
+Required privileges: unprivileged role.
+
 =cut
 
 sub check_autovacuum {
@@ -1852,6 +1859,9 @@ Critical and Warning thresholds accept either a raw number or a percentage (eg.
 80%). When a threshold is a percentage, it is compared to the difference
 between the cluster parameters C<max_connections> and
 C<superuser_reserved_connections>.
+
+Required privileges: an unprivileged user only sees its own queries;
+a pg_monitor (10+) or superuser (<10) role is required to see all queries.
 
 =cut
 
@@ -2004,6 +2014,9 @@ each of them, for 8.2+.
 
 Note that the number of backends reported in Nagios message B<includes>
 excluded backends.
+
+Required privileges: an unprivileged user only sees its own queries;
+a pg_monitor (10+) or superuser (<10) role is required to see all queries.
 
 =cut
 
@@ -2296,6 +2309,8 @@ Perfdata returns the age of the backup_label file, -1 if not present.
 
 Critical and Warning thresholds only accept an interval (eg. 1h30m25s).
 
+Required privileges: unprivileged role (9.3+); superuser (<9.3)
+
 =cut
 
 sub check_backup_label_age {
@@ -2368,6 +2383,8 @@ are the number of "events" per second.
 
 Critical and Warning thresholds are optional. If set, they I<only> accept a
 percentage.
+
+Required privileges: unprivileged role.
 
 =cut
 
@@ -2554,9 +2571,12 @@ A list of the bloated indexes detail will be returned after the
 perfdata. This list contains the fully qualified bloated index name, the
 estimated bloat size, the index size and the bloat percentage.
 
-This service will work with PostgreSQL 10+ without superuser privileges
-if you grant SELECT on table pg_statistic to the pg_monitor role, in
-each database of the cluster : C<GRANT SELECT ON pg_statistic TO pg_monitor;>
+Required privileges: superuser (<10) able to log in all databases, or at least
+those in C<--dbinclude>; superuser (<10);
+on PostgreSQL 10+, a user with the role pg_monitor suffices,
+provided that you grant SELECT on the system table pg_statistic
+to the pg_monitor role, in each database of the cluster:
+C<GRANT SELECT ON pg_statistic TO pg_monitor;>
 
 =cut
 
@@ -2960,6 +2980,8 @@ rollback rate and the rollback ratio of each database. Warning or critical will
 be raised if the reported value is greater than B<rollbacks>, B<rollback_rate> or
 B<rollback_ratio>.
 
+Required privileges: unprivileged role.
+
 =cut
 
 sub check_commit_ratio {
@@ -3110,6 +3132,8 @@ C<--work_mem>, C<--maintenance_work_mem>, C<--shared_buffers>,C<--wal_buffers>,
 C<--checkpoint_segments>, C<--effective_cache_size>, C<--no_check_autovacuum>,
 C<--no_check_fsync>, C<--no_check_enable>, C<--no_check_track_counts>.
 
+Required privileges: unprivileged role.
+
 =cut
 
 sub check_configuration {
@@ -3177,7 +3201,9 @@ Perform a simple connection test.
 
 No perfdata is returned.
 
-This service ignore critical and warning arguments.
+This service ignores critical and warning arguments.
+
+Required privileges: unprivileged role.
 
 =cut
 
@@ -3219,6 +3245,8 @@ and its unit appended to it. You can add as many fields as needed. Eg.:
 
   SELECT pg_database_size('postgres'),
          pg_database_size('postgres')||'B' AS db_size
+
+Required privileges: unprivileged role (depends on the query).
 
 =cut
 
@@ -3366,6 +3394,8 @@ variation.
 
 This service supports both C<--dbexclude> and C<--dbinclude> parameters.
 
+Required privileges: unprivileged role.
+
 =cut
 
 sub check_database_size {
@@ -3460,6 +3490,8 @@ databases which have never been accessed.
 Critical and Warning thresholds are optional. They only accept a percentage.
 
 This service supports both C<--dbexclude> and C<--dbinclude> parameters.
+
+Required privileges: unprivileged role.
 
 =cut
 
@@ -3593,8 +3625,10 @@ replayed data.
 If two values are given, the first one applies to received data, the second one
 to replayed ones. These thresholds only accept a size (eg. 2.5G).
 
-This service raise a Critical if it doesn't find exactly ONE valid master
+This service raises a Critical if it doesn't find exactly ONE valid master
 cluster (ie. critical when 0 or 2 and more masters).
+
+Required privileges: unprivileged role.
 
 =cut
 
@@ -3663,7 +3697,7 @@ sub check_hot_standby_delta {
         $master_location = $host->{'rs'}[1] if $host->{'rs'}[0];
     }
 
-    # check all cluster have the same major version.
+    # check all clusters have the same major version.
     foreach my $host ( @hosts ) {
         return critical($me, ["PostgreSQL major versions differ amongst clusters ($hosts[0]{'version'} vs. $host->{'version'})."] )
             if substr($hosts[0]{'version_num'}, 0, -2) != substr($host->{'version_num'}, 0, -2);
@@ -3769,6 +3803,8 @@ This service ignores critical and warning arguments.
 
 No perfdata is returned.
 
+Required privileges: unprivileged role.
+
 =cut
 
 sub check_is_hot_standby {
@@ -3803,6 +3839,8 @@ as "in production" by pg_controldata.
 This service ignores critical and warning arguments.
 
 No perfdata is returned.
+
+Required privileges: unprivileged role.
 
 =cut
 
@@ -3854,6 +3892,8 @@ Perfdata will return the number of invalid indexes per database.
 A list of invalid indexes detail will be returned after the
 perfdata. This list contains the fully qualified index name. If
 excluded index is set, the number of exclude indexes is returned.
+
+Required privileges: unprivileged role able to log in all databases.
 
 =cut
 
@@ -3951,6 +3991,8 @@ Perfdata returned:
   * paused status (0 no, 1 yes, NaN if master)
   * lag time (in second)
   * data delta with master (0 no, 1 yes)
+
+Required privileges: unprivileged role.
 
 =cut
 
@@ -4182,6 +4224,8 @@ and apply to the oldest execution of analyse.
 This service supports both C<--dbexclude> and C<--dbinclude> parameters.
 The 'postgres' database and templates are always excluded.
 
+Required privileges: unprivileged role able to log in all databases.
+
 =cut
 
 sub check_last_analyze {
@@ -4207,6 +4251,7 @@ and apply to the oldest vacuum.
 This service supports both C<--dbexclude> and C<--dbinclude> parameters.
 The 'postgres' database and templates are always excluded.
 
+Required privileges: unprivileged role able to log in all databases.
 
 =cut
 
@@ -4235,6 +4280,8 @@ for 9.1+, regarding lockmode :
 
   max_locks_per_transaction * (max_connections + max_prepared_transactions)
 or max_pred_locks_per_transaction * (max_connections + max_prepared_transactions)
+
+Required privileges: unprivileged role.
 
 =cut
 
@@ -4421,6 +4468,9 @@ Above 9.0, it also supports C<--exclude REGEX> to filter out application_name.
 
 You can use multiple C<--exclude REGEX> parameters.
 
+Required privileges: an unprivileged role only checks its own queries;
+a pg_monitor (10+) or superuser (<10) role is required to check all queries.
+
 =cut
 
 sub check_longest_query {
@@ -4588,9 +4638,11 @@ freeze. Percentage thresholds should therefore be greater than 100%.
 Even with no threshold, this service will raise a critical alert if one database
 has a negative age.
 
-Perfdata return the age of each database.
+Perfdata returns the age of each database.
 
 This service supports both C<--dbexclude> and C<--dbinclude> parameters.
+
+Required privileges: unprivileged role.
 
 =cut
 
@@ -4740,6 +4792,9 @@ on which one has been set.
 
 Perfdata returns the numerical version of PostgreSQL.
 
+Required privileges: unprivileged role; access to http://www.postgresql.org
+required to download version numbers.
+
 =cut
 
 sub check_minor_version {
@@ -4875,6 +4930,8 @@ transactions per databases.
 
 Critical and Warning thresholds only accept an interval.
 
+Required privileges: unprivileged role.
+
 =cut
 
 sub check_oldest_2pc {
@@ -4995,6 +5052,9 @@ This service supports both C<--dbexclude> and C<--dbinclude> parameters.
 
 Above 9.2, it supports C<--exclude> to filter out connections. Eg., to
 filter out pg_dump and pg_dumpall, set this to 'pg_dump,pg_dumpall'.
+
+Required privileges: an unprivileged role checks only its own queries;
+a pg_monitor (10+) or superuser (<10) role is required to check all queries.
 
 =cut
 
@@ -5164,6 +5224,9 @@ your backup process takes 2h, set this to '125m'.
 
 Perfdata returns the age of the oldest and newest backups, as well as the size
 of the newest backups.
+
+Required privileges: unprivileged role; the system user needs read access
+on the directory containing the dumps (but not on the dumps themselves).
 
 =cut
 
@@ -5424,6 +5487,8 @@ C<--critical>.
 
 No perfdata is returned.
 
+Required privileges: none.
+
 =cut
 
 sub check_pga_version {
@@ -5467,7 +5532,8 @@ Checking user works only in Linux systems (it uses /proc to not add
 dependencies). Before 9.3, you need to give the expected owner using the
 C<--uid> argument. Without this argument, the owner will not be checked.
 
-B<It has to be executed locally on the monitored server.>
+Required privileges: unprivileged role; the system user must be able to read
+the folder containing PGDATA: B<the service has to be executed locally on the monitored server.>
 
 =cut
 sub check_pgdata_permission {
@@ -5575,6 +5641,8 @@ Perfdata returns the number of WAL that each replication slot has to keep.
 Critical and Warning thresholds are optional. If provided, the number of WAL
 kept by each replication slot will be compared to the threshold.
 These thresholds only accept a raw number.
+
+Required privileges: unprivileged role.
 
 =cut
 
@@ -5693,6 +5761,8 @@ Critical and Warning thresholds are ignored.
 
 A CRITICAL is raised if at least one parameter changed.
 
+Required privileges: unprivileged role.
+
 =cut
 
 sub check_settings {
@@ -5797,6 +5867,8 @@ Perfdata returns the sequence(s) that may have trigger the alert.
 The 'postgres' database and templates are always excluded.
 
 Critical and Warning thresholds accept a percentage of the sequence filled.
+
+Required privileges: unprivileged role able to log in all databases
 
 =cut
 sub check_sequences_exhausted {
@@ -6019,6 +6091,8 @@ Perfdata returns the statistics snapshot age.
 
 Critical and Warning thresholds accept a raw number of seconds.
 
+Required privileges: unprivileged role.
+
 =cut
 sub check_stat_snapshot_age {
     my $me       = 'POSTGRES_STAT_SNAPSHOT_AGE';
@@ -6102,6 +6176,8 @@ separated by a comma. If only one value is supplied, it applies to both flushed
 and replayed data. If two values are supplied, the first one applies to flushed
 data, the second one to replayed data. These thresholds only accept a size
 (eg. 2.5G).
+
+Required privileges: unprivileged role.
 
 =cut
 
@@ -6291,6 +6367,8 @@ A list of the unlogged tables detail will be returned after the
 perfdata. This list contains the fully qualified table name. If
 C<--exclude REGEX> is set, the number of excluded tables is returned.
 
+Required privileges: unprivileged role able to log in all databases,
+or at least those in C<--dbinclude>.
 
 =cut
 sub check_table_unlogged {
@@ -6414,9 +6492,12 @@ A list of the bloated tables detail will be returned after the
 perfdata. This list contains the fully qualified bloated table name, the
 estimated bloat size, the table size and the bloat percentage.
 
-This service will work with PostgreSQL 10+ without superuser privileges
-if you grant SELECT on table pg_statistic to the pg_monitor role, in
-each database of the cluster : C<GRANT SELECT ON pg_statistic TO pg_monitor;>
+Required privileges: superuser (<10) able to log in all databases, or at least
+those in C<--dbinclude>; superuser (<10);
+on PostgreSQL 10+, a user with the role pg_monitor suffices,
+provided that you grant SELECT on the system table pg_statistic
+to the pg_monitor role, in each database of the cluster:
+C<GRANT SELECT ON pg_statistic TO pg_monitor;>
 
 =cut
 
@@ -6695,8 +6776,8 @@ values separated by a comma.
 Threshols applied on current temp files being created AND the number/size
 of temp files created since last execution.
 
-This service works with PostgreSQL 10+ without superuser privileges but it will
-not monitor live temp files.
+Required privileges: superuser (<10); on 10+ an unprivileged role 
+is possible but it will not monitor live temp files.
 
 =cut
 
@@ -7051,6 +7132,8 @@ For 9.5 and above, the limit is:
 
   100% =  max_wal_size      (as a number of WAL)
         + wal_keep_segments (if set)
+
+Required privileges: superuser (<10); pg_monitor (10+).
 
 =cut
 
