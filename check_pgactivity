@@ -7125,6 +7125,8 @@ Obviously these alerts will disappear from themselves once enough time has passe
 Perfdata contain the duration since postmaster start and duration since
 configuration reload.
 
+Required privileges: unprivileged role.
+
 =cut
 
 sub check_uptime {
