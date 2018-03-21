@@ -230,7 +230,7 @@ my %services = (
     },
     'temp_files' => {
         'sub'  => \&check_temp_files,
-        'desc' => 'Check temp files generation'
+        'desc' => 'Check temp files generation.'
     },
     'replication_slots' => {
         'sub'  => \&check_replication_slots,
@@ -238,23 +238,23 @@ my %services = (
     },
     'pg_dump_backup' => {
         'sub'  => \&check_pg_dump_backup,
-        'desc' => 'Check pg_dump backups age and retention policy'
+        'desc' => 'Check pg_dump backups age and retention policy.'
     },
     'stat_snapshot_age' => {
         'sub'  => \&check_stat_snapshot_age,
-        'desc' => 'Check stats collector\'s stats age'
+        'desc' => 'Check stats collector\'s stats age.'
     },
     'sequences_exhausted' => {
         'sub'  => \&check_sequences_exhausted,
-        'desc' => 'Check that auto-incremented colums aren\'t reaching their upper limit'
+        'desc' => 'Check that auto-incremented colums aren\'t reaching their upper limit.'
     },
     'pgdata_permission' => {
         'sub'  => \&check_pgdata_permission,
-        'desc' => 'Check that the permission on PGDATA is 700'
+        'desc' => 'Check that the permission on PGDATA is 700.'
     },
     'uptime' => {
         'sub'  => \&check_uptime,
-        'desc' => 'Time since postmaster start or configurtion reload'
+        'desc' => 'Time since postmaster start or configurtion reload.'
     },
 );
 
@@ -294,9 +294,9 @@ The connection service name from pg_service.conf to use.
 
 Some services automatically check all the databases of your
 cluster (note: that does not mean they always need to connect on all
-of them to check them though). C<--dbexclude> allows to exclude any
-database whose name matches the given Perl regular expression. You
-can repeat this option as many time as needed.
+of them to check them though). C<--dbexclude> excludes any
+database whose name matches the given Perl regular expression.
+Repeat this option as many time as needed.
 
 See C<--dbinclude> as well. If a database match both dbexclude and
 dbinclude arguments, it is excluded.
@@ -304,11 +304,11 @@ dbinclude arguments, it is excluded.
 =item B<--dbinclude> REGEXP
 
 Some services automatically check all the databases of your
-cluster (note: that does not mean they always need to connect on all
-of them to check them though). Some always exclude the 'postgres'
-database and templates. C<--dbinclude> allows to B<ONLY> check
-databases whose names match the given Perl regular expression. You
-can repeat this option as many time as needed.
+cluster (note: that does not imply that they always need to connect to all
+of them though). Some always exclude the 'postgres'
+database and templates. C<--dbinclude> checks B<ONLY>
+databases whose names match the given Perl regular expression.
+Repeat this option as many time as needed.
 
 See C<--dbexclude> as well. If a database match both dbexclude and
 dbinclude arguments, it is excluded.
@@ -345,7 +345,7 @@ Path to the C<psql> executable (default: "psql").
 
 =item B<--status-file> PATH
 
-Path to the file where service status information will be kept between
+Path to the file where service status information is kept between
 successive calls. Default is to save check_pgactivity.data in the same
 directory as the script.
 
@@ -361,7 +361,7 @@ C<check_pgactivity.out> in the same directory as the script.
 
 =item B<-t>, B<--timeout> TIMEOUT
 
-Timeout to use (default: "30s"). It can be specified as raw (in seconds) or as
+Timeout (default: "30s"), as raw (in seconds) or as
 an interval. This timeout will be used as C<statement_timeout> for psql and URL
 timeout for C<minor_version> service.
 
@@ -437,13 +437,13 @@ $0 = $PROGRAM;
 # Die on kill -1, -2, -3 or -15
 $SIG{'HUP'} = $SIG{'INT'} = $SIG{'QUIT'} = $SIG{'TERM'} = \&terminate;
 
-# handle SIG
+# Handle SIG
 sub terminate() {
     my ($signal) = @_;
     die ("SIG $signal caught");
 }
 
-# print the version and exit
+# Print the version and exit
 sub version() {
     printf "check_pgactivity version %s, Perl %vd\n",
         $VERSION, $^V;
@@ -576,8 +576,8 @@ sub dump_status_file {
     exit 0;
 }
 
-# Returns formatted size string with units.
-# Takes a size in bytes as parameter.
+# Return formatted size string with units.
+# Parameter: size in bytes
 sub to_size($) {
     my $val  = shift;
     my @units = qw{B kB MB GB TB PB EB};
@@ -599,8 +599,8 @@ sub to_size($) {
     return "${val}$units[$i]";
 }
 
-# Returns formatted time string with units.
-# Takes a duration in seconds as parameter.
+# Return formatted time string with units.
+# Parameter: duration in seconds
 sub to_interval($) {
     my $val      = shift;
     my $interval = '';
@@ -646,7 +646,7 @@ formats (eg. a size and a percentage).
 
 =item B<Percentage>
 
-If threshold is a percentage, the value should end with a '%' (no space).
+If THRESHOLD is a percentage, the value should end with a '%' (no space).
 For instance: 95%.
 
 =item B<Interval>
@@ -675,8 +675,7 @@ sub is_time($){
 }
 
 
-# Takes an interval (with units) as parameter and returns a duration in seconds.
-
+# Return a duration in seconds from an interval (with units).
 sub get_time($) {
     my $str_time = lc( shift() );
     my $ts       = 0;
@@ -732,7 +731,7 @@ The factor between units is 1024 bytes. Eg. C<1g = 1G = 1024*1024*1024.>
 
 =cut
 
-# Takes a size with unit as parameter and returns it in bytes.
+# Return a size in bytes from a size with unit.
 # If unit is '%', use the second parameter to compute the size in bytes.
 sub get_size($;$) {
     my $str_size = shift;
@@ -794,8 +793,8 @@ listing multiple services separated by a comma. Eg.
 
 =item B<Parameters> C<--host HOST>, C<--port PORT>, C<--user ROLE> or C<--dbname DATABASE>
 
-One of these parameters is enough to define a new host. If some
-parameters are missing, default values are used.
+One parameter is enough to define a new host. Default values are used
+for missing parameters.
 
 If multiple values are given, define as many host as maximum given values.
 
@@ -818,8 +817,8 @@ For instance:
 
   --dbservice s1 --host h1 --port 5433
 
-Means use "service=s1" and "host=h1 port=5433" in this order. If the service
-supports only one host, the second is ignored.
+means: use "service=s1" and "host=h1 port=5433" in this order. If the service
+supports only one host, the second host is ignored.
 
 =item B<Mutual exclusion between both methods>
 
@@ -846,7 +845,7 @@ sub parse_hosts(\%) {
 
     # Add as many hosts than necessary depending on given parameters
     # host/port/db/user.
-    # Any missing parameters will be set to its default value.
+    # Any missing parameter will be set to its default value.
     if (defined $args{'host'}
         or defined $args{'username'}
         or defined $args{'port'}
@@ -867,7 +866,7 @@ sub parse_hosts(\%) {
         my @dbports = split( /,/, $args{'port'} );
         my $nbhosts = max $#dbhosts, $#dbnames, $#dbusers, $#dbports;
 
-        # Take the first value for each connection properties as default.
+        # Take the first value for each connection property as default.
         # eg. "-h localhost -p 5432,5433" gives two hosts:
         #    * localhost:5432
         #    * localhost:5433
@@ -978,7 +977,7 @@ sub query($$;$$) {
     return \@res;
 }
 
-# Select the query appropriate query amongs an hash of query according to the
+# Select the appropriate query among an hash of queries according to the
 # backend version and execute it. Same argument order than in "query" sub.
 # Hash of query must be of this form:
 #   {
@@ -986,14 +985,14 @@ sub query($$;$$) {
 #     ...
 #   }
 #
-# Where pg_version_num is the minimum PostgreSQL version which can run the
-# query. The given versions are numeric. See "set_pgversion" about
+# where pg_version_num is the minimum PostgreSQL version which can run the
+# query. This version number is numeric. See "set_pgversion" about
 # how to compute a PostgreSQL num version, or globals $PG_VERSION_*.
 sub query_ver($\%;$) {
     my $host    = shift;
     my %queries = %{ shift() };
 
-    # shift returns undef if the db is not given. The value is then set in
+    # Shift returns undef if the db is not given. The value is then set in
     # "query" sub
     my $db = shift;
 
@@ -1007,8 +1006,8 @@ sub query_ver($\%;$) {
     return undef;
 }
 
-# Returns an array (not sorted) with all databases existing in given host but
-# templates and "postgres" one.
+# Return an (unsorted) array with all databases in given host but
+# templates and "postgres".
 sub get_all_dbname($) {
     my @dbs;
 
@@ -1330,8 +1329,8 @@ archive folder path to check. Obviously, it must have access to this
 folder at the filesystem level: you may have to execute it on the archiving
 server rather than on the PostgreSQL instance.
 
-Optional argument C<--suffix> allows you define the suffix of your archived
-WALs. Useful if they are compressed with an extension (eg. .gz, .bz2, ...).
+The optional argument C<--suffix> defines the suffix of your archived
+WALs; this is useful for compressed WALs (eg. .gz, .bz2, ...).
 Default is no suffix.
 
 This service needs to read the header of one of the archives to define how many
@@ -1344,8 +1343,8 @@ extensions .gz, .bz2, .xz, .zip or .7z using the following commands:
   unzip -qqp
   7z x -so
 
-If needed, you can provide your own command that writes the uncompressed file
-to standard output by using the C<--unarchiver> argument.
+If needed, provide your own command that writes the uncompressed file
+to standard output with the C<--unarchiver> argument.
 
 Optional argument C<--ignore-wal-size> skips the WAL size check. This is useful
 if your archived WALs are compressed and check_pgactivity is unable to guess the
@@ -1471,7 +1470,7 @@ sub check_archive_folder {
     $w_limit = get_time($args{'warning'});
     $c_limit = get_time($args{'critical'});
 
-    # sort by mtime
+    # Sort by mtime
     @filelist_sorted = sort { ($a->[1] <=> $b->[1]) || ($a->[0] cmp $b->[0]) } @filelist;
 
     $latest_wal_age = time() - $filelist_sorted[-1][1];
@@ -1491,7 +1490,7 @@ sub check_archive_folder {
             or die "could not read first WAL using '$args{'unarchiver'}': $!";
     }
 
-    # fallback on raw parsing of first WAL
+    # Fallback on raw parsing of first WAL
     open $fh, "<", "$args{'path'}/$filelist_sorted[-1][0]" unless defined $fh;
 
     read( $fh, $wal_version, 2 );
@@ -1538,7 +1537,7 @@ sub check_archive_folder {
         }
     }
 
-    # check ALL archives are here.
+    # Check ALL archives are here.
     for ( my $i=0, my $j=0; $i <= $#filelist_sorted ; $i++, $j++ ) {
         dprint ("Checking WAL $filelist_sorted[$i][0]\n");
         my $curr = sprintf('%08d%08X%08X%s',
@@ -1947,13 +1946,13 @@ sub check_backends {
             ) AS s }
     );
 
-    # warning and critical are mandatory.
+    # Warning and critical are mandatory.
     pod2usage(
         -message => "FATAL: you must specify critical and warning thresholds.",
         -exitval => 127
     ) unless defined $args{'warning'} and defined $args{'critical'} ;
 
-    # warning and critical must be raw or %.
+    # Warning and critical must be raw or %.
     pod2usage(
         -message => "FATAL: critical and warning thresholds only accept raw numbers or %.",
         -exitval => 127
@@ -2009,7 +2008,7 @@ B<insufficient privilege> appears when you are not allowed to see the statuses
 of other connections.
 
 This service supports the argument C<--exclude REGEX> to exclude queries
-matching the given regular expression from the check.
+matching the given regular expression.
 
 You can use multiple C<--exclude REGEX> arguments.
 
@@ -2063,7 +2062,7 @@ sub check_backends_status {
         'active'       => 'active'
     );
     my %queries      = (
-        # doesn't support "idle in transaction (aborted)" and xact age
+        # Doesn't support "idle in transaction (aborted)" and xact age
         $PG_VERSION_82 => q{
             SELECT CASE
                     WHEN s.current_query = '<IDLE>'
@@ -2087,7 +2086,7 @@ sub check_backends_status {
                 JOIN pg_database d ON d.oid=s.datid
             WHERE d.datallowconn
         },
-        # doesn't support "idle in transaction (aborted)"
+        # Doesn't support "idle in transaction (aborted)"
         $PG_VERSION_83 => q{
             SELECT CASE
                     WHEN s.current_query = '<IDLE>'
@@ -2114,7 +2113,7 @@ sub check_backends_status {
                 JOIN pg_database d ON d.oid=s.datid
             WHERE d.datallowconn
         },
-        # support everything
+        # Supports everything
         $PG_VERSION_90 => q{
             SELECT CASE
                     WHEN s.current_query = '<IDLE>'
@@ -2212,7 +2211,7 @@ sub check_backends_status {
         my $threshods_re
             = qr/(idle|idle_xact|aborted_xact|fastpath|active|waiting)\s*=\s*(\d+\s*[smhd]?)/i;
 
-        # warning and critical must be raw
+        # Warning and critical must be raw
         pod2usage(
             -message => "FATAL: critical and warning thresholds only accept a list of 'label=value' separated by comma.\n"
                 . "See documentation for more information.",
@@ -2388,7 +2387,7 @@ Check the percentage of pages written by backends since last check.
 
 This service uses the status file (see C<--status-file> parameter).
 
-Perfdata contains the ratio per second for each C<pg_stat_bgwriter> counters
+Perfdata contains the ratio per second for each C<pg_stat_bgwriter> counter
 since last execution. Units Nps for checkpoints, max written clean and fsyncs
 are the number of "events" per second.
 
@@ -2444,7 +2443,7 @@ sub check_bgwriter {
         }
     );
 
-    # warning and critical must be %.
+    # Warning and critical must be %.
     pod2usage(
         -message => "FATAL: critical and warning thresholds only accept percentages.",
         -exitval => 127
@@ -2567,10 +2566,10 @@ This service supports both C<--dbexclude> and C<--dbinclude> parameters.
 The 'postgres' database and templates are always excluded.
 
 It also supports a C<--exclude REGEX> parameter to exclude relations matching
-the given regular expression. The regular expression applies to
-"database.schema_name.relation_name". This allows you to filter either on a
-relation name for all schemas and databases, filter on a qualified named relation
-(schema + relation) for all databases or filter on a qualified named relation in
+a regular expression. The regular expression applies to
+"database.schema_name.relation_name". This enables you to filter either on a
+relation name for all schemas and databases, on a qualified named relation
+(schema + relation) for all databases or on a qualified named relation in
 only one database.
 
 You can use multiple C<--exclude REGEX> parameters.
@@ -2578,7 +2577,7 @@ You can use multiple C<--exclude REGEX> parameters.
 Perfdata will return the number of indexes of concern, by warning and critical
 threshold per database.
 
-A list of the bloated indexes detail will be returned after the
+A list of the bloated indexes will be returned after the
 perfdata. This list contains the fully qualified bloated index name, the
 estimated bloat size, the index size and the bloat percentage.
 
@@ -2669,7 +2668,7 @@ sub check_btree_bloat {
       ) AS sub4
       WHERE NOT is_na
       ORDER BY 2,3,4 },
-      # page header is 24 and block_size GUC, support index on expression
+      # Page header is 24 and block_size GUC, support index on expression
       $PG_VERSION_80 =>  q{
       SELECT current_database(), nspname AS schemaname, tblname, idxname, bs*(relpages)::bigint AS real_size,
         bs*(relpages-est_pages)::bigint AS bloat_size,
@@ -2742,7 +2741,7 @@ sub check_btree_bloat {
       ) AS sub4
       WHERE NOT is_na
       ORDER BY 2,3,4 },
-      # use ANY (i.indkey) w/o function call to cast from vector to array
+      # Use ANY (i.indkey) w/o function call to cast from vector to array
       $PG_VERSION_81 =>  q{
       SELECT current_database(), nspname AS schemaname, tblname, idxname, bs*(relpages)::bigint AS real_size,
         bs*(relpages-est_pages)::bigint AS bloat_size,
@@ -2813,7 +2812,7 @@ sub check_btree_bloat {
       ) AS sub4
       WHERE NOT is_na
       ORDER BY 2,3,4 },
-      # new column pg_index.indisvalid
+      # New column pg_index.indisvalid
       $PG_VERSION_82 =>  q{
       SELECT current_database(), nspname AS schemaname, tblname, idxname, bs*(relpages)::bigint AS real_size,
         bs*(relpages-est_pages_ff) AS bloat_size,
@@ -2895,7 +2894,7 @@ sub check_btree_bloat {
       ORDER BY 2,3,4 }
     );
 
-    # warning and critical are mandatory.
+    # Warning and critical are mandatory.
     pod2usage(
         -message => "FATAL: you must specify critical and warning thresholds.",
         -exitval => 127
@@ -2962,7 +2961,7 @@ sub check_btree_bloat {
         push @perfdata => [ "idx bloated in $db", $idx_bloated ];
     }
 
-    # we use the warning count for the **total** number of bloated index
+    # We use the warning count for the **total** number of bloated indexes
     return critical $me,
         [ "$w_count/$total_index index(es) bloated" ],
         [ @perfdata ], [ @longmsg ]
@@ -3242,7 +3241,7 @@ sub check_connection {
 
 Perform the given user query.
 
-The query is specified with the C<--query> parameter. The first column will be
+Specify the query with C<--query>. The first column will be
 used to perform the test for the status if warning and critical are provided.
 
 The warning and critical arguments are optional. They can be of format integer
@@ -3281,7 +3280,7 @@ sub check_custom_query {
 
     # FIXME: add warn/crit threshold in perfdata
 
-    # query must be given
+    # Query must be given
     pod2usage(
         -message => 'FATAL: you must set parameter "--query" with "custom_query" service.',
         -exitval => 127
@@ -3399,7 +3398,7 @@ This service uses the status file (see C<--status-file> parameter).
 Perfdata contains the size of each database.
 
 Critical and Warning thresholds accept either a raw number, a percentage, or a
-size (eg. 2.5G).  They are applied on the size difference for each database
+size (eg. 2.5G). They are applied on the size difference for each database
 since the last execution. The aim is to detect unexpected database size
 variation.
 
@@ -3425,7 +3424,7 @@ sub check_database_size {
     my $sql        = q{SELECT datname, pg_database_size(datname)
         FROM pg_database};
 
-    # warning and critical are mandatory.
+    # Warning and critical are mandatory.
     pod2usage(
         -message => "FATAL: you must specify critical and warning thresholds.",
         -exitval => 127
@@ -3525,7 +3524,7 @@ sub check_hit_ratio {
         WHERE d.datallowconn AND NOT d.datistemplate
         ORDER BY datname};
 
-    # warning and critical must be %.
+    # Warning and critical must be %.
     if ( defined $args{'warning'} and defined $args{'critical'} ) {
         pod2usage(
             -message => "FATAL: critical and warning thresholds only accept percentages.",
@@ -3568,7 +3567,7 @@ sub check_hit_ratio {
         $hit_delta  = $new_db_hitratio{ $db->[0] }[0] - $db_hitratio{ $db->[0] }[0];
         $read_delta = $new_db_hitratio{ $db->[0] }[1] - $db_hitratio{ $db->[0] }[1];
 
-        # metrics moved since last run
+        # Metrics moved since last run
         if ( $hit_delta + $read_delta > 0 ) {
             $ratio = 100 * $hit_delta / ( $hit_delta + $read_delta );
             # rounding the fractional part to 2 digits
@@ -3577,13 +3576,13 @@ sub check_hit_ratio {
 
             @perfdata_value = ( $db->[0], $ratio, '%' );
         }
-        # no activity since last run, use previous hit ratio
-        # this should not happen as the query itself hit/read.
+        # Without activity since last run, use previous hit ratio.
+        # This should not happen as the query itself hits/reads.
         elsif ( $db->[1] + $db->[2] > 0 ) {
             $ratio = $db_hitratio{ $db->[0] }[2];
             @perfdata_value = ( $db->[0], $ratio, '%' );
         }
-        # this database has no reported activity yet
+        # This database has no reported activity yet
         else {
             $ratio='NaN';
             $new_db_hitratio{ $db->[0] }[2] = 'NaN';
@@ -3701,14 +3700,14 @@ sub check_hot_standby_delta {
         is_compat $host, 'hot_standby_delta', $PG_VERSION_90 or exit 1;
     }
 
-    # fetch LSNs
+    # Fetch LSNs
     foreach my $host (@hosts) {
         $host->{'rs'} = \@{ query_ver( $host, %queries )->[0] };
         $num_clusters += $host->{'rs'}[0];
         $master_location = $host->{'rs'}[1] if $host->{'rs'}[0];
     }
 
-    # check all clusters have the same major version.
+    # Check that all clusters have the same major version.
     foreach my $host ( @hosts ) {
         return critical($me, ["PostgreSQL major versions differ amongst clusters ($hosts[0]{'version'} vs. $host->{'version'})."] )
             if substr($hosts[0]{'version_num'}, 0, -2) != substr($host->{'version_num'}, 0, -2);
@@ -3739,13 +3738,13 @@ sub check_hot_standby_delta {
 
     $wal_size = 4294967296 if $hosts[0]{'version_num'} >= $PG_VERSION_93;
 
-    # we recycle this one to count the number of slaves
+    # We recycle this one to count the number of slaves
     $num_clusters = 0;
 
     $master_location =~ m{^([0-9A-F]+)/([0-9A-F]+)$};
     $master_location = ( $wal_size * hex($1) ) + hex($2);
 
-    # compute deltas
+    # Compute deltas
     foreach my $host (@hosts) {
         next if $host->{'rs'}[0];
         my ($a, $b) = split(/\//, $host->{'rs'}[1]);
@@ -3882,7 +3881,7 @@ sub check_is_master {
 
 =item B<invalid_indexes>
 
-Check if there is any invalid indexes in a database.
+Check if there is there are invalid indexes in a database.
 
 A critical alert is raised if an invalid index is detected.
 
@@ -3890,17 +3889,17 @@ This service supports both C<--dbexclude>  and C<--dbinclude> parameters.
 The 'postgres' database and templates are always excluded.
 
 This service supports a C<--exclude REGEX>  parameter to exclude indexes
-matching the given regular expression. The regular expression applies to
-"database.schema_name.index_name". This allows you to filter either on a
-relation name for all schemas and databases, filter on a qualified named
-index (schema + index) for all databases or filter on a qualified named
+matching a regular expression. The regular expression applies to
+"database.schema_name.index_name". This enables you to filter either on a
+relation name for all schemas and databases, on a qualified named
+index (schema + index) for all databases or on a qualified named
 index in only one database.
 
 You can use multiple C<--exclude REGEX>  parameters.
 
 Perfdata will return the number of invalid indexes per database.
 
-A list of invalid indexes detail will be returned after the
+A list of invalid indexes will be returned after the
 perfdata. This list contains the fully qualified index name. If
 excluded index is set, the number of exclude indexes is returned.
 
@@ -4547,7 +4546,7 @@ sub check_longest_query {
         }
     );
 
-    # warning and critical are mandatory.
+    # Warning and critical are mandatory.
     pod2usage(
         -message => "FATAL: you must specify critical and warning thresholds.",
         -exitval => 127
@@ -4643,10 +4642,10 @@ Checks oldest database by transaction age.
 Critical and Warning thresholds are optional. They accept either a raw number
 or percentage for PostgreSQL 8.2 and more. If percentage is given, the
 thresholds are computed based on the "autovacuum_freeze_max_age" parameter.
-100% means some table(s) reached the maximum age and will trigger an autovacuum
+100% means that some table(s) reached the maximum age and will trigger an autovacuum
 freeze. Percentage thresholds should therefore be greater than 100%.
 
-Even with no threshold, this service will raise a critical alert if one database
+Even with no threshold, this service will raise a critical alert if a database
 has a negative age.
 
 Perfdata returns the age of each database.
@@ -4769,37 +4768,33 @@ sub check_max_freeze_age {
 
 Check if the cluster is running the most recent minor version of PostgreSQL.
 
-Latest version of PostgreSQL can be fetched from PostgreSQL official
-website if check_pgactivity can access it, or is given as a parameter.
+Latest versions of PostgreSQL can be fetched from PostgreSQL official
+website if check_pgactivity has access to it, or must be given as a parameter.
 
 Without C<--critical> or C<--warning> parameters, this service attempts
-to fetch the latest version online. You can optionally set the path to
-your prefered program using the parameter C<--path> (eg.
-C<--path '/usr/bin/wget'>). Supported programs are: GET, wget, curl,
-fetch, lynx, links, links2.
+to fetch the latest version numbers online. A critical alert is raised if the
+minor version is not the most recent.
 
-For the online version, a critical alert is raised if the minor version is not
-the most recent.
+You can optionally set the path to your prefered retrieval tool using
+the C<--path> parameter (eg. C<--path '/usr/bin/wget'>). Supported programs are:
+GET, wget, curl, fetch, lynx, links, links2.
 
-If you do not want to (or cannot) query the PostgreSQL website, you
-must provide the expected version using either C<--warning> OR
-C<--critical>. The given format must be one or more MINOR versions
-seperated by anything but a '.'.
+If you do not want to (or cannot) query the PostgreSQL website,
+provide the expected versions using either C<--warning> OR
+C<--critical>, depending on which return value you want to raise.
 
-For instance, the following parameters are all equivalent:
+The given string must contain one or more MINOR versions separated by anything
+but a '.'. For instance, the following parameters are all equivalent:
 
   --critical "10.1 9.6.6 9.5.10 9.4.15 9.3.20 9.2.24 9.1.24 9.0.23 8.4.22"
   --critical "10.1, 9.6.6, 9.5.10, 9.4.15, 9.3.20, 9.2.24, 9.1.24, 9.0.23, 8.4.22"
   --critical "10.1,9.6.6,9.5.10,9.4.15,9.3.20,9.2.24,9.1.24,9.0.23,8.4.22"
   --critical "10.1/9.6.6/9.5.10/9.4.15/9.3.20/9.2.24/9.1.24/9.0.23/8.4.22"
 
-Any value other than 3 numbers separated by dots (before version 10.x)
+Any other value than 3 numbers separated by dots (before version 10.x)
 or 2 numbers separated by dots (version 10 and above) will be ignored.
 If the running PostgreSQL major version is not found, the service raises an
 unknown status.
-
-Using the offline version raises either a critical or a warning depending
-on which one has been set.
 
 Perfdata returns the numerical version of PostgreSQL.
 
@@ -4863,7 +4858,7 @@ sub check_minor_version {
             $rss = qx{$get_methods{$meth} 2>/dev/null};
         }
         else {
-            # fetch the latest versions
+            # Fetch the latest versions
             foreach my $exe (values %get_methods) {
                 $rss = qx{$exe 2>/dev/null};
 
@@ -4874,10 +4869,10 @@ sub check_minor_version {
         return unknown($me, [ 'Could not fetch PostgreSQL latest versions' ])
             unless $rss;
 
-        # versions until 9.6
+        # Versions until 9.6
         $latest_versions{"$1.$2"} = [$1 * 10000 + $2 * 100 + $3, "$1.$2.$3"]
             while ($rss =~ m/<title>(\d+)\.(\d+)\.(\d+)/g  && $1<10);
-        # versions from 10
+        # Versions from 10
         $latest_versions{"$1"} = [$1 * 10000 + $2, "$1.$2"]
             while ($rss =~ m/<title>(\d+)\.(\d+)/g && $1>=10);
 
@@ -4968,7 +4963,7 @@ sub check_oldest_2pc {
     };
 
 
-    # warning and critical are mandatory.
+    # Warning and critical are mandatory.
     pod2usage(
         -message => "FATAL: you must specify critical and warning thresholds.",
         -exitval => 127
@@ -5099,12 +5094,12 @@ sub check_oldest_idlexact {
         }
     );
 
-    # exclude some apps
+    # Exclude some apps
     if(defined $args{'exclude'}[0]){
         $queries{$PG_VERSION_92}.=" WHERE a.application_name NOT IN ('".join("','", split(',', $args{'exclude'}[0]))."')";
     }
 
-    # warning and critical are mandatory.
+    # Warning and critical are mandatory.
     pod2usage(
         -message => "FATAL: you must specify critical and warning thresholds.",
         -exitval => 127
@@ -5196,7 +5191,7 @@ Check the age and size of backups.
 This service uses the status file (see C<--status-file> parameter).
 
 The C<--path> argument contains the location to the backup folder. The supported
-format is a glob pattern to match every folder or file you need to check. If
+format is a glob pattern matching every folder or file that you need to check. If
 appropriate, the probe should be run as a user with sufficient privileges to check
 for the existence of files.
 
@@ -5220,16 +5215,16 @@ Tip : For compatibility with pg_back, you should use
 		C<--global-pattern> 'pg_global_[0-9-_]+.sql'
 
 The C<--critical> and C<--warning> thresholds are optional. They accept a list
-of 'metric=value' separated by a comma. Available metric are C<oldest> and
+of 'metric=value' separated by a comma. Available metrics are C<oldest> and
 C<newest>, respectively the age of the oldest and newest backups, and C<size>,
 which must be the maximum variation of size since the last check, expressed
 as a size or a percentage. C<mindeltasize>, expressed in B, is the minimum variation
 of size needed to raise an alert.
 
-This service supports the arguments C<--dbinclude> and C<--dbexclude>, to
+This service supports the C<--dbinclude> and C<--dbexclude> arguments, to
 respectively test for the presence of include or exclude files.
 
-The argument C<--exclude> allows to exclude files younger than the given
+The argument C<--exclude> enables you to exclude files younger than an
 interval. This is useful to ignore files from a backup in progress. Eg., if
 your backup process takes 2h, set this to '125m'.
 
@@ -5492,7 +5487,7 @@ sub check_pg_dump_backup {
 
 =item B<pga_version>
 
-Checks if this script is running the given version of check_pgactivity.
+Check if this script is running the given version of check_pgactivity.
 You must provide the expected version using either C<--warning> OR
 C<--critical>.
 
@@ -5534,14 +5529,14 @@ sub check_pga_version {
 
 =item B<pgdata_permission> (8.2+)
 
-Check that the data directory of the instance has 700 as permission, and belongs
-to the system user running postgresql currently.
+Check that the instance data directory rights are 700, and belongs
+to the system user currently running postgresql.
 
-Checking permission works on all Unix systems.
+The check on rights works on all Unix systems.
 
-Checking user works only in Linux systems (it uses /proc to not add
-dependencies). Before 9.3, you need to give the expected owner using the
-C<--uid> argument. Without this argument, the owner will not be checked.
+Checking the user only works on Linux systems (it uses /proc to avoid
+dependencies). Before 9.3, you need to provide the expected owner using the
+C<--uid> argument, or the owner will not be checked.
 
 Required privileges: unprivileged role; the system user must be able to read
 the folder containing PGDATA: B<the service has to be executed locally on the monitored server.>
@@ -5616,7 +5611,7 @@ sub check_pgdata_permission {
         };
         @rs = @{ query ( $hosts[0], $query ) };
 
-        # As there are not the usual separators, we only get a big record
+        # As the usual separators are not there, we only get a big record
         # separated with \n
         # Find the record beginning with Uid and get the third column
         # (containing EUID)
@@ -5645,11 +5640,11 @@ sub check_pgdata_permission {
 
 =item B<replication_slots> (9.4+)
 
-Check the number of WAL files retained by each replication slots.
+Check the number of WAL files retained by each replication slot.
 
 Perfdata returns the number of WAL that each replication slot has to keep.
 
-Critical and Warning thresholds are optional. If provided, the number of WAL
+Critical and Warning thresholds are optional. If provided, the number of WALs
 kept by each replication slot will be compared to the threshold.
 These thresholds only accept a raw number.
 
@@ -5759,8 +5754,7 @@ SLOTS_LOOP: foreach my $row (@rs) {
 
 =item B<settings> (9.0+)
 
-Check if the settings changed compared to the known ones from last call of this
-service.
+Check if the current settings have changed since they were stored in the service file.
 
 The "known" settings are recorded during the very first call of the service.
 To update the known settings after a configuration change, call this service
@@ -5770,7 +5764,7 @@ No perfdata.
 
 Critical and Warning thresholds are ignored.
 
-A CRITICAL is raised if at least one parameter changed.
+A Critical is raised if at least one parameter changed.
 
 Required privileges: unprivileged role.
 
@@ -5818,7 +5812,7 @@ sub check_settings {
 
     %settings = %{ load( $hosts[0], 'settings', $args{'status-file'} ) || {} };
 
-    # save setting on the very first call
+    # Save settings on the very first call
     $args{'save'} = 1 unless %settings;
 
 PARAM_LOOP: foreach my $row (@rs) {
@@ -5845,7 +5839,7 @@ PARAM_LOOP: foreach my $row (@rs) {
 
     }
 
-    # gather remaining settings that has not been processed
+    # Gather remaining settings that has not been processed
     foreach my $s ( keys %settings ) {
         foreach my $p ( keys %{ $settings{$s} } ) {
             my $prefix = ( $p eq "*@*"? ":" : " $p:" );
@@ -5870,10 +5864,10 @@ PARAM_LOOP: foreach my $row (@rs) {
 
 =item B<sequences_exhausted> (7.4+)
 
-Check all sequences assigned to a column (the smallserial,serial and bigserial types),
-and raise an alarm if the column or sequences gets too close to its maximum value.
+Check all sequences assigned to a column (the smallserial, serial and bigserial types),
+and raise an alarm if the column or sequences gets too close to the maximum value.
 
-Perfdata returns the sequence(s) that may have trigger the alert.
+Perfdata returns the sequences that trigger the alert.
 
 The 'postgres' database and templates are always excluded.
 
@@ -5909,7 +5903,7 @@ sub check_sequences_exhausted {
     unless ( $args{'warning'}  =~ m/^([0-9.]+)%$/
           and  $args{'critical'} =~ m/^([0-9.]+)%$/)
     {
-        # warning and critical must be %.
+        # Warning and critical must be %.
         pod2usage(
             -message => "FATAL: critical and warning thresholds only accept %.",
             -exitval => 127
@@ -5971,7 +5965,7 @@ WHERE seq.relkind='S'
             # We got a second array: for each record, sequence, last value and max value (in this sequence)
             @rs2 = @{ query ( $hosts[0], $query_elements, $db ) };
 
-            # To do things easier, we store all this in a hash table with all sequences, merging these two queries
+            # To make things easier, we store all of this in a hash table with all sequences, merging these two queries
             foreach my $record(@rs) {
                 $sequences{$record->[1]}->{TYPE}=$record->[0];
                 $sequences{$record->[1]}->{COLNAME}=$record->[2];
@@ -5985,7 +5979,7 @@ WHERE seq.relkind='S'
         }
         else
         {
-            # Version 10.0 and bigger: we have pg_sequence now, and functions to get info directly from the sequence
+            # Version 10.0 and bigger: we now have pg_sequence and functions to get the info directly
             my $query = q{
 SET search_path TO 'pg_catalog';
 SELECT
@@ -6026,8 +6020,8 @@ SELECT
         foreach my $seq (keys %sequences)
         {
             my $max_value;
-            # We don't make the difference between positive and negative limit
-            # It's only 1 of difference, so these is no point…
+            # We don't make the difference between positive and negative limits
+            # It's only 1 of difference, so there is no point…
             if ($sequences{$seq}->{TYPE} eq 'int2') {
                 $max_value=32767;
             }
@@ -6039,7 +6033,7 @@ SELECT
             }
             else
             {
-                # We're not going to try to guess. This is not a serial, trust the dba/developper
+                # We're not going to try to guess. This is not a serial, trust the dba/developer
                 delete $sequences{$seq};
                 next;
             }
@@ -6062,7 +6056,7 @@ SELECT
             my $real_max_value=$max_val_seq<=$max_value?$max_val_seq:$max_value;
             $sequences{$seq}->{REALMAXVALUE}=$real_max_value;
         }
-        # We have inverted values for the reverse-order sequences. We don't have to think about it anymore
+        # We have inverted values for the reverse-order sequences. We don't have to think about it anymore.
 
         foreach my $seq(keys %sequences) {
             # First, get all info
@@ -6096,7 +6090,7 @@ SELECT
 =item B<stat_snapshot_age> (9.5+)
 
 Check the age of the statistics snapshot (statistics collector's statistics).
-This probe help to detect a frozen stats collector process.
+This probe helps to detect a frozen stats collector process.
 
 Perfdata returns the statistics snapshot age.
 
@@ -6168,14 +6162,14 @@ Optional argument C<--slave> allows you to specify some slaves that MUST be
 connected. This argument can be used as many times as desired to check multiple
 slave connections, or you can specify multiple slaves connections at one time,
 using comma separated values. Both methods can be used in a single call. The
-given values must be of the form "APPLICATION_NAME IP".
-Either of the two following examples will check for the presence of two slaves:
+provided values must be of the form "APPLICATION_NAME IP".
+Both following examples will check for the presence of two slaves:
 
   --slave 'slave1 192.168.1.11' --slave 'slave2 192.168.1.12'
   --slave 'slave1 192.168.1.11','slave2 192.168.1.12'
 
-This service supports a C<--exclude REGEX>  parameter to exclude every result
-matching the given regular expression on application_name or address ip fields.
+This service supports a C<--exclude REGEX> parameter to exclude every result
+matching a regular expression on application_name or IP address fields.
 
 You can use multiple C<--exclude REGEX>  parameters.
 
@@ -6271,7 +6265,7 @@ sub check_streaming_delta {
         $c_limit_replayed = get_size( $c_limit_replayed );
     }
 
-    # compute deltas
+    # Compute deltas
     foreach my $host (@rs) {
         my $send_delta;
         my $write_delta;
@@ -6367,17 +6361,17 @@ This service supports both C<--dbexclude>  and C<--dbinclude> parameters.
 The 'postgres' database and templates are always excluded.
 
 This service supports a C<--exclude REGEX>  parameter to exclude relations
-matching the given regular expression. The regular expression applies to
-"database.schema_name.relation_name". This allows you to filter either on a
-relation name for all schemas and databases, filter on a qualified named relation
-(schema + relation) for all databases or filter on a qualified named relation in
+matching a regular expression. The regular expression applies to
+"database.schema_name.relation_name". This enables you to filter either on a
+relation name for all schemas and databases, on a qualified named relation
+(schema + relation) for all databases or on a qualified named relation in
 only one database.
 
 You can use multiple C<--exclude REGEX>  parameters.
 
 Perfdata will return the number of unlogged tables per database.
 
-A list of the unlogged tables detail will be returned after the
+A list of the unlogged tables will be returned after the
 perfdata. This list contains the fully qualified table name. If
 C<--exclude REGEX> is set, the number of excluded tables is returned.
 
@@ -6489,20 +6483,20 @@ The 'postgres' database and templates are always excluded.
 
 This service supports a C<--exclude REGEX> parameter to exclude relations
 matching the given regular expression. The regular expression applies to
-"database.schema_name.relation_name". This allows you to filter either on a
-relation name for all schemas and databases, filter on a qualified named relation
-(schema + relation) for all databases or filter on a qualified named relation in
+"database.schema_name.relation_name". This enables you to filter either on a
+relation name for all schemas and databases, on a qualified named relation
+(schema + relation) for all databases or on a qualified named relation in
 only one database.
 
 You can use multiple C<--exclude REGEX> parameters.
 
 B<Warning>: With a non-superuser role, this service can only check the tables
-the given role is granted to read!
+that the given role is granted to read!
 
 Perfdata will return the number of tables matching the warning and critical
 thresholds, per database.
 
-A list of the bloated tables detail will be returned after the
+A list of the bloated tables will be returned after the
 perfdata. This list contains the fully qualified bloated table name, the
 estimated bloat size, the table size and the bloat percentage.
 
@@ -6529,10 +6523,10 @@ sub check_table_bloat {
     my @dbexclude = @{ $args{'dbexclude'} };
     my $me        = 'POSTGRES_TABLE_BLOAT';
     my %queries   = (
-        # The following queries comes straight from:
+        # The following queries come straight from:
         #   https://github.com/ioguix/pgsql-bloat-estimation
 
-        # text types header is 4, page header is 20 and block size 8192 for 7.4.
+        # Text types header is 4, page header is 20 and block size 8192 for 7.4.
         # page header is 24 and GUC block_size appears for 8.0
         $PG_VERSION_74 =>  q{
           SELECT current_database(), ns.nspname AS schemaname, tblname, bs*tblpages AS real_size,
@@ -6584,7 +6578,7 @@ sub check_table_bloat {
           ) AS s3 JOIN pg_namespace AS ns ON ns.oid = s3.relnamespace
           WHERE NOT is_na
           ORDER BY ns.nspname,s3.tblname},
-        # variable block size, page header is 24 and text types header is 1 or 4 for 8.3+
+        # Variable block size, page header is 24 and text types header is 1 or 4 for 8.3+
         $PG_VERSION_82 =>  q{
           SELECT current_database(), ns.nspname AS schemaname, tblname, bs*tblpages AS real_size,
             (tblpages-est_tblpages)*bs AS extra_size,
@@ -6638,7 +6632,7 @@ sub check_table_bloat {
           ) AS s3 JOIN pg_namespace AS ns ON ns.oid = s3.relnamespace
           WHERE NOT is_na
           ORDER BY ns.nspname,s3.tblname},
-        # exclude inherited stats
+        # Exclude inherited stats
         $PG_VERSION_90 =>  q{
           SELECT current_database(), nspname AS schemaname, tblname, bs*tblpages AS real_size,
             (tblpages-est_tblpages)*bs AS extra_size,
@@ -6690,7 +6684,7 @@ sub check_table_bloat {
           ORDER BY ns.nspname,s3.tblname}
     );
 
-    # warning and critical are mandatory.
+    # Warning and critical are mandatory.
     pod2usage(
         -message => "FATAL: you must specify critical and warning thresholds.",
         -exitval => 127
@@ -6756,7 +6750,7 @@ sub check_table_bloat {
         push @perfdata => [ "table bloated in $db", $tbl_bloated ];
     }
 
-    # we use the warning count for the **total** number of bloated tables
+    # We use the warning count for the **total** number of bloated tables
     return critical $me,
         [ "$w_count/$total_tbl table(s) bloated" ],
         \@perfdata, [ @longmsg ]
@@ -6787,7 +6781,7 @@ Critical and Warning thresholds are optional. They accept either a number
 of file (raw value), a size (unit is B<mandatory> to define a size) or both
 values separated by a comma.
 
-Threshols applied on current temp files being created AND the number/size
+Thresholds are applied on current temp files being created AND the number/size
 of temp files created since last execution.
 
 Required privileges: superuser (<10); on 10+ an unprivileged role 
@@ -6843,7 +6837,7 @@ sub check_temp_files {
           ) AS agg
           GROUP BY 1,2
         },
-        # temp folders are per tablespace
+        # Temp folders are per tablespace
         $PG_VERSION_83 => q{
           SELECT 'live', agg.spcname, sum(CASE WHEN agg.tmpfile <> '' THEN 1 ELSE 0 END),
             sum(CASE
@@ -6935,8 +6929,8 @@ sub check_temp_files {
           WHERE datallowconn
         },
         # Specific query to handle superuser and non-superuser roles in PostgreSQL 10
-	# the WHERE current_setting('is_superuser')::bool clause does all the magic
-	# Also, the previous query was not working with PostgreSQL 10
+        # the WHERE current_setting('is_superuser')::bool clause does all the magic
+        # Also, the previous query was not working with PostgreSQL 10
         $PG_VERSION_100 => q{
           SELECT 'live', agg.spcname, count(agg.tmpfile),
                  SUM((pg_stat_file(agg.dir||'/'||agg.tmpfile)).size) AS SIZE
@@ -7212,8 +7206,8 @@ sub check_uptime {
 Check the number of WAL files.
 
 Perfdata returns the total number of WAL files, current number of written WAL,
-the current number of recycled WAL, the rate of WAL written to disk since
-last execution on master clusters and the current timeline.
+the current number of recycled WAL, the rate of WAL written to disk since the
+last execution on the master cluster and the current timeline.
 
 Critical and Warning thresholds accept either a raw number of files or a
 percentage. In case of percentage, the limit is computed based on:
@@ -7546,7 +7540,7 @@ pod2usage(
     ( defined $args{'critical'} and not defined $args{'warning'} )
     or ( not defined $args{'critical'} and defined $args{'warning'} ));
 
-# query, type and reverse are only allowed with "custom_query" service
+# Query, type and reverse are only allowed with "custom_query" service
 pod2usage(
     -message => 'FATAL: query, type and reverse are only allowed with "custom_query" service.',
     -exitval => 127
@@ -7588,7 +7582,7 @@ unless ($args{'psql'}) {
     }
 }
 
-# pre-compile given regexp
+# Pre-compile given regexp
 unless (($args{'service'} eq 'pg_dump_backup') or ($args{'service'} eq 'oldest_idlexact')) {
     $_ = qr/$_/ for @{ $args{'exclude'} } ;
     $_ = qr/$_/ for @{ $args{'dbinclude'} };
