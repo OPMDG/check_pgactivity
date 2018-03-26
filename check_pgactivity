@@ -117,7 +117,6 @@ my %services = (
         'sub'  => \&check_table_unlogged,
         'desc' => 'Check unlogged tables'
     },
-
     'wal_files' => {
         'sub'  => \&check_wal_files,
         'desc' => 'Total number of WAL files.',
@@ -219,6 +218,10 @@ my %services = (
     'pga_version' => {
         'sub'  => \&check_pga_version,
         'desc' => 'Check the version of this check_pgactivity script.'
+    },
+    'relation_size' => {
+        'sub'  => \&check_relation_size,
+        'desc' => 'Check relation sizes.'
     },
     'is_replay_paused' => {
         'sub'  => \&check_is_replay_paused,
@@ -394,6 +397,7 @@ my %args = (
     'dbservice'             => undef,
     'warning'               => undef,
     'critical'              => undef,
+    'include'               => [],
     'exclude'               => [],
     'dbexclude'             => [],
     'dbinclude'             => [],
@@ -427,7 +431,9 @@ my %args = (
     'dump-status-file'      => 0,
     'dump-bin-file'         => undef,
     'format'                => 'nagios',
-    'uid'                   => undef
+    'uid'                   => undef,
+    'agg'                   => undef,
+    'details'               => undef
 );
 
 # Set name of the program without path*
@@ -5533,6 +5539,436 @@ sub check_pga_version {
     return ok( $me, [ sprintf($msg, "", $^V) ] );
 }
 
+=item B<relation_size> (9.1+)
+
+Return relations sizes
+
+Warning and critical thresholds are optional. They accept a
+raw number(for a size) or a size (eg. 125M). They are compared to the
+individual object sizes reported.
+
+This service supports both C<--dbexclude> and C<--dbinclude> parameters.
+The 'postgres' database and templates are always excluded.
+C<--dbinclude> is mandatory ( set '\w' as value if you really want to connect
+to all databases).
+
+This service supports both C<--include> and C<--exclude REGEX> parameters
+to include or exclude relations matching the given regular expression.
+The regular expression applies to "database.schema_name.relation_name".
+If a relation  matches both exclude and include arguments, it is excluded.
+This enables you to filter either on a relation name for all schemas and
+databases, on a qualified named relation (schema + relation) for all databases
+or on a qualified named relation in only one database.
+You can use multiple C<--include REGEX> and C<--exclude REGEX> parameters.
+
+You'll usually target a few tables with C<--include> and only one database
+with C<--dbinclude> to limit useless connections to other databases.
+
+Perfdata will return the fully qualifed relation names,
+and the different sizes (in bytes) according to the following criteria:
+
+By default, all relations are shown with their relation size (including main, vm, fsm
+and toast sizes). Indexes are listed separately from their tables (this is important
+for including relations). Partitioned tables are not aggregated: with declarative
+partitioning the main table will not appear; with inheritance partitioning, only
+its size will appear; in both cases the partitions will appear separately.
+If a partitioned table is set in C<--include>, you'll see its partitions and indexes
+(if not excluded by C<--exclude> later).
+
+With C<--agg> parameter, partitions of both partitioning types are aggregated
+under the partitioned table name. Individual partitions do not appear.
+Indexes are aggregated as 'idx' line along the table itself.
+
+With C<--details> parameter, the relation size is exploded into main, vm, fsm
+and toast sizes, and a size including all indexes. Individual indexes do not appear
+anymore.
+
+You can mix C<--agg> and C<--details>.
+
+Limits on aggregation of partitions: If a table inherits from two or more
+different tables, it will be aggregated only with the first one listed in pg_inherits.
+For subpartitions, you can only aggregate on the main table or list the individual
+partitions, not on a partition containing subpartitions.
+
+Required privileges: unprivileged user able to log in necessary databases.
+Grants on tables are not necessary.
+
+=cut
+
+sub check_relation_size {
+    my @perfdata;
+    my @longmsg;
+    my @rs;
+    my @hosts;
+    my @all_db;
+    my $schema;
+    my $relation;
+    my $kind;
+    my $size_type;
+    my $mother_table;
+    my $is_partition;
+    my $is_partitioned_table;
+    my $rel_size;
+    my $agg_size;
+    my $size;
+    my $agg_search_criteria;
+    my $where     = '';
+    my $size_type_list;
+    my $w_limit;
+    my $c_limit;
+    my $w_count   = 0;
+    my $c_count   = 0;
+    my %args      = %{ $_[0] };
+    my @include = @{ $args{'include'} };  # NOT pre-compiled
+    my @exclude = @{ $args{'exclude'} };  # NOT pre-compiled
+    my @dbinclude = @{ $args{'dbinclude'} };
+    my @dbexclude = @{ $args{'dbexclude'} };
+    my $me        = 'POSTGRES_RELATION_SIZE';
+    my %queries   = (
+        # TODO: 8.4 does not know pg_relation_size, 8.1 (does not support WITH recursive),
+
+        # 9.1 query is the same as PG 10, without declarative partitioning ie without pg_class.relispartition and relkind='p'
+        $PG_VERSION_91 => q{
+          WITH RECURSIVE partitions_list (head, partition_oid)
+            AS (
+            SELECT n1.inhparent AS head, n1.inhparent  AS partition_oid
+              FROM
+              (        SELECT h.inhparent FROM pg_inherits h
+                EXCEPT SELECT inhrelid    FROM pg_inherits) n1
+            UNION ALL
+            SELECT a.head, i.inhrelid AS partition_oid
+            FROM   pg_inherits i
+            INNER  JOIN partitions_list a ON (i.inhparent = a.partition_oid)
+            WHERE  i.inhseqno = 1
+            ),
+          partitions_list_with_indexes AS (
+            SELECT head, partition_oid FROM partitions_list
+            UNION ALL
+            SELECT DISTINCT head, indexrelid
+            FROM partitions_list p INNER JOIN pg_index x ON (x.indrelid = p.partition_oid OR x.indrelid = p.head)
+          )
+          SELECT xyz.* FROM
+          (
+          SELECT
+            rels.schema_name, rels.relname, rels.oid, rels.relkind, rels.is_partition, rels.is_partitioned_table,
+            CASE is_partitioned_table WHEN TRUE THEN 'partitioned table' ELSE CASE rels.relkind WHEN 'r' THEN 'table' WHEN 'm' THEN 'materialized view' WHEN 'i' THEN 'index' END END AS kind,
+            v.size_type,
+            COALESCE(CASE v.size_type
+              WHEN 'rel'   THEN pg_table_size(rels.oid)
+              WHEN 'tot'   THEN pg_total_relation_size(rels.oid)
+              WHEN 'main'  THEN pg_relation_size(rels.oid, 'main')
+              WHEN 'vm'    THEN pg_relation_size(rels.oid, 'vm')
+              WHEN 'fsm'   THEN pg_relation_size(rels.oid, 'fsm')
+              WHEN 'idx'   THEN pg_indexes_size(rels.oid)
+              WHEN 'toast' THEN pg_total_relation_size(rels.reltoastrelid)
+            END,0) AS rel_size,
+            rels.mother_table_name,
+            rels.agg_search_criteria,
+            COALESCE(CASE v.size_type
+              WHEN 'rel'   THEN sum(pg_table_size(g.partition_oid))
+              WHEN 'tot'   THEN sum(pg_total_relation_size(g.partition_oid))
+              WHEN 'main'  THEN sum(pg_relation_size(g.partition_oid, 'main'))
+              WHEN 'vm'    THEN sum(pg_relation_size(g.partition_oid, 'vm'))
+              WHEN 'fsm'   THEN sum(pg_relation_size(g.partition_oid, 'fsm'))
+              WHEN 'idx'   THEN sum(pg_indexes_size(g.partition_oid))
+              WHEN 'toast' THEN sum(pg_total_relation_size(pt.reltoastrelid))
+            END,0) AS part_agg_size
+        FROM (
+            SELECT
+                n.nspname AS schema_name,
+                c.relname,
+                c.oid,
+                c.relkind,
+                c.reltoastrelid,
+                (c.relhassubclass) AS is_partitioned_table,
+                (c.relkind IN ('r')
+                 AND (EXISTS (SELECT 42 FROM pg_inherits WHERE inhrelid = c.oid))
+                ) AS is_partition,
+                coalesce(m.mother_table_oid, ix.indrelid) AS mother_table_oid,
+                coalesce(m.mother_table_oid, ix.indrelid)::regclass::text AS mother_table_name,
+                CASE
+                  WHEN m.mother_table_oid IS NULL AND c.relkind != 'i' THEN c.relname -- table itself, un-partitioned
+                  WHEN m.mother_table_oid IS NOT NULL THEN m.mother_table_oid::regclass::text
+                ELSE NULL END AS agg_search_criteria
+            FROM
+              pg_catalog.pg_class c
+              LEFT JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace
+              LEFT JOIN LATERAL (SELECT head AS mother_table_oid FROM partitions_list_with_indexes g2 WHERE g2.partition_oid =  c.oid LIMIT 1 )  m ON TRUE
+              LEFT JOIN pg_index ix ON (ix.indexrelid = c.oid AND c.relkind = 'i')
+            WHERE
+              c.relkind IN ('r', 'm', 'i')
+              AND nspname NOT IN ('pg_catalog', 'information_schema')
+              AND nspname !~ '^pg_toast'
+              ) rels
+            LEFT JOIN partitions_list g ON (rels.oid = g.head AND rels.is_partitioned_table)
+            LEFT JOIN pg_class pt ON (g.partition_oid = pt.oid)
+            CROSS JOIN (VALUES __PARAM_SIZE_TYPES ) v (size_type)
+            WHERE (NOT (rels.relkind='i' AND size_type IN ('vm','idx','toast') ) )
+                __PARAM_INCLUDE_EXCLUDE
+            GROUP BY 1,2,3,4,5,6,7,8,9,10,11
+            ) xyz
+            WHERE xyz.rel_size>0 OR xyz.part_agg_size>0
+            ORDER BY mother_table_name, schema_name,relname, size_type
+        },
+        # Includes declarative partitioning
+        $PG_VERSION_100 => q{
+        WITH RECURSIVE partitions_list (head, partition_oid)
+          -- list of (sub)partitions and (grand)children of a partitioned table
+          -- always needed, even without --agg, to filter on a partitioned table
+          AS (
+          SELECT n1.inhparent AS head, n1.inhparent  AS partition_oid
+            FROM -- main table, without parents
+            (        SELECT h.inhparent FROM pg_inherits h
+              EXCEPT SELECT inhrelid    FROM pg_inherits) n1
+          UNION ALL
+          -- children and partitions of current table/partitioned table
+          SELECT a.head, i.inhrelid AS partition_oid
+          FROM   pg_inherits i
+          INNER  JOIN partitions_list a ON (i.inhparent = a.partition_oid)
+          WHERE  i.inhseqno = 1 -- in case of multiple inheritance, ignore 2nd and later
+          ),
+        partitions_list_with_indexes AS (
+          -- add indexes of partitions (including main table) to the partitions tree
+          SELECT head, partition_oid FROM partitions_list
+          UNION ALL
+          SELECT DISTINCT head, indexrelid
+          FROM partitions_list p INNER JOIN pg_index x ON (x.indrelid = p.partition_oid OR x.indrelid = p.head)
+          -- TODO : see how it works on PG11 with indexes across partitions
+        )
+        SELECT xyz.* FROM
+        (
+        SELECT
+          rels.schema_name, rels.relname, rels.oid, rels.relkind, rels.is_partition, rels.is_partitioned_table,
+          -- rels.ispartition, rels.hassubclass, rels.toastrelid, g.partition_oid
+          CASE is_partitioned_table WHEN TRUE THEN 'partitioned table' ELSE CASE rels.relkind WHEN 'r' THEN 'table' WHEN 'm' THEN 'materialized view' WHEN 'i' THEN 'index' END END AS kind,
+          v.size_type,
+          --    tot = rel + idx  ;  rel = main+vm+fsm+toast
+          COALESCE(CASE v.size_type
+            WHEN 'rel'   THEN pg_table_size(rels.oid)
+            WHEN 'tot'   THEN pg_total_relation_size(rels.oid)
+            WHEN 'main'  THEN pg_relation_size(rels.oid, 'main')
+            WHEN 'vm'    THEN pg_relation_size(rels.oid, 'vm')
+            WHEN 'fsm'   THEN pg_relation_size(rels.oid, 'fsm')
+            WHEN 'idx'   THEN pg_indexes_size(rels.oid)
+            WHEN 'toast' THEN pg_total_relation_size(rels.reltoastrelid)
+          END,0) AS rel_size,
+          rels.mother_table_name,
+          rels.agg_search_criteria,
+          COALESCE(CASE v.size_type
+            -- sum info on the partitions
+            WHEN 'rel'   THEN sum(pg_table_size(g.partition_oid))
+            WHEN 'tot'   THEN sum(pg_total_relation_size(g.partition_oid))
+            WHEN 'main'  THEN sum(pg_relation_size(g.partition_oid, 'main'))
+            WHEN 'vm'    THEN sum(pg_relation_size(g.partition_oid, 'vm'))
+            WHEN 'fsm'   THEN sum(pg_relation_size(g.partition_oid, 'fsm'))
+            WHEN 'idx'   THEN sum(pg_indexes_size(g.partition_oid))
+            WHEN 'toast' THEN sum(pg_total_relation_size(pt.reltoastrelid))
+          END,0) AS part_agg_size
+      FROM (
+          -- main list of tables
+          SELECT
+              --current_database(),
+              n.nspname AS schema_name,
+              c.relname,
+              c.oid,
+              c.relkind,
+              --c.relispartition,
+              --c.relhassubclass,
+              c.reltoastrelid,
+              (c.relkind = 'p' OR c.relhassubclass) AS is_partitioned_table,
+              (c.relkind IN ('r','p')
+               AND (c.relispartition OR EXISTS (SELECT 42 FROM pg_inherits WHERE inhrelid = c.oid))
+              ) AS is_partition,
+              -- table at the top of subpartitioning or inheritance tree, or table of this index
+              coalesce(m.mother_table_oid, ix.indrelid) AS mother_table_oid,
+              coalesce(m.mother_table_oid, ix.indrelid)::regclass::text AS mother_table_name,
+              -- search criteria when aggregating partitions into
+              CASE
+                WHEN m.mother_table_oid IS NULL AND c.relkind != 'i' THEN c.relname -- table itself, un-partitioned
+                WHEN m.mother_table_oid IS NOT NULL THEN m.mother_table_oid::regclass::text
+              ELSE NULL END AS agg_search_criteria
+          FROM
+            pg_catalog.pg_class c
+            LEFT JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace
+            -- mother table: either the one at the top of the partition tree
+            LEFT JOIN LATERAL (SELECT head AS mother_table_oid FROM partitions_list_with_indexes g2 WHERE g2.partition_oid =  c.oid LIMIT 1 )  m ON TRUE
+            -- or, for an index, its table
+            LEFT JOIN pg_index ix ON (ix.indexrelid = c.oid AND c.relkind = 'i')
+          WHERE
+            c.relkind IN ('r', 'm', 'i', 'p')
+            -- avoid system objects
+            AND nspname NOT IN ('pg_catalog', 'information_schema')
+            AND nspname !~ '^pg_toast'
+            ) rels
+          -- for partitions sizes
+          LEFT JOIN partitions_list g ON (rels.oid = g.head AND rels.is_partitioned_table)
+          LEFT JOIN pg_class pt ON (g.partition_oid = pt.oid)  -- properties of partitions, notably toast table
+          -- different types of size
+          CROSS JOIN (VALUES __PARAM_SIZE_TYPES ) v (size_type)
+          -- filtering
+          WHERE (NOT (rels.relkind='i' AND size_type IN ('vm','idx','toast') ) )
+              __PARAM_INCLUDE_EXCLUDE
+          GROUP BY 1,2,3,4,5,6,7,8,9,10,11
+          ) xyz
+          -- prefiltering of useless data
+          WHERE xyz.rel_size>0 OR xyz.part_agg_size>0
+          ORDER BY mother_table_name, schema_name,relname, size_type
+        }
+    );
+
+    pod2usage(
+        -message => "FATAL: you must specify at least one --dbinclude directive",
+        -exitval => 127
+    ) unless @dbinclude > 0 ;
+
+    @hosts = @{ parse_hosts %args };
+
+    pod2usage(
+        -message => 'FATAL: you must give only one host with service "relation_size".',
+        -exitval => 127
+    ) if @hosts != 1;
+
+    @all_db = @{ get_all_dbname( $hosts[0] ) };
+
+    # Building WHERE clause from --include
+    if (@include) {
+      $where = 'AND (';
+      foreach my $include_re ( @include ) {
+          if ( defined $args{'agg'} ) { $where = "$where agg_search_criteria ~ '$include_re' OR "; }
+          else {$where = "$where rels.relname ~ '$include_re' OR rels.mother_table_name ~ '$include_re' OR ";}
+      }
+      $where = $where.' FALSE)';
+    }
+    # Building WHERE clause from --exclude
+    if (@exclude) {
+      $where = "$where AND (";
+      foreach my $exclude_re ( @{ $args{'exclude'} } ) {
+          if ( defined $args{'agg'} ) { $where = "$where agg_search_criteria !~ '$exclude_re' AND "; }
+          else {$where = "$where rels.relname !~ '$exclude_re' AND rels.mother_table_name !~ '$exclude_re' AND ";}
+      }
+      $where = $where.' TRUE)';
+    }
+    dprint "where clause: $where \n";
+
+    # No use to generate all size types
+    if (defined $args{'details'}) { $size_type_list = "('main'),('vm'),('fsm'),('idx'),('toast')"; }
+    elsif (defined $args{'agg'})  { $size_type_list = "('tot')"; }
+    else                          { $size_type_list = "('rel')"; }
+
+    foreach my $v (keys %queries ) {
+      my $sq ;
+      $queries{$v} =~ s/__PARAM_INCLUDE_EXCLUDE/$where/g ;
+      $queries{$v} =~ s/__PARAM_SIZE_TYPES/$size_type_list/g ;
+    }
+
+    # Iterate over all db
+    ALLDB_LOOP: foreach my $db (sort @all_db) {
+        my @rc;
+        my $nb_tbl      = 0;
+
+        next ALLDB_LOOP if grep { $db =~ /$_/ } @dbexclude;
+        next ALLDB_LOOP if @dbinclude and not grep { $db =~ /$_/ } @dbinclude;
+
+        @rc = @{ query_ver( $hosts[0], %queries, $db ) };
+
+        # One line per relation (or aggregated relation) and per size_type
+        RELATIONS_LOOP: foreach my $rel (@rc) {
+
+            $schema = $rel->[0];
+            $relation = $rel->[1];
+
+            # is the table a partition ? (it can have its own subpartitions or children)
+            $is_partition = $rel->[4];
+            # is it partitioned table ? (it can already be a partition)
+            $is_partitioned_table = $rel->[5];
+
+            # table, partitioned_table (ie, found to have partitions or children), index,
+            # materialized view (to be treated same as a table)
+            # With --agg or --details we do not want indexes
+            $kind = $rel->[6];
+
+            # default: show 'rel' , indexes are listed separately (with their own main)
+            # --agg : show only 'tot' (indexes not listed separately)
+            # --details : show 'vm','fsm','main','toast','idx' (indexes not listed separately)
+            # --agg --details : same as --details
+            # With --agg or --details we do not want indexes
+            $size_type = $rel->[7];
+            if (not (
+            ( defined $args{'details'} and $kind ne 'index' and 'vm fsm main toast idx ' =~ $size_type )
+            or (defined $args{'agg'} and not defined $args{'details'} and $kind ne 'index' and  $size_type eq 'tot' )
+            or (not defined $args{'agg'} and not defined $args{'details'} and $size_type eq 'rel' )
+            )){
+                next RELATIONS_LOOP;
+            }
+
+            # If the relation is a part of a partitioned table
+            # (a real partitioned table) or inherits from a table, "mother" is the table
+            # at the top of the hierarchy, whatever the number of subpartitioning
+            # or inheritance levels. This goes for indexes of partitions too. For an
+            # index of a plain table, "mother" is its table.
+            # So --including the mother enables us to see partitions, indexes...
+            $mother_table = $rel->[9];
+            # Relation size for this "size_type"
+            $rel_size = $rel->[8];
+            # Aggregated size for this "size_type" at mother table level
+            $agg_size = $rel->[11];
+            # Mother table (if exists) or table name, for filtering with --agg
+            $agg_search_criteria = $rel->[10];
+
+            dprint ( "$db.$schema.$relation  (in $mother_table),  $size_type : $rel_size (among $agg_size) - $is_partition - $agg_search_criteria - $kind \n"  );
+
+            # Displayed size:
+            # Without --details or --agg, this the relation size
+            # --agg show only aggregated data (by default : 'tot')
+            # for mother table or plain tables
+            # --details has no effect here
+            if (defined $args{'agg'} and $is_partition eq 'f' and $is_partitioned_table eq 't' ) {
+              $size = $agg_size +0;
+            } elsif (defined $args{'agg'} and $is_partition eq 't') {
+              next RELATIONS_LOOP ;
+            } else {
+              $size = $rel_size +0 ;
+            };
+
+            # If zero: useless
+            if ( $size == 0 ) { next RELATIONS_LOOP ; }
+
+            # thresholds
+            if (defined $args{'warning'})  { $w_limit = get_size( $args{'warning'},  $size ); }
+            if (defined $args{'critical'}) { $c_limit = get_size( $args{'critical'}, $size ); }
+
+            if    (defined $args{'critical'} and $size > $c_limit) {
+              $c_count++ ;
+              push @longmsg => sprintf "%s.%s.%s > %i (critical) ",
+                                  $db, $schema, $relation,
+                                  $c_limit;
+            }
+            elsif (defined $args{'warning'}  and $size > $w_limit) {
+              $w_count++ ;
+              push @longmsg => sprintf "%s.%s.%s > %i (warning) ",
+                                  $db, $schema, $relation,
+                                  $w_limit;
+            }
+
+            push @perfdata => [ "$db\.$schema\.$relation\.$size_type", $size, 'B', $w_limit, $c_limit ];
+
+        }
+    }
+
+    # We use the warning count for the **total** number of bloated tables
+    return critical $me,
+        [ "$c_count relation(s) critically oversized" ],
+        \@perfdata, [ @longmsg ]
+            if $c_count > 0;
+    return warning $me,
+        [ "$w_count relation(s) oversized" ],
+        \@perfdata, [ @longmsg ]
+            if $w_count > 0;
+    return ok $me, [ "Relation sizes ok" ], \@perfdata;
+}
+
+
+
 =item B<pgdata_permission> (8.2+)
 
 Check that the instance data directory rights are 700, and belongs
@@ -7534,14 +7970,17 @@ sub check_wal_files {
 Getopt::Long::Configure('bundling');
 GetOptions(
     \%args,
+        'agg!',
         'checkpoint_segments=i',
         'critical|c=s',
         'dbexclude=s',
         'dbinclude=s',
         'debug!',
+        'details!',
         'dump-status-file!',
         'dump-bin-file:s',
         'effective_cache_size=i',
+        'include=s',
         'exclude=s',
         'format|F=s',
         'global-pattern=s',
@@ -7613,11 +8052,11 @@ pod2usage(
 ) if not -d $args{'tmpdir'} or not -x $args{'tmpdir'};
 
 # Both critical and warning must be given is optional,
-# but for pga_version, minor_version and uptime which use only one of them or none
+# but for services which use only one of them or none
 pod2usage(
     -message => 'FATAL: you must provide both warning and critical thresholds.',
     -exitval => 127
-) if $args{'service'} !~ m/^(pga_version|minor_version|uptime)$/ and (
+) if $args{'service'} !~ m/^(pga_version|minor_version|relation_size|uptime)$/ and (
     ( defined $args{'critical'} and not defined $args{'warning'} )
     or ( not defined $args{'critical'} and defined $args{'warning'} ));
 
@@ -7635,7 +8074,8 @@ pod2usage(
 ) if ( (defined $args{'work_mem'} or defined $args{'maintenance_work_mem'} or defined $args{'shared_buffers'}
     or defined $args{'wal_buffers'} or defined $args{'checkpoint_segments'} or defined $args{'effective_cache_size'}
     or $args{'no_check_autovacuum'} == 1 or $args{'no_check_fsync'} == 1 or $args{'no_check_enable'} ==1
-    or $args{'no_check_track_counts'} == 1) and ( $args{'service'} ne 'configuration' ) );
+    or $args{'no_check_track_counts'} == 1) and ( $args{'service'} ne 'configuration' )
+    );
 
 
 # Check "archive_folder" specific args --ignore-wal-size and --suffix
@@ -7652,6 +8092,13 @@ pod2usage(
     -exitval => 127
 ) if scalar @{ $args{'slave'} }  and $args{'service'} ne 'streaming_delta';
 
+# Check "relation_size" specific args --include --agg --details
+pod2usage(
+    -message => 'FATAL: "include", "agg", "details" are only allowed with "relation_size" service.',
+    -exitval => 127
+) if (scalar @{ $args{'include'} } or $args{'agg'} or $args{'details'} )
+      and $args{'service'} ne 'relation_size';
+
 
 # Set psql absolute path
 unless ($args{'psql'}) {
@@ -7663,10 +8110,14 @@ unless ($args{'psql'}) {
     }
 }
 
-# Pre-compile given regexp
-unless (($args{'service'} eq 'pg_dump_backup') or ($args{'service'} eq 'oldest_idlexact')) {
-    $_ = qr/$_/ for @{ $args{'exclude'} } ;
-    $_ = qr/$_/ for @{ $args{'dbinclude'} };
+# Pre-compile given regexp except for some services
+unless (($args{'service'} eq 'pg_dump_backup')
+     or ($args{'service'} eq 'oldest_idlexact')) {
+    unless ($args{'service'} eq 'relation_size') {
+      $_ = qr/$_/ for @{ $args{'exclude'} } ;
+      $_ = qr/$_/ for @{ $args{'include'} } ;
+    }  ;
+    $_ = qr/$_/ for @{ $args{'dbinclude'} } ;
 }
 
 $_ = qr/$_/ for @{ $args{'dbexclude'} };
