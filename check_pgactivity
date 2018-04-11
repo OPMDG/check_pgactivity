@@ -7255,18 +7255,27 @@ DB_LOOP: foreach my $stat (@rs) {
 
 =item B<uptime> (8.1+)
 
-Returns time since postmaster start (from 8.1) and configuration reload (from 8.4).
+Returns time since postmaster start ("uptime", from 8.1),
+since configuration reload (from 8.4),
+and since shared memory initialization (from 10).
+
+Please note that the uptime is unaffected when the postmaster resets
+all its children (for example after a kill -9 on a process or a failure).
+
+From 10+, the 'time since shared memory init' aims at detecting this situation:
+in fact we use the age of the oldest non-client child process (usually checkpointer,
+writer or startup). This needs pg_monitor access to read pg_stat_activity.
 
 Critical and Warning thresholds are optional. If both are set, Critical is
-raised when the postmaster uptime is less than the critical threshold, and
-Warning is raised when the configuration uptime is less than the warning thereshold.
+raised when the postmaster uptime or the time since shared memory initialization
+is less than the critical threshold.
+Warning is raised when the time since configuration reload is less than the warning threshold.
 If only a warning or critical threshold is given, it will be used for both cases.
 Obviously these alerts will disappear from themselves once enough time has passed.
 
-Perfdata contain the duration since postmaster start and duration since
-configuration reload.
+Perfdata contain the three values, or NULL if not available for this version.
 
-Required privileges: unprivileged role.
+Required privileges: pg_monitor on PG10+; otherwise unprivileged role.
 
 =cut
 
@@ -7277,9 +7286,11 @@ sub check_uptime {
     my @msg_warn;
     my @msg_crit;
     my $uptime;
+    my $shmem_init_time;
     my $reload_conf_time;
     my $reload_conf_flag;
-    my $msg_uptime ;
+    my $msg_uptime;
+    my $msg_shmem_init_time;
     my $msg_reload_conf;
     my $c_limit;
     my $w_limit;
@@ -7291,10 +7302,20 @@ sub check_uptime {
                    pg_postmaster_start_time() as postmaster_start_time
         },
         $PG_VERSION_84 => q{
-            SELECT extract('epoch' from (current_timestamp - pg_postmaster_start_time())) AS time_since_postmaster_star,
+            SELECT extract('epoch' from (current_timestamp - pg_postmaster_start_time())) AS time_since_postmaster_start,
                    extract('epoch' from (current_timestamp - pg_conf_load_time())) AS time_since_conf_reload,
                    pg_postmaster_start_time(),
                    pg_conf_load_time()
+        },
+		$PG_VERSION_100 => q{
+            SELECT extract('epoch' from (current_timestamp - pg_postmaster_start_time())) AS time_since_postmaster_start,
+                   extract('epoch' from (current_timestamp - pg_conf_load_time())) AS time_since_conf_reload,
+                   pg_postmaster_start_time(),
+                   pg_conf_load_time(),
+                   -- oldest child (usually checkpointer, startup...) 
+                   extract('epoch' from (current_timestamp - min(backend_start))) AS age_oldest_child_process,
+                   min(backend_start) AS oldest_child_process
+            FROM pg_stat_activity WHERE backend_type != 'client backend'
         }
     );
 
@@ -7311,23 +7332,37 @@ sub check_uptime {
     $w_limit = get_time $args{'warning'}  if (defined $args{'warning'});
 
     @rs = @{ query_ver( $hosts[0], %queries ) };
-    # uptime since postmaster start
     $uptime = int( $rs[0][0] );
-    $msg_uptime = "instance started for ".to_interval($uptime)."s (since $rs[0][2])" ;
+    $msg_uptime = "postmaster started for ".to_interval($uptime)."s (since $rs[0][2])" ;
     push @perfdata => [ 'postmaster uptime', $uptime , 's', undef, undef, 0 ];
+    
     # time since configuration reload
     $reload_conf_flag = !(check_compat $hosts[0], $PG_VERSION_81, $PG_VERSION_84);
     if ($reload_conf_flag) {
       $reload_conf_time = int( $rs[0][1] );
-      $msg_reload_conf = "configuration reloaded for ".to_interval($reload_conf_time)."s (since $rs[0][3])";
+      $msg_reload_conf = "configuration reloaded for ".to_interval($reload_conf_time)." (since $rs[0][3])";
       push @perfdata => [ 'configuration uptime', $reload_conf_time , 's',
           undef, undef, 0 ];
     } else {
         $msg_reload_conf = "";
     };
 
-   if ( defined $c_limit and $uptime < $c_limit ) {
+    # time since last share memory reinit
+    if ( check_compat $hosts[0], $PG_VERSION_100 ) {
+	  $shmem_init_time = int ( $rs[0][4] );
+	  $msg_shmem_init_time = "shared memory initialized since ".to_interval($shmem_init_time)." (since $rs[0][5])";
+	  push @perfdata => [ 'shmem reinit time', $shmem_init_time , 's',
+          undef, undef, 0 ];
+    } else {
+        $msg_shmem_init_time = "";
+	}
+
+    if ( defined $c_limit and defined $shmem_init_time and $shmem_init_time < $c_limit ) {
+       push @msg_crit => $msg_shmem_init_time;
+    } elsif ( defined $c_limit and $uptime < $c_limit ) {
        push @msg_crit => $msg_uptime;
+    } elsif (not defined $c_limit  and defined $w_limit and defined $shmem_init_time and $shmem_init_time < $w_limit ) {
+        push @msg_warn => $msg_uptime;
     } elsif (not defined $c_limit  and defined $w_limit and $uptime < $w_limit ) {
         push @msg_warn => $msg_uptime;
     } elsif ($reload_conf_flag and defined $c_limit and not defined $w_limit and $reload_conf_time < $c_limit ) {
@@ -7338,7 +7373,7 @@ sub check_uptime {
 
     return critical ( $me, \@msg_crit, \@perfdata) if ( @msg_crit ) ;
     return warning  ( $me, \@msg_warn, \@perfdata) if ( @msg_warn ) ;
-    return ok( $me, [ "$msg_uptime $msg_reload_conf"  ], \@perfdata );
+    return ok( $me, [ "$msg_uptime $msg_reload_conf $msg_shmem_init_time"  ], \@perfdata );
 }
 
 =item B<wal_files> (8.1+)
