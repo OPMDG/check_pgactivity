@@ -120,6 +120,10 @@ my %services = (
         'sub'  => \&check_database_size,
         'desc' => 'Variation of database sizes.',
     },
+    'extensions_versions' => {
+        'sub'  => \&check_extensions_versions,
+        'desc' => 'Check that installed extensions are up-to-date.'
+    },
     'table_unlogged' => {
         'sub'  => \&check_table_unlogged,
         'desc' => 'Check unlogged tables'
@@ -3896,6 +3900,77 @@ sub check_database_size {
     return status_warning( $me, \@msg_warn, \@perfdata ) if scalar @msg_warn > 0;
 
     return status_ok( $me, [ "$db_checked database(s) checked" ], \@perfdata );
+}
+
+
+=item B<extensions_versions> (9.1+)
+
+Check all extensions installed in all databases (including templates)
+and raise a Critical alamr if the current version is not the default
+version available on the instance (according to pg_available_extensions).
+
+Typically, it is used to detect forgotten extension upgrades after package
+upgrades or a pg_upgrade.
+
+Perfdata returns the number of outdated extensions in each database.
+
+This service supports both C<--dbexclude> and C<--dbinclude> parameters.
+
+Required privileges: unprivileged role able to log in all databases
+
+=cut
+sub check_extensions_versions {
+   my $me       = 'POSTGRES_CHECK_EXT_VERSIONS';
+   my @rs;
+   my @perfdata;
+   my @msg;
+   my @longmsg;
+   my @hosts;
+   my %args     = %{ $_[0] };
+   my @all_db;
+   my $nb;
+   my $nb_tot_outdated_ext = 0 ;
+   my @dbinclude = @{ $args{'dbinclude'} };
+   my @dbexclude = @{ $args{'dbexclude'} };
+   my $query  = q{SELECT name, default_version, installed_version
+                  FROM pg_available_extensions
+                  WHERE installed_version != default_version};
+
+   @hosts = @{ parse_hosts %args };
+
+   pod2usage(
+       -message => 'FATAL: you must give only one host with service "extensions_versions".',
+       -exitval => 127
+   ) if @hosts != 1;
+
+   is_compat $hosts[0], 'extensions_versions', $PG_VERSION_91 or exit 1;
+
+   @all_db = @{ get_all_dbname( $hosts[0], 'all_dbs' ) };
+
+   # Iterate over all db
+   ALLDB_LOOP: foreach my $db (sort @all_db) {
+       next ALLDB_LOOP if grep { $db =~ /$_/ } @dbexclude;
+       next ALLDB_LOOP if @dbinclude and not grep { $db =~ /$_/ } @dbinclude;
+
+       # For each record: extension, default, installed
+       @rs = @{ query ( $hosts[0], $query, $db ) };
+       $nb = scalar keys @rs;
+       dprint ("db $db: $nb outdated ext ");
+       $nb_tot_outdated_ext += $nb;
+
+       #' label'=value[UOM];[warn];[crit];[min];[max]
+       if ( $nb >0 ) { push @perfdata => [ $db, scalar keys @rs ] };
+
+       foreach my $ext (sort @rs) {
+           push @longmsg, "$db.$ext->[0]: $ext->[2] (should be: $ext->[1]) ";
+       }
+   }
+
+   if ( $nb_tot_outdated_ext > 0  ) {
+     return critical( $me, \@msg, \@perfdata, \@longmsg ) ;
+   } else {
+     return ok( $me, \@msg, \@perfdata, \@longmsg );
+   }
 }
 
 
