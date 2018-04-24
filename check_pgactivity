@@ -5869,6 +5869,7 @@ and raise an alarm if the column or sequences gets too close to the maximum valu
 
 Perfdata returns the sequences that trigger the alert.
 
+This service supports both C<--dbexclude> and C<--dbinclude> parameters.
 The 'postgres' database and templates are always excluded.
 
 Critical and Warning thresholds accept a percentage of the sequence filled.
