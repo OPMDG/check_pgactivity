@@ -1002,5 +1002,5 @@ For license terms, see the LICENSE provided with the sources.
 =head2 AUTHORS
 
 Author: Open PostgreSQL Monitoring Development Group
-Copyright: (C) 2012-2017 Open PostgreSQL Monitoring Development Group
+Copyright: (C) 2012-2018 Open PostgreSQL Monitoring Development Group
 
