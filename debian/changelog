@@ -1,0 +1,5 @@
+check-pgactivity (2.4-1) UNRELEASED; urgency=medium
+
+  * Initial release. (Closes: #901794)
+
+ -- Christophe Courtois <christophe.courtois@dalibo.com>  Sat, 12 May 2018 18:02:39 +0200

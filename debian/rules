@@ -1,0 +1,16 @@
+#!/usr/bin/make -f
+
+%:
+	dh $@
+
+override_dh_install:
+	dh_testdir
+	dh_testroot
+	dh_prep  
+	dh_installdirs
+	cp -l check_pgactivity $(CURDIR)/debian/check-pgactivity/usr/lib/nagios/plugins
+# TODO
+#	dh_installman pigz.1
+#	ln -sf pigz.1.gz debian/pigz/usr/share/man/man1/unpigz.1.gz
+
+

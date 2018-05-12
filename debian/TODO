@@ -1,0 +1,5 @@
+* common OPMDG upstream address: for now it's Thomas
+* lintian last warnings
+* man page (add in dirs, add in rules) 
+* debian/watch
+* wget or ? for service version: Suggest?
