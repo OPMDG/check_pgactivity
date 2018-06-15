@@ -1423,7 +1423,7 @@ sub check_archive_folder {
         '94' => 53374,
         '95' => 53383,
         '96' => 53395,
-        '100' => 53397
+        '100' => 53399
     );
 
     # "path" argument must be given
