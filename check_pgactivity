@@ -1471,7 +1471,10 @@ sub check_archive_folder {
     $c_limit = get_time($args{'critical'});
 
     # Sort by mtime
-    @filelist_sorted = sort { ($a->[1] <=> $b->[1]) || ($a->[0] cmp $b->[0]) } @filelist;
+    @filelist_sorted = sort { ($a->[1] <=> $b->[1]) || ($a->[0] cmp $b->[0]) }
+        grep{ (defined($_->[0]) and defined($_->[1]))
+                or die "Cannot read WAL files"
+        } @filelist;
 
     $latest_wal_age = time() - $filelist_sorted[-1][1];
 
@@ -1490,8 +1493,11 @@ sub check_archive_folder {
             or die "could not read first WAL using '$args{'unarchiver'}': $!";
     }
 
-    # Fallback on raw parsing of first WAL
-    open $fh, "<", "$args{'path'}/$filelist_sorted[-1][0]" unless defined $fh;
+    else {
+        # Fallback on raw parsing of first WAL
+        open $fh, "<", "$args{'path'}/$filelist_sorted[-1][0]"
+            or die ("Could not read first WAL: $!\n");
+    }
 
     read( $fh, $wal_version, 2 );
     close $fh;
