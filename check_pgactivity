@@ -5646,15 +5646,19 @@ sub check_pgdata_permission {
 
 =item B<replication_slots> (9.4+)
 
-Check the number of WAL files retained by each replication slot.
+Check the number of WAL files and pg_replslot files retained by each replication slots.
 
-Perfdata returns the number of WAL that each replication slot has to keep.
+Perfdata returns the number of WAL and pg_replslot files that each replication
+slot has to keep. This service needs superuser privileges since v10 to obtain
+pg_replslot files. Unless replslot_files will be at 0.
 
-Critical and Warning thresholds are optional. If provided, the number of WALs
-kept by each replication slot will be compared to the threshold.
-These thresholds only accept a raw number.
+Critical and Warning thresholds are optional. They accept either a raw number (for
+backward compatibility, only wal threshold will be used) or a list 'wal=value'
+and 'replslot=value'. Respectively number of kept wal files or number of files
+in pg_replslot for each slot.
 
-Required privileges: unprivileged role.
+Required privileges: superuser to monitor logical replication on v10+; otherwise
+unprivileged role.
 
 =cut
 
@@ -5662,11 +5666,15 @@ sub check_replication_slots {
     my $me  = 'POSTGRES_REPLICATION_SLOTS';
     my @msg_crit;
     my @msg_warn;
+    my @longmsg;
     my @perfdata;
     my @hosts;
     my @rs;
     my %args = %{ $_[0] };
-
+    my %warn;
+    my %crit;
+    my @perf_wal_limits;
+    my @perf_replslot_limits;
     my %queries = (
        $PG_VERSION_94 => q{
         WITH wal_size AS (
@@ -5674,7 +5682,7 @@ sub check_replication_slots {
             FROM pg_settings
             WHERE name = 'wal_segment_size'
         )
-        SELECT slot.slot_name,
+        SELECT slot.slot_name,slot.slot_type,
         COALESCE(
             floor(
                 (pg_xlog_location_diff(
@@ -5686,76 +5694,142 @@ sub check_replication_slots {
                 )
                 / (s.val)
             ),0
-        )
+        ) replslot_wal_keep,null as replslot_files
         FROM pg_replication_slots slot
         CROSS JOIN wal_size s},
+
+#  slot_name  | slot_type | replslot_wal_keep | replslot_files
+#-------------+-----------+-------------------+----------------
+# node_a_slot | physical  |                 0 |
+# slot2       | logical   |                -1 |
+
        $PG_VERSION_100 => q{
         WITH wal_size AS (
-            SELECT current_setting('wal_block_size')::int * setting::int AS val
-            FROM pg_settings
-            WHERE name = 'wal_segment_size'
+           SELECT current_setting('wal_block_size')::int * setting::int AS val
+           FROM pg_settings
+           WHERE name = 'wal_segment_size'
         )
-        SELECT slot.slot_name,
-        COALESCE(
-            floor(
-                (pg_wal_lsn_diff(
-                     CASE WHEN pg_is_in_recovery() THEN pg_last_wal_receive_lsn()
-                          ELSE pg_current_wal_lsn()
-                      END,
-		     slot.restart_lsn)
-                - (pg_walfile_name_offset(restart_lsn)).file_offset
-                )
-                / (s.val)
-            ),0
-        )
-        FROM pg_replication_slots slot
-        CROSS JOIN wal_size s}
+        SELECT slot_name,slot_type,replslot_wal_keep,
+              count(slot_file) as replslot_files -- 0 if not superuser
+        FROM
+          (SELECT slot.slot_name,
+                  CASE WHEN slot_file <> 'state' THEN 1 END AS slot_file,
+                  slot_type,
+          COALESCE(
+                 floor(
+                     (pg_wal_lsn_diff(pg_current_wal_lsn(), slot.restart_lsn)
+                     - (pg_walfile_name_offset(restart_lsn)).file_offset
+                     )
+                     / (s.val)
+                 ),0
+             ) as replslot_wal_keep
+            FROM pg_replication_slots slot
+            -- trick when user is not superuser
+            LEFT JOIN (
+              SELECT slot2.slot_name,
+                    pg_ls_dir('pg_replslot/'||slot2.slot_name) as slot_file
+                FROM pg_replication_slots slot2
+                WHERE current_setting('is_superuser')::bool) files(slot_name,slot_file)
+            ON  slot.slot_name=files.slot_name
+        CROSS JOIN wal_size s
+         ) as d
+        GROUP BY slot_name,slot_type,replslot_wal_keep}
+
+# slot_name | slot_type | replslot_wal_keep | replslot_files
+# ----------+-----------+------------- -----+---------------
+# mysub3    | logical   |                -1 |             1
+# mysub     | logical   |                -1 |             1
     );
 
     @hosts = @{ parse_hosts %args };
-
-    is_compat $hosts[0], 'replication_slots', $PG_VERSION_94 or exit 1;
 
     pod2usage(
         -message => 'FATAL: you must give only one host with service "replication_slots".',
         -exitval => 127
     ) if @hosts != 1;
 
-    if ( defined $args{'warning'} and defined $args{'critical'} ) {
-        # warning and critical must be raw
-        pod2usage(
-            -message => "FATAL: critical and warning thresholds only accept raw numbers.",
-            -exitval => 127
-        ) unless $args{'warning'}  =~ m/^([0-9]+)$/
-            and  $args{'critical'} =~ m/^([0-9]+)$/;
+    is_compat $hosts[0], 'replication_slots', $PG_VERSION_94 or exit 1;
+
+    if ( defined $args{'warning'} ) {
+        my $threshods_re = qr/(wal|replslot)\s*=\s*(?:(\d+))/i;
+
+        if ($args{'warning'} =~ m/^$threshods_re(\s*,\s*$threshods_re)*$/
+            and $args{'critical'} =~ m/^$threshods_re(\s*,\s*$threshods_re)*$/) {
+
+              while ( $args{'warning'} =~ /$threshods_re/g ) {
+                  my ($threshold, $value) = ($1, $2);
+                    $warn{$threshold.'_files'} = $value;
+              }
+              while ( $args{'critical'} =~ /$threshods_re/g ) {
+                  my ($threshold, $value) = ($1, $2);
+                    $crit{$threshold.'_files'} = $value;
+              }
+
+            }
+          # For backward compatibility
+          elsif ($args{'warning'}  =~ m/^([0-9]+)$/
+                 and $args{'critical'} =~ m/^([0-9]+)$/) {
+                   $warn{wal_files} = $args{'warning'};
+                   $crit{wal_files} = $args{'critical'};
+                 }
+          else {
+            pod2usage(
+                -message => "FATAL: critical and warning thresholds only accept:\n"
+                    . "- raw numbers for backward compatibility to set wal threshold.\n"
+                    . "- a list 'wal=value' and/or 'replslot=value' separated by comma.\n"
+                    . "See documentation for more information.",
+                -exitval => 127
+            )
+          }
+
     }
+
+    @perf_wal_limits = ( $warn{wal_files}, $crit{wal_files} )
+      if defined $warn{wal_files} or defined $crit{wal_files};
+    @perf_replslot_limits = ( $warn{replslot_files}, $crit{replslot_files} )
+      if defined $warn{replslot_files} or defined $crit{replslot_files};
+
 
     @rs = @{ query_ver( $hosts[0], %queries ) };
 
 SLOTS_LOOP: foreach my $row (@rs) {
-        push @perfdata => [ $row->[0], $row->[1] ];
+        push @perfdata => [ "$row->[0]_wal", $row->[2],'File', @perf_wal_limits ];
+        push @perfdata => [ "$row->[0]_replslots", $row->[3], 'File', @perf_replslot_limits ];
 
-        if ( defined $args{'warning'} ) {
-
-            if ( $row->[1] >= $args{'critical'} ) {
-                push @msg_crit => "$row->[0]: $row->[1] WAL";
-                next SLOTS_LOOP;
-            }
-
-            if ( $row->[1] >= $args{'warning'} ) {
-                push @msg_warn => "$row->[0]: $row->[1] WAL";
-            }
+        if ( defined $crit{wal_files} and $row->[2] > $crit{wal_files} ) {
+            push @msg_crit, "$row->[0] wal files : $row->[2]";
+            push @longmsg => sprintf("Slot: %s wal files = %s above crit threshold %s",
+                $row->[0], $row->[2], $crit{wal_files}
+            );
+        }
+        elsif ( defined $warn{wal_files} and $row->[2] > $warn{wal_files} ) {
+              push @msg_warn, "$row->[0] wal files : $row->[2]";
+              push @longmsg => sprintf("Slot: %s wal files = %s above warn threshold %s",
+                  $row->[0], $row->[2], $warn{wal_files}
+              );
+        }
+        if ( defined $crit{replslot_files} and $row->[3] > $crit{replslot_files} ) {
+            push @msg_crit, "$row->[0] pg_replslot files : $row->[3]";
+            push @longmsg => sprintf("Slot: %s pg_replslot files = %s above crit threshold %s",
+                $row->[0], $row->[3], $crit{replslot_files}
+            );
+        }
+        elsif ( defined $warn{replslot_files} and $row->[3] > $warn{replslot_files} ) {
+              push @msg_warn, "$row->[0] pg_replslot files : $row->[3]";
+              push @longmsg => sprintf("Slot: %s pg_replslot files = %s above warn threshold %s",
+                  $row->[0], $row->[3], $warn{replslot_files}
+              );
         }
     }
 
 
-    return critical( $me, [ @msg_crit, @msg_warn ], \@perfdata )
+    return critical( $me, [ @msg_crit, @msg_warn ], \@perfdata, \@longmsg )
         if scalar @msg_crit > 0;
 
-    return warning( $me, [ @msg_warn ], \@perfdata )
+    return warning( $me, [ @msg_warn ], \@perfdata, \@longmsg )
         if scalar @msg_warn > 0;
 
-    return ok( $me, [ "Replication slots OK" ], \@perfdata );
+    return ok( $me, [ "Replication slots OK" ], \@perfdata, \@longmsg );
 }
 
 =item B<settings> (9.0+)
@@ -6791,7 +6865,7 @@ values separated by a comma.
 Thresholds are applied on current temp files being created AND the number/size
 of temp files created since last execution.
 
-Required privileges: superuser (<10); on 10+ an unprivileged role 
+Required privileges: superuser (<10); on 10+ an unprivileged role
 is possible but it will not monitor live temp files.
 
 =cut
