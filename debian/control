@@ -1,0 +1,16 @@
+Source: check-pgactivity
+Maintainer: Christophe Courtois <christophe.courtois@dalibo.com>
+Section: database
+Priority: optional
+Standards-Version: 4.1.4
+Build-Depends: debhelper (>= 9)
+Homepage: https://github.com/OPMDG/check_pgactivity
+Vcs-Browser: https://github.com/OPMDG/check_pgactivity
+Vcs-Git: https://github.com/OPMDG/check_pgactivity.git
+
+Package: check-pgactivity
+Architecture: all
+Depends: ${misc:Depends}, ${perl:Depends}, postgresql-client
+Description: PostgreSQL plugin for Nagios
+ check_pgactivity is designed to monitor PostgreSQL clusters from Nagios.
+ It offers many options to measure and monitor useful performance metrics.
