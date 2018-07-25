@@ -5713,7 +5713,7 @@ sub check_replication_slots {
         WITH wal_size AS (
            SELECT current_setting('wal_block_size')::int * setting::int AS val
            FROM pg_settings
-           WHERE name = 'wal_segment_size'
+           WHERE name = 'wal_segment_size' -- usually 2048 (blocks)
         )
         SELECT slot_name,slot_type,replslot_wal_keep,
               count(slot_file) as replslot_files -- 0 if not superuser
@@ -5739,8 +5739,38 @@ sub check_replication_slots {
             ON  slot.slot_name=files.slot_name
         CROSS JOIN wal_size s
          ) as d
-        GROUP BY slot_name,slot_type,replslot_wal_keep}
-
+        GROUP BY slot_name,slot_type,replslot_wal_keep},
+        $PG_VERSION_110 => q{
+         WITH wal_size AS (
+            SELECT setting::int AS wal_segment_size
+            FROM pg_settings
+            WHERE name = 'wal_segment_size'
+         )
+         SELECT slot_name,slot_type,replslot_wal_keep,
+               count(slot_file) as replslot_files -- 0 if not superuser
+         FROM
+           (SELECT slot.slot_name,
+                   CASE WHEN slot_file <> 'state' THEN 1 END AS slot_file,
+                   slot_type,
+           COALESCE(
+                  floor(
+                      (pg_wal_lsn_diff(pg_current_wal_lsn(), slot.restart_lsn)
+                      - (pg_walfile_name_offset(restart_lsn)).file_offset
+                      )
+                      / s.wal_segment_size
+                  ),0
+              ) as replslot_wal_keep
+             FROM pg_replication_slots slot
+             -- trick when user is not superuser
+             LEFT JOIN (
+               SELECT slot2.slot_name,
+                     pg_ls_dir('pg_replslot/'||slot2.slot_name) as slot_file
+                 FROM pg_replication_slots slot2
+                 WHERE current_setting('is_superuser')::bool) files(slot_name,slot_file)
+             ON  slot.slot_name=files.slot_name
+         CROSS JOIN wal_size s
+          ) as d
+         GROUP BY slot_name,slot_type,replslot_wal_keep}
 # slot_name | slot_type | replslot_wal_keep | replslot_files
 # ----------+-----------+------------- -----+---------------
 # mysub3    | logical   |                -1 |             1
