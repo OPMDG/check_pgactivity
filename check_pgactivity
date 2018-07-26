@@ -5544,8 +5544,11 @@ Checking the user only works on Linux systems (it uses /proc to avoid
 dependencies). Before 9.3, you need to provide the expected owner using the
 C<--uid> argument, or the owner will not be checked.
 
-Required privileges: unprivileged role; the system user must be able to read
-the folder containing PGDATA: B<the service has to be executed locally on the monitored server.>
+Required privileges:
+ <11:superuser
+ v11: user with pg_monitor or pg_read_all_setting
+The system user must also be able to read the folder containing
+PGDATA: B<the service has to be executed locally on the monitored server.>
 
 =cut
 sub check_pgdata_permission {
@@ -5657,8 +5660,10 @@ backward compatibility, only wal threshold will be used) or a list 'wal=value'
 and 'replslot=value'. Respectively number of kept wal files or number of files
 in pg_replslot for each slot.
 
-Required privileges: superuser to monitor logical replication on v10+; otherwise
-unprivileged role.
+Required privileges:
+ <10: unprivileged role
+ v10: unprivileged role, or superuser to monitor logical replication
+ v11: unpriviledged user with GRANT EXECUTE on function pg_ls_dir(text)
 
 =cut
 
@@ -6865,8 +6870,13 @@ values separated by a comma.
 Thresholds are applied on current temp files being created AND the number/size
 of temp files created since last execution.
 
-Required privileges: superuser (<10); on 10+ an unprivileged role
-is possible but it will not monitor live temp files.
+Required privileges:
+ <10: superuser
+ v10: an unprivileged role is possible but it will not monitor databases
+that it cannot access, nor live temp files
+ v11: an unprivileged role is possible but must be granted EXECUTE
+on functions pg_ls_dir(text), pg_read_file(text), pg_stat_file(text);
+the same restrictions than on v10 will still apply
 
 =cut
 
@@ -7310,7 +7320,11 @@ For 9.5 and above, the limit is:
   100% =  max_wal_size      (as a number of WAL)
         + wal_keep_segments (if set)
 
-Required privileges: superuser (<10); pg_monitor (10+).
+Required privileges:
+ <10:superuser (<10)
+ v10:unprivileged user with pg_monitor
+ v11:unprivileged user with pg_monitor, or with grant EXECUTE on function
+pg_ls_waldir
 
 =cut
 
