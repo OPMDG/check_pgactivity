@@ -5666,6 +5666,11 @@ Required privileges:
  v10: unprivileged role, or superuser to monitor logical replication
  v11: unpriviledged user with GRANT EXECUTE on function pg_ls_dir(text)
 
+Here is an example:
+
+    -w 'wal=50,replslot=20' -c 'wal=100,replslot=40'
+
+
 =cut
 
 sub check_replication_slots {
