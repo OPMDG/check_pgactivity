@@ -5657,6 +5657,10 @@ backward compatibility, only wal threshold will be used) or a list 'wal=value'
 and 'replslot=value'. Respectively number of kept wal files or number of files
 in pg_replslot for each slot.
 
+Here is an example:
+
+    -w 'wal=50,replslot=20' -c 'wal=100,replslot=40'
+
 Required privileges: superuser to monitor logical replication on v10+; otherwise
 unprivileged role.
 
