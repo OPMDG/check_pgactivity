@@ -4,17 +4,17 @@
 #
 # Copyright (C) 2012-2018: Open PostgreSQL Monitoring Development Group
 
-=head1 check_pgactivity
+=head1 NAME
 
 check_pgactivity - PostgreSQL plugin for Nagios
 
-=head2 SYNOPSIS
+=head1 SYNOPSIS
 
   check_pgactivity {-w|--warning THRESHOLD} {-c|--critical THRESHOLD} [-s|--service SERVICE ] [-h|--host HOST] [-U|--username ROLE] [-p|--port PORT] [-d|--dbname DATABASE] [-S|--dbservice SERVICE_NAME] [-P|--psql PATH] [--debug] [--status-file FILE] [--path PATH] [-t|--timemout TIMEOUT]
   check_pgactivity [-l|--list]
   check_pgactivity [--help]
 
-=head2 DESCRIPTION
+=head1 DESCRIPTION
 
 check_pgactivity is designed to monitor PostgreSQL clusters from Nagios. It
 offers many options to measure and monitor useful performance metrics.
@@ -7716,16 +7716,16 @@ __END__
 
 =back
 
-=head2 VERSION
+=head1 VERSION
 
 check_pgactivity version 2.3, released on Mon Nov 13 2017.
 
-=head2 LICENSING
+=head1 LICENSING
 
 This program is open source, licensed under the PostgreSQL license.
 For license terms, see the LICENSE provided with the sources.
 
-=head2 AUTHORS
+=head1 AUTHORS
 
 Author: Open PostgreSQL Monitoring Development Group
 Copyright: (C) 2012-2018 Open PostgreSQL Monitoring Development Group
