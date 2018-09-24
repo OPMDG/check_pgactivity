@@ -952,7 +952,6 @@ sub query($$;$$) {
     $psqlcmd  = qq{ $args{'psql'} --set "ON_ERROR_STOP=1" }
               . qq{ -qXAf $tmpfile -R $RS -F $FS };
     $psqlcmd .= qq{ --dbname='$db' } if defined $db;
-    $psqlcmd .= qq{ -t } unless defined $get_fields;
     $res      = qx{ $psqlcmd 2>&1 };
     $rc       = $?;
 
@@ -961,16 +960,29 @@ sub query($$;$$) {
         if $rc;
 
     exit unknown('CHECK_PGACTIVITY',
-        [ "Query fail !\n" . $res ]
+        [ "Query failed !\n" . $res ]
     ) unless $rc == 0;
 
     if (defined $res) {
         chop $res;
+        my $col_num;
 
         push @res, [ split(chr(3) => $_, -1) ]
             foreach split (chr(30) => $res, -1);
 
-        pop @res if defined $get_fields and $res[-1][0] =~ m/^\(\d+ rows?\)$/;
+        $col_num = scalar( @{ $res[0] } );
+
+        shift @res unless defined $get_fields;
+        pop @res if $res[-1][0] =~ m/^\(\d+ rows?\)$/;
+
+        # check the number of column is valid.
+        # FATAL if the parsing was unsuccessful, eg. if one field contains x30 or x03.
+        # see gh issue #155
+        foreach my $row ( @res ) {
+            exit unknown('CHECK_PGACTIVITY',
+                [ "Could not parse query result!\n" ]
+            ) if scalar( @$row ) != $col_num;
+        }
     }
 
     dprint( "Query result: ". Dumper( \@res ) );
