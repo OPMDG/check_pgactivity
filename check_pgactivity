@@ -5686,7 +5686,7 @@ sub check_replication_slots {
         WITH wal_size AS (
             SELECT current_setting('wal_block_size')::int * setting::int AS val
             FROM pg_settings
-            WHERE name = 'wal_segment_size'
+            WHERE name = 'wal_segment_size' --usually 2048 (blocks)
         )
         SELECT slot.slot_name,slot.slot_type,
         COALESCE(
@@ -5742,7 +5742,7 @@ sub check_replication_slots {
         GROUP BY slot_name,slot_type,replslot_wal_keep},
         $PG_VERSION_110 => q{
          WITH wal_size AS (
-            SELECT setting::int AS wal_segment_size
+            SELECT setting::int AS wal_segment_size -- unit: B (often 16777216)
             FROM pg_settings
             WHERE name = 'wal_segment_size'
          )
@@ -7375,21 +7375,24 @@ sub check_wal_files {
     my $me       = 'POSTGRES_WAL_FILES';
     my $wal_size = hex('ff000000');
     my %queries  = (
+     # The logic of these queries is mainly to compute a number of WALs to
+     # compare against the current number of WALs (see rules above).
+     # Parameters and the units stored in pg_settings have changed often across versions.
      $PG_VERSION_110 => q{
         WITH wal_settings AS (
           SELECT sum(setting::int) filter (WHERE name='max_wal_size') as max_wal_size, -- unit: MB
                  sum(setting::int) filter (WHERE name='wal_segment_size') as wal_segment_size, -- unit: B
-                 sum(setting::int) filter (WHERE name='wal_keep_segments') as wal_keep_segments
+                 sum(setting::int) filter (WHERE name='wal_keep_segments') as wal_keep_segments -- unit: nb of WALs
           FROM pg_settings
           WHERE name IN ('max_wal_size','wal_segment_size','wal_keep_segments')
         )
         SELECT s.name,
-          wal_keep_segments + max_wal_size / (wal_segment_size / 1024^2)  AS max_nb_wal,
+          wal_keep_segments + max_wal_size / (wal_segment_size / 1024^2)  AS max_nb_wal, --unit: nb of WALs
           CASE WHEN pg_is_in_recovery()
             THEN NULL
             ELSE pg_current_wal_lsn()
           END,
-          wal_keep_segments,
+          wal_keep_segments, -- unit: nb of WALs
           (pg_control_checkpoint()).timeline_id AS tli
         FROM pg_ls_waldir() AS s
         CROSS JOIN wal_settings
@@ -7400,15 +7403,15 @@ sub check_wal_files {
      $PG_VERSION_100 => q{
         WITH wal_settings AS (
           SELECT sum(setting::int) filter (WHERE name='max_wal_size') as max_wal_size, --unit: MB
-                 sum(setting::int) filter (WHERE name='wal_block_size') as wal_block_size, --usually 8192
                  sum(setting::int) filter (WHERE name='wal_segment_size') as wal_segment_size, --usually 2048 (blocks)
-                 sum(setting::int) filter (WHERE name='wal_keep_segments') as wal_keep_segments
+                 sum(setting::int) filter (WHERE name='wal_block_size') as wal_block_size, --usually 8192
+                 sum(setting::int) filter (WHERE name='wal_keep_segments') as wal_keep_segments -- unit:nb of WALs
           FROM pg_settings
           WHERE name IN ('max_wal_size','wal_segment_size','wal_block_size','wal_keep_segments')
         )
         SELECT s.name,
           wal_keep_segments
-           + (max_wal_size / (wal_block_size * wal_segment_size / 1024^2)) AS max_nb_wal,
+           + (max_wal_size / (wal_block_size * wal_segment_size / 1024^2)) AS max_nb_wal, --unit: nb of WALs
           CASE WHEN pg_is_in_recovery()
             THEN NULL
             ELSE pg_current_wal_lsn()
@@ -7423,9 +7426,9 @@ sub check_wal_files {
           name DESC},
      $PG_VERSION_95 => q{
         WITH wal_settings AS (
-          SELECT setting::int + current_setting('wal_keep_segments')::int as max_nb_wal
+          SELECT setting::int + current_setting('wal_keep_segments')::int as max_nb_wal --unit: nb of WALs
           FROM pg_settings
-          WHERE name = 'max_wal_size'
+          WHERE name = 'max_wal_size' -- unit for max_wal_size: 16MB
         )
         SELECT s.f,
           max_nb_wal,
