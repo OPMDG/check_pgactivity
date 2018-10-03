@@ -1,7 +1,7 @@
 Changelog
 =========
 
-2018-18-XX v2.4:
+2018-10-XX v2.4:
 
   - fix handling or file reading errors in archive_folder service
   - fix wal magic number for version 10
@@ -18,7 +18,7 @@ Changelog
   - avoid warning for -dev versions in pga_version service
   - add a new uptime service
   - replication_slots service handle wal files and pg_replslots files separately
-  - add ability to filter by application_name in longest_query and oldest_xact service
+  - add ability to filter by application_name in longest_query and oldest_idlexact service
   - add minimal delta size to pgdump_backup service to avoid alert when backup grows small in size
   - add documentation example for pgback in pgdump_service
   - add documentation for archive_folder

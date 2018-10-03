@@ -5670,7 +5670,6 @@ Here is an example:
 
     -w 'wal=50,replslot=20' -c 'wal=100,replslot=40'
 
-
 =cut
 
 sub check_replication_slots {
