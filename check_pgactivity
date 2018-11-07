@@ -270,7 +270,15 @@ list.
 
 =item B<-h>, B<--host> HOST
 
-Database server host or socket directory (default: "localhost").
+Note: if neither host, username, port or database is given, psql will
+be invoked without any of those parameters passed over.  psql will
+then typically try to connect to the default unix socket (typically
+/var/run/postgresql/.s.PGSQL.5432) using the unix username as the
+database username and database, typically using the ident
+authentication.  If one or more of the above mentioned parameters are
+given but not all, the defaults will apply to the rest.
+
+Database server host or socket directory (default: "localhost")
 
 =item B<-U>, B<--username> ROLE
 
@@ -514,9 +522,10 @@ sub save($$$$) {
 
     if (defined $host->{'dbservice'}) {
         $hostkey = "$host->{'dbservice'}";
-    }
-    else {
+    } elsif (defined $host->{'host'}) {
         $hostkey = "$host->{'host'}$host->{'port'}";
+    } else {
+	$hostkey = "localhost/default"
     }
 
     die "File «${storage}» not recognized as a check_pgactivity status file.\n\n"
@@ -547,9 +556,10 @@ sub load($$$) {
 
     if (defined $host->{'dbservice'}) {
         $hostkey = "$host->{'dbservice'}";
-    }
-    else {
+    } elsif (defined $host->{'host'}) {
         $hostkey = "$host->{'host'}$host->{'port'}";
+    } else {
+	$hostkey = "localhost/default"
     }
 
     return undef unless -r $storage;
@@ -886,6 +896,10 @@ sub parse_hosts(\%) {
                 $hosts[-1]{'host'}, $hosts[-1]{'port'}, $hosts[-1]{'db'}
             );
         }
+    }
+
+    if (!@hosts) {
+	push(@hosts, {'name' => 'localhost/default'});
     }
 
     dprint ('Hosts: '. Dumper(\@hosts));
