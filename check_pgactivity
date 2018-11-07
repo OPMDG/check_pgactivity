@@ -173,6 +173,10 @@ my %services = (
         'sub'  => \&check_streaming_delta,
         'desc' => 'Check delta in bytes between a master and its standbys in streaming replication.',
     },
+    'streaming_delay' => {
+        'sub'  => \&check_streaming_delay,
+        'desc' => 'Check time delta in seconds between a master and its standbys in streaming replication.',
+    },
     'settings' => {
         'sub'  => \&check_settings,
         'desc' => 'Check if the configuration file changed.',
@@ -6282,6 +6286,74 @@ sub check_stat_snapshot_age {
     }
 
     return ok( $me, \@msg, \@perfdata );
+}
+
+=item B<streaming_delay> (9.1+)
+
+On a slave, check the delta time since the last replay transaction
+timestamp.  It's a bit similar to the streaming_delta, except this one
+should be run on the slave and this one checks the time delta rather
+than the size delta.
+
+To get a correct reading it's important that the clocks are well
+synchronized.  The delay may even come out in the negative if the
+local clock is out of sync with the clock on the master server.  We
+check the absolute value to ensure there will be an alarm also if the
+clocks are too much out of sync with each other.
+
+Perfdata returns the time delta in seconds from the master.
+
+Required privileges: unprivileged role.
+
+=cut
+
+sub check_streaming_delay {
+    my $rs;
+    my $c_limit;
+    my $w_limit;
+    my @perfdata;
+    my @hosts;
+    my %args    = %{ $_[0] };
+    my $me      = 'POSTGRES_STREAMING_DELAY';
+    my %queries         = (
+        $PG_VERSION_91 => q{select abs(EXTRACT(epoch from now() - pg_last_xact_replay_timestamp())) as s},
+        $PG_VERSION_100 => q{select abs(EXTRACT(epoch from now() - pg_last_wal_replay_timestamp())) as s},
+    );
+
+    # warning and critical are mandatory.
+    pod2usage(
+        -message => "FATAL: you must specify critical and warning thresholds.",
+        -exitval => 127
+    ) unless defined $args{'warning'} and defined $args{'critical'} ;
+
+    pod2usage(
+        -message => "FATAL: critical and warning thresholds only acccepts interval.",
+        -exitval => 127
+    ) unless ( is_time( $args{'warning'} ) and is_time( $args{'critical'} ) );
+
+    $c_limit = get_time( $args{'critical'} );
+    $w_limit = get_time( $args{'warning'} );
+
+    @hosts = @{ parse_hosts %args };
+
+    pod2usage(
+        -message => 'FATAL: you must give only one host with service "backup_label_age".',
+        -exitval => 127
+    ) if @hosts != 1;
+
+    is_compat $hosts[0], 'backup_label_age', $PG_VERSION_91 or exit 1;
+
+    $rs = @{ query_ver( $hosts[0], %queries )->[0] }[0];
+
+    push @perfdata, [ 'delay', $rs, 's', $w_limit, $c_limit ];
+
+    return critical( $me, [ "delay: ".to_interval($rs) ], \@perfdata )
+        if $rs > $c_limit;
+
+    return warning( $me, [ "delay: ".to_interval($rs) ], \@perfdata )
+        if $rs > $w_limit;
+
+    return ok( $me, [ "delay: ".to_interval($rs) ], \@perfdata );
 }
 
 =item B<streaming_delta> (9.1+)
