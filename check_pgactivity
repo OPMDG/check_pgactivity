@@ -175,7 +175,7 @@ my %services = (
     },
     'streaming_delay' => {
         'sub'  => \&check_streaming_delay,
-        'desc' => 'Check time delta in seconds between a master and its standbys in streaming replication.',
+        'desc' => 'Check how many seconds the slave is lagging behind the master'
     },
     'settings' => {
         'sub'  => \&check_settings,
@@ -6300,6 +6300,8 @@ synchronized.  The delay may even come out in the negative if the
 local clock is out of sync with the clock on the master server.  We
 check the absolute value to ensure there will be an alarm also if the
 clocks are too much out of sync with each other.
+
+Returns UNKNOWN when run from a master or from a stand-alone server.
 
 Perfdata returns the time delta in seconds from the master.
 
