@@ -1519,7 +1519,7 @@ sub check_archive_folder {
 
     die ("Could not parse XLOG_PAGE_MAGIC") unless defined $wal_version;
 
-    dprint ("wal version: $wal_version");
+    dprint ("wal version: $wal_version\n");
 
     die "Unknown WAL XLOG_PAGE_MAGIC $wal_version!"
         unless grep /^$wal_version$/ => values %wal_versions;
@@ -1535,8 +1535,8 @@ sub check_archive_folder {
     ];
     push @perfdata, [ 'num_archives', scalar(@filelist_sorted) ];
 
-    dprint ("first wal: $filelist_sorted[0][0]");
-    dprint ("last wal: $filelist_sorted[-1][0]");
+    dprint ("first wal: $filelist_sorted[0][0]\n");
+    dprint ("last wal: $filelist_sorted[-1][0]\n");
 
     $start_tl = substr($filelist_sorted[0][0], 0, 8);
     $end_tl   = substr($filelist_sorted[-1][0], 0, 8);
@@ -4922,7 +4922,7 @@ sub check_minor_version {
       # eg 100001 for 10.1  -> major is 10
       $major_version = int($hosts[0]{'version_num'}/10000) ;
     }
-	dprint ("major version: $major_version");
+    dprint ("major version: $major_version\n");
 
     unless ( defined $latest_versions{$major_version} ) {
         push @msg => "Unknown major PostgreSQL version $major_version";
