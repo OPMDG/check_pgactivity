@@ -1540,7 +1540,7 @@ sub check_archive_folder {
 
     $start_tl = substr($filelist_sorted[0][0], 0, 8);
     $end_tl   = substr($filelist_sorted[-1][0], 0, 8);
-    $timeline = $start_tl + 0;
+    $timeline = hex($start_tl);
     $wal = hex(substr($filelist_sorted[0][0], 8, 8));
     $seg = hex(substr($filelist_sorted[0][0], 16, 8));
 
@@ -1560,7 +1560,7 @@ sub check_archive_folder {
     # Check ALL archives are here.
     for ( my $i=0, my $j=0; $i <= $#filelist_sorted ; $i++, $j++ ) {
         dprint ("Checking WAL $filelist_sorted[$i][0]\n");
-        my $curr = sprintf('%08d%08X%08X%s',
+        my $curr = sprintf('%08X%08X%08X%s',
             $timeline,
             $wal + int(($seg + $j)/$seg_per_wal),
             ($seg + $j)%$seg_per_wal,
