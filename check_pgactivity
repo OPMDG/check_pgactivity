@@ -5608,7 +5608,8 @@ sub check_pgdata_permission {
     $dir_uid = $stat[4];
     $perm = sprintf( "%04o", $mode & 07777 );
 
-    if ($perm ne '0700') {
+    # starting with v11, PGDATA can be 0750.
+    if ($perm ne '0700' or $perm ne '0750') {
         $criticity = 2;
         push @msg, ( "Permission is $perm on $data_directory" );
     }
