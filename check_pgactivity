@@ -1104,11 +1104,10 @@ sub is_compat($$$;$) {
 }
 
 # Check host compatibility, without warning
-sub check_compat($$$;$) {
+sub check_compat($$;$) {
     my $host    = shift;
-    my $service = shift;
     my $min     = shift;
-    my $max     = shift() || 9999999;;
+    my $max     = shift() || 9999999;
     my $ver;
 
     set_pgversion($host);
@@ -1120,7 +1119,6 @@ sub check_compat($$$;$) {
     );
 
     return 1;
-
 }
 
 sub dprint {
@@ -1664,7 +1662,7 @@ sub check_archiver {
 
     is_compat $hosts[0], 'archiver', $PG_VERSION_81 or exit 1;
 
-    if (check_compat $hosts[0], 'archiver', $PG_VERSION_81, $PG_VERSION_96) {
+    if (check_compat $hosts[0], $PG_VERSION_81, $PG_VERSION_96) {
         # cf. pgarch_readyXlog in src/backend/postmaster/pgarch.c about how the
         # archiver process pick the next WAL to archive.
         # We try to reproduce the same algo here
@@ -1837,7 +1835,7 @@ sub check_autovacuum {
 
     is_compat $hosts[0], 'autovacuum', $PG_VERSION_81 or exit 1;
 
-    if (check_compat $hosts[0], 'archiver', $PG_VERSION_81, $PG_VERSION_96) {
+    if (check_compat $hosts[0], $PG_VERSION_81, $PG_VERSION_96) {
         delete $activity{BRIN_SUMMARIZE};
     }
 
@@ -6064,7 +6062,7 @@ sub check_sequences_exhausted {
         my %sequences;
 
         # We have two code paths: one for < 10.0 and one for >=10.S
-        if (check_compat $hosts[0], 'sequences_exhausted', $PG_VERSION_82, $PG_VERSION_96)
+        if (check_compat $hosts[0], $PG_VERSION_82, $PG_VERSION_96)
         {
             # Search path is emptied so that ::regclass gives us full paths
             my $query  = q{
@@ -7316,7 +7314,7 @@ sub check_uptime {
     $msg_uptime = "instance started for ".to_interval($uptime)."s (since $rs[0][2])" ;
     push @perfdata => [ 'postmaster uptime', $uptime , 's', undef, undef, 0 ];
     # time since configuration reload
-    $reload_conf_flag = !(check_compat $hosts[0], 'uptime', $PG_VERSION_81, $PG_VERSION_84);
+    $reload_conf_flag = !(check_compat $hosts[0], $PG_VERSION_81, $PG_VERSION_84);
     if ($reload_conf_flag) {
       $reload_conf_time = int( $rs[0][1] );
       $msg_reload_conf = "configuration reloaded for ".to_interval($reload_conf_time)."s (since $rs[0][3])";
