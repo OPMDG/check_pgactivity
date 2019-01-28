@@ -3195,7 +3195,7 @@ sub check_configuration {
             or ( name='effective_cache_size' and setting::bigint < $effective_cache_size )
             or ( name='autovacuum' and setting='off' and $no_check_autovacuum = 0)
             or ( name='fsync' and setting='off' and $no_check_fsync=0  )
-            or ( name~'^enable.*' and setting='off' and $no_check_enable=0)
+            or ( name~'^enable.*' and setting='off' and $no_check_enable=0 and name not in ('enable_partitionwise_aggregate', 'enable_partitionwise_join'))
             or (name='stats_row_level' and setting='off' and $no_check_track_counts=0)
             or (name='track_counts' and setting='off' and $no_check_track_counts=0)
         )";
