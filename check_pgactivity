@@ -804,7 +804,7 @@ listing multiple services separated by a comma. Eg.
 
 =item B<Parameters> C<--host HOST>, C<--port PORT>, C<--user ROLE> or C<--dbname DATABASE>
 
-One parameter is enough to define a new host. Environment variables or default values
+One parameter is enough to define a new host. Usual environment variables (PGHOST, PGPORT, PGDATABASE, PGUSER, PGSERVICE) or default values
 are used for missing parameters.
 
 If multiple values are given, define as many host as maximum given values.
