@@ -499,7 +499,7 @@ sub is_storable($) {
 # Find a unique string for the database instance connection.
 # Used by save and load.
 #
-# Parameter: host structure ref that holds the "hsot" and "port" parameters
+# Parameter: host structure ref that holds the "host" and "port" parameters
 sub find_hostkey($) {
     my $host = shift;
 
