@@ -7373,7 +7373,7 @@ sub check_uptime {
 
     return critical ( $me, \@msg_crit, \@perfdata) if ( @msg_crit ) ;
     return warning  ( $me, \@msg_warn, \@perfdata) if ( @msg_warn ) ;
-    return ok( $me, [ $msg_uptime $msg_reload_conf $msg_shmem_init_time ], \@perfdata );
+    return ok( $me, [ $msg_uptime, $msg_reload_conf, $msg_shmem_init_time ], \@perfdata );
 }
 
 =item B<wal_files> (8.1+)
