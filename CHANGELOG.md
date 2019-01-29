@@ -23,6 +23,7 @@ Changelog
   - add documentation example for pgback in pgdump_service
   - add documentation for archive_folder
   - add privileges information for all services
+  - allow psql connections without providing connection arguments: rely on the binary default behaviour
   - take account of the new BRIN summarize state of autovacuum
 
 2017-11-13 v2.3:

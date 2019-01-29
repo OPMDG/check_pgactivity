@@ -270,26 +270,36 @@ list.
 
 =item B<-h>, B<--host> HOST
 
-Database server host or socket directory (default: "localhost").
+Database server host or socket directory (default: $PGHOST or "localhost")
+
+See section C<CONNECTIONS> for more informations.
 
 =item B<-U>, B<--username> ROLE
 
-Database user name (default: "postgres").
+Database user name (default: $PGUSER or "postgres").
+
+See section C<CONNECTIONS> for more informations.
 
 =item B<-p>, B<--port> PORT
 
-Database server port (default: "5432").
+Database server port (default: $PGPORT or "5432").
+
+See section C<CONNECTIONS> for more informations.
 
 =item B<-d>, B<--dbname> DATABASE
 
-Database name to connect to (default: "template1").
+Database name to connect to (default: $PGDATABASE or "template1").
 
 B<WARNING>! This is not necessarily one of the database that will be
 checked. See C<--dbinclude> and C<--dbexclude> .
 
+See section C<CONNECTIONS> for more informations.
+
 =item B<-S>, B<--dbservice> SERVICE_NAME
 
 The connection service name from pg_service.conf to use.
+
+See section C<CONNECTIONS> for more informations.
 
 =item B<--dbexclude> REGEXP
 
@@ -486,6 +496,19 @@ sub is_storable($) {
     return defined Storable::read_magic($head);
 }
 
+# Find a unique string for the database instance connection.
+# Used by save and load.
+#
+# Parameter: host structure ref that holds the "host" and "port" parameters
+sub find_hostkey($) {
+    my $host = shift;
+
+    return "$host->{'host'}$host->{'port'}" if defined $host->{'host'}
+                                           and defined $host->{'port'};
+    return $host->{'dbservice'} if defined $host->{'dbservice'};
+    return "binary defaults";
+}
+
 # Record the given ref content for the given host in a file on disk.
 # The file is defined by argument "--status-file" on command line. By default:
 #
@@ -510,14 +533,8 @@ sub save($$$$) {
     my $ref     = shift;
     my $storage = shift;
     my $all     = {};
-    my $hostkey;
+    my $hostkey = find_hostkey($host);
 
-    if (defined $host->{'dbservice'}) {
-        $hostkey = "$host->{'dbservice'}";
-    }
-    else {
-        $hostkey = "$host->{'host'}$host->{'port'}";
-    }
 
     die "File «${storage}» not recognized as a check_pgactivity status file.\n\n"
         ."Please, check its path or move away this wrong file"
@@ -542,15 +559,8 @@ sub load($$$) {
     my $host    = shift;
     my $name    = shift;
     my $storage = shift;
-    my $hostkey;
+    my $hostkey = find_hostkey($host);
     my $all;
-
-    if (defined $host->{'dbservice'}) {
-        $hostkey = "$host->{'dbservice'}";
-    }
-    else {
-        $hostkey = "$host->{'host'}$host->{'port'}";
-    }
 
     return undef unless -r $storage;
 
@@ -773,13 +783,13 @@ sub get_size($;$) {
 
 =head2 CONNECTIONS
 
-check_pgactivity allows two different connection specifications: by service, or
+check_pgactivity allows two different connection specifications: by service or
 by specifying values for host, user, port, and database.
 Some services can run on multiple hosts, or needs to connect to multiple hosts.
 
-You must specify one of the parameters below if the service needs to connect
-to your PostgreSQL instance. In other words, check_pgactivity will NOT look for
-the C<libpq> environment variables.
+You might specify one of the parameters below to connect to your PostgreSQL instance.
+If you don't, no connection parameters are given to psql: connection relies on binary
+defaults and environment.
 
 The format for connection parameters is:
 
@@ -794,8 +804,8 @@ listing multiple services separated by a comma. Eg.
 
 =item B<Parameters> C<--host HOST>, C<--port PORT>, C<--user ROLE> or C<--dbname DATABASE>
 
-One parameter is enough to define a new host. Default values are used
-for missing parameters.
+One parameter is enough to define a new host. Usual environment variables (PGHOST, PGPORT, PGDATABASE, PGUSER, PGSERVICE) or default values
+are used for missing parameters.
 
 If multiple values are given, define as many host as maximum given values.
 
@@ -886,6 +896,49 @@ sub parse_hosts(\%) {
                 $hosts[-1]{'host'}, $hosts[-1]{'port'}, $hosts[-1]{'db'}
             );
         }
+    }
+
+    if ( not @hosts ) {
+        # No connection parameters given.
+        # The psql execution relies on binary defaults and env variables.
+        # We look for libpq environment variables to save them and preserve
+        # default psql behaviour as query() always resets them.
+        my $name = 'binary defaults';
+
+        push @hosts, {
+            'name'      => 'binary defaults',
+            'pgversion' => undef
+        };
+
+        $hosts[0]{'host'}      = $ENV{'PGHOST'}     if defined $ENV{'PGHOST'};
+        $hosts[0]{'port'}      = $ENV{'PGPORT'}     if defined $ENV{'PGPORT'};
+        $hosts[0]{'db'}        = $ENV{'PGDATABASE'} if defined $ENV{'PGDATABASE'};
+        $hosts[0]{'user'}      = $ENV{'PGUSER'}     if defined $ENV{'PGUSER'};
+        $hosts[0]{'dbservice'} = $ENV{'PGSERVICE'}  if defined $ENV{'PGSERVICE'};
+
+        if (defined $ENV{'PGHOST'} ) {
+            $hosts[0]{'host'} = $ENV{'PGHOST'};
+            $name .= " host:$ENV{'PGHOST'}";
+        }
+
+        if (defined $ENV{'PGPORT'} ) {
+            $hosts[0]{'port'} = $ENV{'PGPORT'};
+            $name .= " port:$ENV{'PGPORT'}";
+        }
+
+        if (defined $ENV{'PGDATABASE'} ) {
+            $hosts[0]{'db'} = $ENV{'PGDATABASE'};
+            $name .= " db:$ENV{'PGDATABASE'}";
+        }
+
+        if (defined $ENV{'PGSERVICE'} ) {
+            $hosts[0]{'dbservice'} = $ENV{'PGSERVICE'};
+            $name .= " service:$ENV{'PGSERVICE'}";
+        }
+
+        $hosts[0]{'user'} = $ENV{'PGUSER'} if defined $ENV{'PGUSER'};
+
+        $hosts[0]{'name'} = $name;
     }
 
     dprint ('Hosts: '. Dumper(\@hosts));
