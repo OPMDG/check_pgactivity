@@ -270,7 +270,15 @@ list.
 
 =item B<-h>, B<--host> HOST
 
-Database server host or socket directory (default: "localhost").
+Note: if neither host, username, port or database is given, psql will
+be invoked without any of those parameters passed over.  psql will
+then typically try to connect to the default unix socket (typically
+/var/run/postgresql/.s.PGSQL.5432) using the unix username as the
+database username and database, typically using the ident
+authentication.  If one or more of the above mentioned parameters are
+given but not all, the defaults will apply to the rest.
+
+Database server host or socket directory (default: "localhost")
 
 =item B<-U>, B<--username> ROLE
 
@@ -486,6 +494,24 @@ sub is_storable($) {
     return defined Storable::read_magic($head);
 }
 
+# Find a unique string for the database instance connection.
+# Used by save and load.
+#
+# Parameter: host structure ref that holds the "hsot" and "port" parameters
+sub find_hostkey($) {
+    my $hostkey;
+    my $host = shift;
+    if (defined $host->{'dbservice'}) {
+        $hostkey = "$host->{'dbservice'}";
+    } elsif (defined $host->{'host'}) {
+        $hostkey = "$host->{'host'}$host->{'port'}";
+    } else {
+	## no connection parameters defined, using psql defaults
+	$hostkey = "localhost/default"
+    }
+    return $hostkey;
+}
+
 # Record the given ref content for the given host in a file on disk.
 # The file is defined by argument "--status-file" on command line. By default:
 #
@@ -510,14 +536,8 @@ sub save($$$$) {
     my $ref     = shift;
     my $storage = shift;
     my $all     = {};
-    my $hostkey;
+    my $hostkey = find_hostkey($host);
 
-    if (defined $host->{'dbservice'}) {
-        $hostkey = "$host->{'dbservice'}";
-    }
-    else {
-        $hostkey = "$host->{'host'}$host->{'port'}";
-    }
 
     die "File «${storage}» not recognized as a check_pgactivity status file.\n\n"
         ."Please, check its path or move away this wrong file"
@@ -542,15 +562,8 @@ sub load($$$) {
     my $host    = shift;
     my $name    = shift;
     my $storage = shift;
-    my $hostkey;
+    my $hostkey = find_hostkey($host);
     my $all;
-
-    if (defined $host->{'dbservice'}) {
-        $hostkey = "$host->{'dbservice'}";
-    }
-    else {
-        $hostkey = "$host->{'host'}$host->{'port'}";
-    }
 
     return undef unless -r $storage;
 
@@ -886,6 +899,16 @@ sub parse_hosts(\%) {
                 $hosts[-1]{'host'}, $hosts[-1]{'port'}, $hosts[-1]{'db'}
             );
         }
+    }
+
+    if (!@hosts) {
+	## No connection parameters given; we'll push an empty host
+	## with the hostkey/name "localhost/default".  With no other
+	## keys in the hash, no connection parameters will be passed
+	## to psql, and it will most likely connect to localhost using
+	## the unix domain socket in the default path and with a
+	## filename containing the default port number.
+	push(@hosts, {'name' => 'localhost/default'});
     }
 
     dprint ('Hosts: '. Dumper(\@hosts));
