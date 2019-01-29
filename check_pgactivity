@@ -544,8 +544,8 @@ sub save($$$$) {
 
     $all->{$hostkey}{$name} = $ref;
 
-    lock_store( $all, $storage )
-        or die "Can't store data in '$storage'!\n";
+    eval { lock_store( $all, $storage ) };
+    die "Can't store data in '$storage':\n  $@" if $@;
 }
 
 # Load the given ref content for the given host from the file on disk.
@@ -562,13 +562,16 @@ sub load($$$) {
     my $hostkey = find_hostkey($host);
     my $all;
 
-    return undef unless -r $storage;
+    return undef unless -e $storage;
+
+    die "No permission to read status file «${storage}»" unless -r $storage;
 
     die "File «${storage}» not recognized as a check_pgactivity status file.\n\n"
         ."Please, check its path or move away this wrong file"
         unless is_storable $storage;
 
-    $all = lock_retrieve($storage);
+    eval { $all = lock_retrieve($storage) };
+    die "Could not read status file «${storage}»:\n  $@" if $@;
 
     return $all->{$hostkey}{$name};
 }
