@@ -7273,7 +7273,7 @@ Warning is raised when the time since configuration reload is less than the warn
 If only a warning or critical threshold is given, it will be used for both cases.
 Obviously these alerts will disappear from themselves once enough time has passed.
 
-Perfdata contain the three values, or NULL if not available for this version.
+Perfdata contain the three values (when available).
 
 Required privileges: pg_monitor on PG10+; otherwise unprivileged role.
 
@@ -7373,7 +7373,7 @@ sub check_uptime {
 
     return critical ( $me, \@msg_crit, \@perfdata) if ( @msg_crit ) ;
     return warning  ( $me, \@msg_warn, \@perfdata) if ( @msg_warn ) ;
-    return ok( $me, [ "$msg_uptime $msg_reload_conf $msg_shmem_init_time"  ], \@perfdata );
+    return ok( $me, [ $msg_uptime $msg_reload_conf $msg_shmem_init_time ], \@perfdata );
 }
 
 =item B<wal_files> (8.1+)
