@@ -902,7 +902,7 @@ sub parse_hosts(\%) {
         # No connection parameters given.
         # The psql execution relies on binary defaults and env variables.
         # We look for libpq environment variables to save them and preserve
-        # default psql behaviour as query() always reset them.
+        # default psql behaviour as query() always resets them.
         my $name = 'binary defaults';
 
         push @hosts, {
