@@ -1764,20 +1764,24 @@ sub check_archiver {
         # Version 10.0 and higher: use pg_stat_archiver as the monitoring
         # user may not be super-user.
         my $query = q{
-        SELECT COALESCE( (('x' || substr(current_wal, 9, 8))::bit(32)::int *256 + ('x' || substr(current_wal, 17, 8))::bit(32)::int)
-                       - (('x' || substr(last_failed_wal, 9, 8))::bit(32)::int * 256 + ('x' || substr(last_failed_wal, 17, 8))::bit(32)::int),
+        SELECT COALESCE(
+                 (4294967296/setting::bigint)*('x'||lpad(split_part(current_pos, '/', 1),8,'0'))::bit(32)::bigint
+                 + ('x'||lpad(split_part(current_pos, '/', 2),8,'0'))::bit(32)::bigint / setting::bigint
+                 - ('x' || substr(last_failed_wal, 9, 8))::bit(32)::bigint * (4294967296/setting::bigint)
+                 - ('x' || substr(last_failed_wal, 17, 8))::bit(32)::bigint,
                  0 /* return 0 if NULL */) AS ready_archives,
                extract('epoch' from (current_timestamp - last_failed_time)) AS oldest_archive_failure
-          FROM (SELECT CASE WHEN   (last_failed_time >= last_archived_time)
-                                OR (last_archived_time IS NULL AND last_failed_time IS NOT NULL)
+        FROM (SELECT CASE WHEN (last_failed_time >= last_archived_time)
+                               OR (last_archived_time IS NULL AND last_failed_time IS NOT NULL)
                             THEN last_failed_wal
                             ELSE NULL
                        END AS last_failed_wal,
-		       CASE WHEN pg_is_in_recovery() THEN pg_walfile_name(pg_last_wal_receive_lsn())
-		            ELSE pg_walfile_name(pg_current_wal_lsn())
-		        END as current_wal,
+                       CASE WHEN pg_is_in_recovery() THEN pg_last_wal_receive_lsn()::text
+                            ELSE pg_current_wal_lsn()::text
+                       END AS current_pos,
                        last_failed_time
-                  FROM pg_stat_archiver) stats
+                  FROM pg_stat_archiver) stats, pg_catalog.pg_settings s
+        WHERE s.name = 'wal_segment_size'
         };
 
         @rs = @{ query( $hosts[0], $query ) };
