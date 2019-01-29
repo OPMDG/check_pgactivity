@@ -7333,7 +7333,7 @@ sub check_uptime {
 
     @rs = @{ query_ver( $hosts[0], %queries ) };
     $uptime = int( $rs[0][0] );
-    $msg_uptime = "postmaster started for ".to_interval($uptime)."s (since $rs[0][2])" ;
+    $msg_uptime = "postmaster started for ".to_interval($uptime)." (since $rs[0][2])" ;
     push @perfdata => [ 'postmaster uptime', $uptime , 's', undef, undef, 0 ];
     
     # time since configuration reload
