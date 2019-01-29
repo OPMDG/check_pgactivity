@@ -7336,6 +7336,7 @@ sub check_uptime {
     my @rs;
     my @hosts;
     my @perfdata;
+    my @msg;
     my @msg_warn;
     my @msg_crit;
     my $uptime;
@@ -7360,7 +7361,7 @@ sub check_uptime {
                    pg_postmaster_start_time(),
                    pg_conf_load_time()
         },
-		$PG_VERSION_100 => q{
+        $PG_VERSION_100 => q{
             SELECT extract('epoch' from (current_timestamp - pg_postmaster_start_time())) AS time_since_postmaster_start,
                    extract('epoch' from (current_timestamp - pg_conf_load_time())) AS time_since_conf_reload,
                    pg_postmaster_start_time(),
@@ -7392,41 +7393,61 @@ sub check_uptime {
     # time since configuration reload
     $reload_conf_flag = !(check_compat $hosts[0], $PG_VERSION_81, $PG_VERSION_84);
     if ($reload_conf_flag) {
-      $reload_conf_time = int( $rs[0][1] );
-      $msg_reload_conf = "configuration reloaded for ".to_interval($reload_conf_time)." (since $rs[0][3])";
-      push @perfdata => [ 'configuration uptime', $reload_conf_time , 's',
-          undef, undef, 0 ];
+        $reload_conf_time = int( $rs[0][1] );
+        $msg_reload_conf = "configuration reloaded for ".to_interval($reload_conf_time)." (since $rs[0][3])";
+        push @perfdata => [ 'configuration uptime', $reload_conf_time , 's',
+            undef, undef, 0 ];
     } else {
         $msg_reload_conf = "";
     };
 
     # time since last share memory reinit
     if ( check_compat $hosts[0], $PG_VERSION_100 ) {
-	  $shmem_init_time = int ( $rs[0][4] );
-	  $msg_shmem_init_time = "shared memory initialized since ".to_interval($shmem_init_time)." (since $rs[0][5])";
-	  push @perfdata => [ 'shmem init time', $shmem_init_time , 's',
-          undef, undef, 0 ];
-    } else {
-        $msg_shmem_init_time = "";
-	}
+        $shmem_init_time = int ( $rs[0][4] );
+        $msg_shmem_init_time = "shared memory initialized since ".to_interval($shmem_init_time)." (since $rs[0][5])";
+        push @perfdata => [ 'shmem init time', $shmem_init_time , 's', undef, undef, 0 ];
+    }
 
-    if ( defined $c_limit and defined $shmem_init_time and $shmem_init_time < $c_limit ) {
-       push @msg_crit => $msg_shmem_init_time;
-    } elsif ( defined $c_limit and $uptime < $c_limit ) {
-       push @msg_crit => $msg_uptime;
-    } elsif (not defined $c_limit  and defined $w_limit and defined $shmem_init_time and $shmem_init_time < $w_limit ) {
+    # uptime check
+    if ( defined $c_limit and $uptime < $c_limit ) {
+        push @msg_crit => $msg_uptime;
+    }
+    elsif ( not defined $c_limit and defined $w_limit and $uptime < $w_limit ) {
         push @msg_warn => $msg_uptime;
-    } elsif (not defined $c_limit  and defined $w_limit and $uptime < $w_limit ) {
-        push @msg_warn => $msg_uptime;
-    } elsif ($reload_conf_flag and defined $c_limit and not defined $w_limit and $reload_conf_time < $c_limit ) {
+    }
+    else {
+        push @msg => $msg_uptime;
+    }
+
+    # shmem init check
+    if ( defined $shmem_init_time and defined $c_limit and $shmem_init_time < $c_limit ) {
+        push @msg_crit => $msg_shmem_init_time;
+    }
+    elsif ( defined $shmem_init_time and not defined $c_limit and defined $w_limit
+            and $shmem_init_time < $w_limit
+    ) {
+        push @msg_warn => $msg_shmem_init_time;
+    }
+    elsif ( defined $shmem_init_time ) {
+        push @msg => $msg_shmem_init_time;
+    }
+
+    # reload check
+    if ( $reload_conf_flag and defined $c_limit and not defined $w_limit
+         and $reload_conf_time < $c_limit
+    ) {
         push @msg_crit => $msg_reload_conf;
-    } elsif ($reload_conf_flag and defined $w_limit and $reload_conf_time < $w_limit) {
-        push @msg_warn =>  $msg_reload_conf;
-    } ;
+    }
+    elsif ($reload_conf_flag and defined $w_limit and $reload_conf_time < $w_limit) {
+        push @msg_warn => $msg_reload_conf;
+    }
+    elsif ( $reload_conf_flag ) {
+        push @msg => $msg_reload_conf;
+    }
 
-    return critical ( $me, \@msg_crit, \@perfdata) if ( @msg_crit ) ;
-    return warning  ( $me, \@msg_warn, \@perfdata) if ( @msg_warn ) ;
-    return ok( $me, [ $msg_uptime, $msg_reload_conf, $msg_shmem_init_time ], \@perfdata );
+    return critical ( $me, [ @msg_crit, @msg_warn, @msg ], \@perfdata) if ( @msg_crit ) ;
+    return warning  ( $me, [ @msg_warn, @msg ], \@perfdata) if ( @msg_warn ) ;
+    return ok( $me, \@msg, \@perfdata );
 }
 
 =item B<wal_files> (8.1+)
