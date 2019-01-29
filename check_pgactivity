@@ -7351,7 +7351,7 @@ sub check_uptime {
     if ( check_compat $hosts[0], $PG_VERSION_100 ) {
 	  $shmem_init_time = int ( $rs[0][4] );
 	  $msg_shmem_init_time = "shared memory initialized since ".to_interval($shmem_init_time)." (since $rs[0][5])";
-	  push @perfdata => [ 'shmem reinit time', $shmem_init_time , 's',
+	  push @perfdata => [ 'shmem init time', $shmem_init_time , 's',
           undef, undef, 0 ];
     } else {
         $msg_shmem_init_time = "";
