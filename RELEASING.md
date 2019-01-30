@@ -78,3 +78,57 @@ Don't forget to upload the package on github release page.
 Debian packaging is handled by the Debian Mainteners
 (see https://salsa.debian.org/?name=check_pgactivity).
 A new release will trigger the release of a new package.
+
+### Commuity
+
+## Nagios Exchange
+
+Update:
+* the release number
+* the services list
+* add latest packages, zip and tarbal.
+
+https://exchange.nagios.org/directory/Plugins/Databases/PostgresQL/check_pgactivity/details
+
+Ask Thomas (frost242) Reiss  or Jehan-Guillaume (ioguix) de Rorthis for credentials.
+
+## Submit a news on postgresql.org
+
+* login: https://www.postgresql.org/account/login/?next=/account/
+* go https://www.postgresql.org/account/edit/news/
+* click "Submit News Article"
+* organisation: Dalibo
+* Titre: "Release: check_pgactivity 2.4"
+* Content:
+  
+  ~~~
+check_pgactivity version 2.4 released
+========================
+
+check\_pgactivity is a PostgreSQL plugin for Nagios. This plugin is written with a focus
+on a rich perfdata set. Every new features of PostgreSQL can be easily monitored with
+check\_pgactivity.
+
+Changelog :
+
+* ...
+* ...
+* ...
+
+
+Here are some useful links:
+
+* github repo: [https://github.com/OPMDG/check_pgactivity](https://github.com/OPMDG/check_pgactivity)
+* reporting issues: [https://github.com/OPMDG/check_pgactivity/issues](https://github.com/OPMDG/check_pgactivity/issues)
+* latest release: [https://github.com/OPMDG/check_pgactivity/releases/latest](https://github.com/OPMDG/check_pgactivity/releases/latest)
+* contributors: [https://github.com/OPMDG/check_pgactivity/blob/master/contributors](https://github.com/OPMDG/check_pgactivity/blob/master/contributors)
+
+Thanks to all the contributors!
+  ~~~
+* check "Third Party Open Source" and "Related Open Source"
+* click on submit
+* wait for moderators...
+
+## Tweets & blogs
+
+Make some noise...
