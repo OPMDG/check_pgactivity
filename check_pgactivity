@@ -57,7 +57,7 @@ delete $ENV{'LANGUAGE'};
 
 $| = 1;
 
-$VERSION = '2.4dev';
+$VERSION = '2.4';
 $PROGRAM = 'check_pgactivity';
 
 my $PG_VERSION_MIN =  70400;
@@ -7939,7 +7939,7 @@ __END__
 
 =head1 VERSION
 
-check_pgactivity version 2.3, released on Mon Nov 13 2017.
+check_pgactivity version 2.4, released on Wed Jan 30 2019
 
 =head1 LICENSING
 

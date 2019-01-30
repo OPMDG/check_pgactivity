@@ -1,12 +1,26 @@
 Changelog
 =========
 
-2018-10-XX v2.4:
+2019-01-30 v2.4:
 
+  - add a new uptime service
+  - add ability to filter by application_name in longest_query and oldest_idlexact service
+  - add minimal delta size to pgdump_backup service to avoid alert when backup grows small in size
+  - allow psql connections without providing connection arguments:
+     rely on the binary default behaviour and environment variables
+  - returns CRITICAL if connection fails for service `connection`, instead of UNKNOWN
+  - add documentation example for pgback in pgdump_service
+  - add documentation for archive_folder
+  - add information on necessary priviledges for all services
+  - replication_slots service handle wal files and pg_replslots files separately
+  - take account of the new BRIN summarize state of autovacuum
+  - avoid warning for -dev versions in pga_version service
+  - ignore startup and backup replication states in service streaming_delta
   - fix handling or file reading errors in archive_folder service
   - fix wal magic number for version 10
   - fix service stat_snapshot_age to output the correct age
   - fix archiver and replication_slots services to work properly on a standby node
+  - fix archiver to raise OK on a slave
   - fix is_replay_paused for PostgreSQL 10
   - fix max_nb_wal calculation in wal_files service
   - fix uninitialized bug in hit_ratio when database do not yet have statistics
@@ -14,17 +28,9 @@ Changelog
   - fix service sequences_exhausted to take account of sequence's minvalue
   - fix sequences_exhausted to take account of sequences only in the current db
   - fix exclude option in backends_status service
-  - ignore startup and backup replication states in service streaming_delta
-  - avoid warning for -dev versions in pga_version service
-  - add a new uptime service
-  - replication_slots service handle wal files and pg_replslots files separately
-  - add ability to filter by application_name in longest_query and oldest_idlexact service
-  - add minimal delta size to pgdump_backup service to avoid alert when backup grows small in size
-  - add documentation example for pgback in pgdump_service
-  - add documentation for archive_folder
-  - add privileges information for all services
-  - allow psql connections without providing connection arguments: rely on the binary default behaviour
-  - take account of the new BRIN summarize state of autovacuum
+  - fix archive_folder: timeline numbers are hexadecimal
+  - fix head levels in man page
+  - check for errors when saving status
 
 2017-11-13 v2.3:
   - add complete support for PostgreSQL 10, including non-privileged monitoring
