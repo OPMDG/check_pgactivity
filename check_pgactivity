@@ -5693,13 +5693,18 @@ sub check_pgdata_permission {
         my $pg_line_uid;
         my @rs_tmp;
 
-        $query = qq{
+        # first query is a ugly hack to bypass query() control about number of
+        # columns expected.
+        $query = qq{ select ' ';
             select pg_backend_pid() as pid
             \\gset
             \\setenv PID :pid
             \\! cat /proc/\$PID/status
         };
         @rs = @{ query ( $hosts[0], $query ) };
+
+        # takes part of the ugly hack to bypass query() control.
+        shift @rs;
 
         # As the usual separators are not there, we only get a big record
         # separated with \n
