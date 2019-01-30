@@ -23,16 +23,18 @@ podselect check_pgactivity > README.pod
 
 ## Tagging and building tar file
 
+Directly into the official repo:
+
 ```
 TAG=REL2_4
-git -a $TAG
+git tag -a $TAG  <Release commit number>
 git push --tags
 git archive --prefix=check_pgactivity-$TAG/ -o /tmp/check_pgactivity-$TAG.tgz $TAG
 ```
 
 ## Release on github
 
-  - Go to https://github.com/OPMDG/check_pgactivity/tags
+  - Go to https://github.com/OPMDG/check_pgactivity/releases
   - Edit the release notes for the new tag
   - Set "check_pgactivity $VERSION" as title, eg. "check_pgactivity 2.4"
   - Here is the format of the release node itself:
@@ -66,6 +68,8 @@ git clone https://github.com/OPMDG/check_pgactivity.git
 spectool -R -g check_pgactivity/check_pgactivity.spec
 rpmbuild -ba check_pgactivity/check_pgactivity.spec
 ```
+
+The RPM is generated into `rpmbuild/RPMS/noarch`.
 
 Don't forget to upload the package on github release page.
 
