@@ -6126,6 +6126,7 @@ sub check_sequences_exhausted {
     ALLDB_LOOP: foreach my $db (sort @all_db) {
         next ALLDB_LOOP if grep { $db =~ /$_/ } @dbexclude;
         next ALLDB_LOOP if @dbinclude and not grep { $db =~ /$_/ } @dbinclude;
+        dprint ("Searching for exhausted dequences in $db \n");
 
         my %sequences;
 
@@ -6152,10 +6153,14 @@ WHERE seq.relkind='S'
  AND d.deptype='a'};
             # We got an array: for each record, type (int2, int4, int8), sequence name, and the column name
             @rs = @{ query ( $hosts[0], $query, $db ) };
+            dprint ("DB  $db : found ".(scalar @rs )." sequences \n" );
+
+            next ALLDB_LOOP if ( scalar @rs ) <= 0 ;
 
             # Now a second query: get last_value for all sequences. There is no way to not generate a query here
             my @query_elements;
             foreach my $record(@rs) {
+                dprint ("Looking at sequence  $record->[1] \n") ;
                 my $seqname=$record->[1];
                 my $protected_seqname=$seqname;
                 $protected_seqname=~s/'/''/g; # Protect quotes
