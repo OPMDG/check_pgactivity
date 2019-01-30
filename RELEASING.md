@@ -24,7 +24,7 @@ podselect check_pgactivity > README.pod
 ## Tagging and building tar file
 
 ```
-TAG=REL2_3
+TAG=REL2_4
 git -a $TAG
 git push --tags
 git archive --prefix=check_pgactivity-$TAG/ -o /tmp/check_pgactivity-$TAG.tgz $TAG
