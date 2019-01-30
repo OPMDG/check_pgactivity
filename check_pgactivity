@@ -6160,7 +6160,7 @@ WHERE seq.relkind='S'
             # Now a second query: get last_value for all sequences. There is no way to not generate a query here
             my @query_elements;
             foreach my $record(@rs) {
-                dprint ("Looking at sequence  $record->[1] \n") ;
+                # dprint ("Looking at sequence  $record->[1] \n") ;
                 my $seqname=$record->[1];
                 my $protected_seqname=$seqname;
                 $protected_seqname=~s/'/''/g; # Protect quotes
