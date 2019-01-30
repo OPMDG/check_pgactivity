@@ -962,15 +962,16 @@ sub parse_hosts(\%) {
 #     [column1, ...] # line1
 #     ...
 #   ]
-sub query($$;$$) {
-    my $host  = shift;
-    my $query = shift;
-    my $db    = shift;
-    my @res   = ();
-    my $res   = '';
-    my $RS    = chr(30); # ASCII RS  (record separator)
-    my $FS    = chr(3);  # ASCII ETX (end of text)
+sub query($$;$$$) {
+    my $host       = shift;
+    my $query      = shift;
+    my $db         = shift;
+    my @res        = ();
+    my $res        = '';
+    my $RS         = chr(30); # ASCII RS  (record separator)
+    my $FS         = chr(3);  # ASCII ETX (end of text)
     my $get_fields = shift;
+    my $onfail     = shift || \&unknown;
     my $tmpfile;
     my $psqlcmd;
     my $rc;
@@ -1015,9 +1016,7 @@ sub query($$;$$) {
     dprint( sprintf( "  stderr (%u): «%s»\n", length $res, $res ) )
         if $rc;
 
-    exit unknown('CHECK_PGACTIVITY',
-        [ "Query failed !\n" . $res ]
-    ) unless $rc == 0;
+    exit $onfail->('CHECK_PGACTIVITY', [ "Query failed !\n" . $res ] ) unless $rc == 0;
 
     if (defined $res) {
         chop $res;
@@ -3305,7 +3304,7 @@ sub check_connection {
         -exitval => 127
     ) if @hosts != 1;
 
-    @rs = @{ query( $hosts[0], $sql ) };
+    @rs = @{ query( $hosts[0], $sql, undef, undef, \&critical ) };
 
     return ok( $me, [ "Connection successful at $rs[0][0], on $rs[0][1]" ] );
 }
