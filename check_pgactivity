@@ -1761,13 +1761,20 @@ sub check_archiver {
 
     }
     else {
-        # Version 10.0 and higher: use pg_stat_archiver as the monitoring
-        # user may not be super-user.
+        # Version 10 and higher: use pg_stat_archiver
+        # as the monitoring user may not be super-user.
+        # FIXME: on a slave with archive_mode=always:
+        #  1) fails while parsing an .history file
+        #  2) pg_last_wal_receive_lsn always returns zero if the slave is fed with pure log shipping (streaming is ok)
         my $query = q{
+        WITH s AS
+		(SELECT setting::bigint * CASE unit WHEN '8kB' THEN 8192 WHEN 'B' THEN 1 ELSE 0 END as walsegsize
+                  FROM pg_catalog.pg_settings
+                  WHERE name = 'wal_segment_size' )
         SELECT COALESCE(
-                 (4294967296/setting::bigint)*('x'||lpad(split_part(current_pos, '/', 1),8,'0'))::bit(32)::bigint
-                 + ('x'||lpad(split_part(current_pos, '/', 2),8,'0'))::bit(32)::bigint / setting::bigint
-                 - ('x' || substr(last_failed_wal, 9, 8))::bit(32)::bigint * (4294967296/setting::bigint)
+                 (4294967296/walsegsize)*('x'||lpad(split_part(current_pos, '/', 1),8,'0'))::bit(32)::bigint
+                 + ('x'||lpad(split_part(current_pos, '/', 2),8,'0'))::bit(32)::bigint / walsegsize
+                 - ('x' || substr(last_failed_wal, 9, 8))::bit(32)::bigint * (4294967296/walsegsize)
                  - ('x' || substr(last_failed_wal, 17, 8))::bit(32)::bigint,
                  0 /* return 0 if NULL */) AS ready_archives,
                extract('epoch' from (current_timestamp - last_failed_time)) AS oldest_archive_failure
@@ -1780,8 +1787,8 @@ sub check_archiver {
                             ELSE pg_current_wal_lsn()::text
                        END AS current_pos,
                        last_failed_time
-                  FROM pg_stat_archiver) stats, pg_catalog.pg_settings s
-        WHERE s.name = 'wal_segment_size'
+                  FROM pg_stat_archiver
+             ) stats, s
         };
 
         @rs = @{ query( $hosts[0], $query ) };
