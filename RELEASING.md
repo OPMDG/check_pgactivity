@@ -79,7 +79,11 @@ Debian packaging is handled by the Debian Mainteners
 (see https://salsa.debian.org/?name=check_pgactivity).
 A new release will trigger the release of a new package.
 
-### Commuity
+### Community
+
+## Packages
+
+Ping packager on mailing list pgsql-pkg-yum if needed to update the RPM on PGDG repo.
 
 ## Nagios Exchange
 
@@ -128,6 +132,35 @@ Thanks to all the contributors!
 * check "Third Party Open Source" and "Related Open Source"
 * click on submit
 * wait for moderators...
+
+## pgsql-announce
+
+Send a mail to the pgsql-announce mailing list. Eg.:
+
+~~~
+check_pgactivity v2.4 has been released on January 30th 2019 under BSD 
+licence.
+
+check_pgactivity is a PostgreSQL plugin for Nagios. This plugin is written
+with a focus on a rich perfdata set. Every new features of PostgreSQL can be
+easily monitored with check_pgactivity.
+
+Changelog :
+
+* ...
+* ...
+* ...
+
+Here are some useful links:
+
+* github repo: https://github.com/OPMDG/check_pgactivity
+* reporting issues: https://github.com/OPMDG/check_pgactivity/issues
+* latest release: https://github.com/OPMDG/check_pgactivity/releases/latest
+* contributors:
+  https://github.com/OPMDG/check_pgactivity/blob/master/contributors
+
+Thanks to all the contributors!
+~~~
 
 ## Tweets & blogs
 
