@@ -90,11 +90,11 @@ Ping packager on mailing list pgsql-pkg-yum if needed to update the RPM on PGDG 
 Update:
 * the release number
 * the services list
-* add latest packages, zip and tarbal.
+* add latest packages, zip and tarball.
 
 https://exchange.nagios.org/directory/Plugins/Databases/PostgresQL/check_pgactivity/details
 
-Ask Thomas (frost242) Reiss  or Jehan-Guillaume (ioguix) de Rorthis for credentials.
+Ask Thomas (frost242) Reiss  or Jehan-Guillaume (ioguix) de Rorthais for credentials.
 
 ## Submit a news on postgresql.org
 
@@ -102,7 +102,7 @@ Ask Thomas (frost242) Reiss  or Jehan-Guillaume (ioguix) de Rorthis for credenti
 * go https://www.postgresql.org/account/edit/news/
 * click "Submit News Article"
 * organisation: Dalibo
-* Titre: "Release: check_pgactivity 2.4"
+* Title: "Release: check_pgactivity 2.4"
 * Content:
   
   ~~~
