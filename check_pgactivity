@@ -1085,7 +1085,7 @@ sub get_all_dbname($;$) {
     my $cond = shift;
     my $query = 'SELECT datname FROM pg_database WHERE datallowconn ';
 
-    $query .= q{ AND NOT datistemplate AND datname <> 'postgres' } if ( ! defined $cond);
+    $query .= q{ AND NOT datistemplate AND datname <> 'postgres' } if not defined $cond;
     $query .= ' ORDER BY 1';
 
     push @dbs => $_->[0] foreach (
