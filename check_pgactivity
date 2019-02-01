@@ -1074,21 +1074,37 @@ sub query_ver($\%;$) {
     return undef;
 }
 
-# Return an (unsorted) array with all databases in given host but
+# Return an array with all databases in given host but
 # templates and "postgres".
-sub get_all_dbname($) {
+# By default does not return templates and 'postgres' database
+# except if the 2nd optional parameter non empty. Each service
+# has to decide what suits it.
+sub get_all_dbname($;$) {
     my @dbs;
+    my $host = shift;
+    my $cond = shift;
+    my $query;
 
-    push @dbs => $_->[0] foreach (
-        @{  query( shift, q{
-                SELECT datname
-                FROM pg_database
-                WHERE NOT datistemplate
+    if ( defined $cond and $cond ) {
+        $query = q{
+                  SELECT datname
+                  FROM pg_database
+                  WHERE datallowconn
+                  ORDER BY 1
+            }
+    } else {
+        $query = q{
+                  SELECT datname
+                  FROM pg_database
+                  WHERE NOT datistemplate
                     AND datallowconn
                     AND datname <> 'postgres'
-                ORDER BY 1
-            })
-        }
+                  ORDER BY 1
+            }
+    }
+
+    push @dbs => $_->[0] foreach (
+        @{ query( $host, $query ) }
     );
 
     return \@dbs;
