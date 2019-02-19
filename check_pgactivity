@@ -3541,12 +3541,15 @@ sub check_database_size {
 
         $db_checked++;
 
+        push @perfdata => [ $db->[0], $db->[1], 'B' ];
+
         next DB_LOOP unless defined $db_sizes{ $db->[0] };
+
+        $delta = $db->[1] - $db_sizes{ $db->[0] };
 
         if ( defined $args{'warning'} ) {
             $w_limit = get_size( $args{'warning'},  $db->[1] );
             $c_limit = get_size( $args{'critical'}, $db->[1] );
-            $delta = $db->[1] - $db_sizes{ $db->[0] };
 
             if ( abs($delta) >= $c_limit ) {
                 push @msg_crit => "$db->[0] ($delta, now: $db->[1])";
@@ -3558,8 +3561,6 @@ sub check_database_size {
                 next DB_LOOP;
             }
         }
-
-        push @perfdata => [ $db->[0], $db->[1], 'B', $w_limit, $c_limit ];
     }
 
     save $hosts[0], 'db_size', \%new_db_sizes, $args{'status-file'};
