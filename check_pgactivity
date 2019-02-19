@@ -3480,7 +3480,7 @@ databases.
 
 This service uses the status file (see C<--status-file> parameter).
 
-Perfdata contains the size of each database.
+Perfdata contains the size of each database and their size delta since last call.
 
 Critical and Warning thresholds are optional. They accept either a raw number, a
 percentage, or a size (eg. 2.5G). They are applied on the size difference for each
@@ -3553,13 +3553,16 @@ sub check_database_size {
 
             if ( abs($delta) >= $c_limit ) {
                 push @msg_crit => "$db->[0] ($delta, now: $db->[1])";
-                next DB_LOOP;
+            }
+            elsif ( abs($delta) >= $w_limit ) {
+                push @msg_warn => "$db->[0] ($delta, now: $db->[1])";
             }
 
-            if ( abs($delta) >= $w_limit ) {
-                push @msg_warn => "$db->[0] ($delta, now: $db->[1])";
-                next DB_LOOP;
-            }
+            push @perfdata => [ "$db->[0]_delta", $delta, 'B',
+                                "-$w_limit:$w_limit", "-$c_limit:$c_limit" ];
+        }
+        else {
+            push @perfdata => [ "$db->[0]_delta", $delta, 'B' ];
         }
     }
 
