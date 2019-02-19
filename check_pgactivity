@@ -3482,9 +3482,9 @@ This service uses the status file (see C<--status-file> parameter).
 
 Perfdata contains the size of each database.
 
-Critical and Warning thresholds accept either a raw number, a percentage, or a
-size (eg. 2.5G). They are applied on the size difference for each database
-since the last execution. The aim is to detect unexpected database size
+Critical and Warning thresholds are optional. They accept either a raw number, a
+percentage, or a size (eg. 2.5G). They are applied on the size difference for each
+database since the last execution. The aim is to detect unexpected database size
 variation.
 
 This service supports both C<--dbexclude> and C<--dbinclude> parameters.
@@ -3509,12 +3509,12 @@ sub check_database_size {
     my $sql        = q{SELECT datname, pg_database_size(datname)
         FROM pg_database};
 
-    # Warning and critical are mandatory.
+    # Warning and critical are optional, but they are both required if one is given
     pod2usage(
-        -message => "FATAL: you must specify critical and warning thresholds.",
+        -message => "FATAL: you must specify both critical and warning thresholds.",
         -exitval => 127
-    ) unless defined $args{'warning'} and defined $args{'critical'} ;
-
+    ) if ( defined $args{'warning'} and not defined $args{'critical'} )
+      or ( not defined $args{'warning'} and defined $args{'critical'} );
 
     @hosts = @{ parse_hosts %args };
 
@@ -3524,7 +3524,6 @@ sub check_database_size {
     ) if @hosts != 1;
 
     is_compat $hosts[0], 'database_size', $PG_VERSION_81 or exit 1;
-
 
     %db_sizes = %{ load( $hosts[0], 'db_size', $args{'status-file'} ) || {} };
 
@@ -3544,21 +3543,23 @@ sub check_database_size {
 
         next DB_LOOP unless defined $db_sizes{ $db->[0] };
 
-        $w_limit = get_size( $args{'warning'},  $db->[1] );
-        $c_limit = get_size( $args{'critical'}, $db->[1] );
-        $delta = $db->[1] - $db_sizes{ $db->[0] };
+        if ( defined $args{'warning'} ) {
+            $w_limit = get_size( $args{'warning'},  $db->[1] );
+            $c_limit = get_size( $args{'critical'}, $db->[1] );
+            $delta = $db->[1] - $db_sizes{ $db->[0] };
+
+            if ( abs($delta) >= $c_limit ) {
+                push @msg_crit => "$db->[0] ($delta, now: $db->[1])";
+                next DB_LOOP;
+            }
+
+            if ( abs($delta) >= $w_limit ) {
+                push @msg_warn => "$db->[0] ($delta, now: $db->[1])";
+                next DB_LOOP;
+            }
+        }
 
         push @perfdata => [ $db->[0], $db->[1], 'B', $w_limit, $c_limit ];
-
-        if ( abs($delta) >= $c_limit ) {
-            push @msg_crit => "$db->[0] ($delta, now: $db->[1])";
-            next DB_LOOP;
-        }
-
-        if ( abs($delta) >= $w_limit ) {
-            push @msg_warn => "$db->[0] ($delta, now: $db->[1])";
-            next DB_LOOP;
-        }
     }
 
     save $hosts[0], 'db_size', \%new_db_sizes, $args{'status-file'};
