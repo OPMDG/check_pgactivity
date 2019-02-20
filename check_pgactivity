@@ -603,7 +603,7 @@ sub to_size($) {
 
     $val = int($val);
 
-    for ( $i=0; $i < 6 and $val > 1024; $i++ ) {
+    for ( $i=0; $i < 6 and abs($val) > 1024; $i++ ) {
         $mod = $val%1024;
         $val = int( $val/1024 );
     }
@@ -3482,10 +3482,24 @@ This service uses the status file (see C<--status-file> parameter).
 
 Perfdata contains the size of each database and their size delta since last call.
 
-Critical and Warning thresholds are optional. They accept either a raw number, a
-percentage, or a size (eg. 2.5G). They are applied on the size difference for each
-database since the last execution. The aim is to detect unexpected database size
-variation.
+Critical and Warning thresholds are optional. They are a list of optional 'label=value'
+separated by a comma. It allows to fine tune the alert based on the
+absolute C<size> and/or the C<delta> size. Eg.:
+
+    -w 'size=500GB,delta=1%' -c 'size=600GB,delta=10GB'
+    -w 'size=500GB' -c 'size=600GB'
+    -w 'delta=1%' -c 'delta=10%'
+
+The C<size> label accept either a raw number or a size. The C<delta> label
+accept either a raw number, a percentage, or a size.  The aim of the delta parameter is
+to detect unexpected database size variation.
+
+For backward compatibility, if a single raw number or percentage or size is given with no
+label, it applies on the size difference for each database since the last execution.
+Both threshold bellow are equivalent:
+
+    -w 'delta=1%' -c 'delta=10%'
+    -w '1%' -c '10%'
 
 This service supports both C<--dbexclude> and C<--dbinclude> parameters.
 
@@ -3501,6 +3515,8 @@ sub check_database_size {
     my @hosts;
     my %new_db_sizes;
     my %db_sizes;
+    my %warn;
+    my %crit;
     my %args       = %{ $_[0] };
     my @dbinclude  = @{ $args{'dbinclude'} };
     my @dbexclude  = @{ $args{'dbexclude'} };
@@ -3525,14 +3541,55 @@ sub check_database_size {
 
     is_compat $hosts[0], 'database_size', $PG_VERSION_81 or exit 1;
 
+    if ( defined $args{'warning'} ) {
+        my $threshods_re = qr/(size|delta)\s*=\s*([^,]+)/i;
+
+        # backward compatibility
+        $args{'warning'} = "delta=$args{'warning'}"
+            if is_size($args{'warning'}) or ($args{'warning'} =~ m/^([0-9.]+)%?$/);
+        $args{'critical'} = "delta=$args{'critical'}"
+            if is_size($args{'critical'}) or ($args{'critical'} =~ m/^([0-9.]+)%?$/);
+
+        # Sanity check
+        pod2usage(
+            -message => "FATAL: wrong format for critical and/or warning thresholds.\n"
+                . "See documentation for more information.",
+            -exitval => 127
+        ) unless $args{'warning'} =~ m/^$threshods_re(\s*,\s*$threshods_re)*$/
+            and $args{'critical'} =~ m/^$threshods_re(\s*,\s*$threshods_re)*$/ ;
+
+        while ( $args{'warning'} =~ /$threshods_re/g ) {
+            my ($threshold, $value) = ($1, $2);
+            $warn{$threshold} = $value if $1 and defined $2;
+        }
+
+        while ( $args{'critical'} =~ /$threshods_re/g ) {
+            my ($threshold, $value) = ($1, $2);
+            $crit{$threshold} = $value if $1 and defined $2;
+        }
+
+        # Further sanity check
+        pod2usage(
+            -message => "FATAL: Size threshold only accept a raw number or a size.\n"
+                . "See documentation for more information.",
+            -exitval => 127
+        ) if (defined $warn{'size'} and not is_size($warn{'size'}))
+        or (defined $crit{'size'} and not is_size($crit{'size'}));
+
+        pod2usage(
+            -message => "FATAL: Delta threshold only accept a raw number, a size or a percentage.\n"
+                . "See documentation for more information.",
+            -exitval => 127
+        ) if (defined $warn{'delta'} and not ( is_size($warn{'delta'}) or $warn{'delta'} =~ m/^([0-9.]+)%?$/ ))
+          or (defined $crit{'delta'} and not ( is_size($crit{'delta'}) or $crit{'delta'} =~ m/^([0-9.]+)%?$/ ));
+    }
+
     %db_sizes = %{ load( $hosts[0], 'db_size', $args{'status-file'} ) || {} };
 
     @rs = @{ query( $hosts[0], $sql ) };
 
     DB_LOOP: foreach my $db (@rs) {
         my $delta;
-        my $w_limit;
-        my $c_limit;
 
         $new_db_sizes{ $db->[0] } = $db->[1];
 
@@ -3541,27 +3598,57 @@ sub check_database_size {
 
         $db_checked++;
 
-        push @perfdata => [ $db->[0], $db->[1], 'B' ];
-
-        next DB_LOOP unless defined $db_sizes{ $db->[0] };
+        unless ( defined $db_sizes{ $db->[0] } ) {
+            push @perfdata => [ $db->[0], $db->[1], 'B' ];
+            next DB_LOOP;
+        }
 
         $delta = $db->[1] - $db_sizes{ $db->[0] };
 
+        # Must check threshold for each database
         if ( defined $args{'warning'} ) {
-            $w_limit = get_size( $args{'warning'},  $db->[1] );
-            $c_limit = get_size( $args{'critical'}, $db->[1] );
+            my $limit;
+            my $w_limit;
+            my $c_limit;
 
-            if ( abs($delta) >= $c_limit ) {
-                push @msg_crit => "$db->[0] ($delta, now: $db->[1])";
+            # Check size
+            if ( defined $crit{'size'} ) {
+                $c_limit = get_size( $crit{'size'},  $db->[1] );
+                push @msg_crit => sprintf( "%s (size: %s)", $db->[0], to_size($db->[1]) )
+                    if $db->[1] >= $c_limit;
             }
-            elsif ( abs($delta) >= $w_limit ) {
-                push @msg_warn => "$db->[0] ($delta, now: $db->[1])";
+            if ( defined $warn{'size'}
+                 and defined $c_limit and $db->[1] < $c_limit
+            ) {
+                $w_limit = get_size( $warn{'size'},  $db->[1] );
+                push @msg_warn => sprintf( "%s (size: %s)", $db->[0], to_size($db->[1]) )
+                    if $db->[1] >= $w_limit;
             }
 
-            push @perfdata => [ "$db->[0]_delta", $delta, 'B',
-                                "-$w_limit:$w_limit", "-$c_limit:$c_limit" ];
+            push @perfdata => [ $db->[0], $db->[1], 'B', $w_limit, $c_limit ];
+
+            # Check delta
+            $c_limit = undef;
+            $w_limit = undef;
+            if ( defined $crit{'delta'} ) {
+                $limit = get_size( $crit{'delta'},  $db->[1] );
+                push @msg_crit => sprintf( "%s (delta: %s)", $db->[0], to_size($delta) )
+                    if abs($delta) >= $limit;
+                $c_limit = "-$limit:$limit";
+            }
+            if ( defined $warn{'delta'}
+                 and defined $c_limit and abs($delta) < $limit
+            ) {
+                $limit = get_size( $warn{'delta'},  $db->[1] );
+                push @msg_warn => sprintf( "%s (delta: %s)", $db->[0], to_size($delta) )
+                    if abs($delta) >= $limit;
+                $w_limit = "-$limit:$limit";
+            }
+
+            push @perfdata => [ "$db->[0]_delta", $delta, 'B', $w_limit, $c_limit ];
         }
         else {
+            push @perfdata => [ $db->[0], $db->[1], 'B' ];
             push @perfdata => [ "$db->[0]_delta", $delta, 'B' ];
         }
     }
