@@ -3906,7 +3906,7 @@ sub check_database_size {
 =item B<extensions_versions> (9.1+)
 
 Check all extensions installed in all databases (including templates)
-and raise a Critical alamr if the current version is not the default
+and raise a critical alert if the current version is not the default
 version available on the instance (according to pg_available_extensions).
 
 Typically, it is used to detect forgotten extension upgrades after package
@@ -3916,61 +3916,69 @@ Perfdata returns the number of outdated extensions in each database.
 
 This service supports both C<--dbexclude> and C<--dbinclude> parameters.
 
+This service supports multiple C<--exclude> argument to exclude one or
+more extensions from the check.
+
 Required privileges: unprivileged role able to log in all databases
 
 =cut
 sub check_extensions_versions {
-   my $me       = 'POSTGRES_CHECK_EXT_VERSIONS';
-   my @rs;
-   my @perfdata;
-   my @msg;
-   my @longmsg;
-   my @hosts;
-   my %args     = %{ $_[0] };
-   my @all_db;
-   my $nb;
-   my $nb_tot_outdated_ext = 0 ;
-   my @dbinclude = @{ $args{'dbinclude'} };
-   my @dbexclude = @{ $args{'dbexclude'} };
-   my $query  = q{SELECT name, default_version, installed_version
-                  FROM pg_available_extensions
-                  WHERE installed_version != default_version};
+    my @rs;
+    my @perfdata;
+    my @msg;
+    my @longmsg;
+    my @hosts;
+    my @all_db;
+    my $nb;
+    my $me           = 'POSTGRES_CHECK_EXT_VERSIONS';
+    my %args         = %{ $_[0] };
+    my @dbinclude    = @{ $args{'dbinclude'} };
+    my @dbexclude    = @{ $args{'dbexclude'} };
+    my $tot_outdated = 0 ;
+    my $query = q{SELECT name, default_version, installed_version
+                 FROM pg_catalog.pg_available_extensions
+                 WHERE installed_version != default_version};
 
-   @hosts = @{ parse_hosts %args };
+    @hosts = @{ parse_hosts %args };
 
-   pod2usage(
-       -message => 'FATAL: you must give only one host with service "extensions_versions".',
-       -exitval => 127
-   ) if @hosts != 1;
+    pod2usage(
+        -message => 'FATAL: you must give only one host with service "extensions_versions".',
+        -exitval => 127
+    ) if @hosts != 1;
 
-   is_compat $hosts[0], 'extensions_versions', $PG_VERSION_91 or exit 1;
+    is_compat $hosts[0], 'extensions_versions', $PG_VERSION_91 or exit 1;
 
-   @all_db = @{ get_all_dbname( $hosts[0], 'all_dbs' ) };
+    @all_db = @{ get_all_dbname( $hosts[0], 'all_dbs' ) };
 
-   # Iterate over all db
-   ALLDB_LOOP: foreach my $db (sort @all_db) {
-       next ALLDB_LOOP if grep { $db =~ /$_/ } @dbexclude;
-       next ALLDB_LOOP if @dbinclude and not grep { $db =~ /$_/ } @dbinclude;
+    # Iterate over all db
+    ALLDB_LOOP: foreach my $db (sort @all_db) {
+        next ALLDB_LOOP if grep { $db =~ /$_/ } @dbexclude;
+        next ALLDB_LOOP if @dbinclude and not grep { $db =~ /$_/ } @dbinclude;
 
-       # For each record: extension, default, installed
-       @rs = @{ query ( $hosts[0], $query, $db ) };
-       $nb = scalar keys @rs;
-       dprint ("db $db: $nb outdated ext ");
-       $nb_tot_outdated_ext += $nb;
+        my $outdated = 0;
 
-       #' label'=value[UOM];[warn];[crit];[min];[max]
-       if ( $nb >0 ) { push @perfdata => [ $db, scalar keys @rs ] };
+        # For each record: extension, default, installed
+        @rs = @{ query ( $hosts[0], $query, $db ) };
 
-       foreach my $ext (sort @rs) {
-           push @longmsg, "$db.$ext->[0]: $ext->[2] (should be: $ext->[1]) ";
-       }
-   }
+        REC_LOOP: foreach my $ext (sort @rs) {
+            foreach my $exclude_re ( @{ $args{'exclude'} } ) {
+                next REC_LOOP if $ext->[0] =~ /$exclude_re/;
+            }
 
-   if ( $nb_tot_outdated_ext > 0  ) {
-     return critical( $me, \@msg, \@perfdata, \@longmsg ) ;
-   } else {
-     return ok( $me, \@msg, \@perfdata, \@longmsg );
-   }
+            $outdated++;
+            push @longmsg, "$db.$ext->[0]: $ext->[2] (should be: $ext->[1])";
+        }
+
+        dprint("db $db: $outdated outdated ext\n");
+
+        $tot_outdated += $outdated;
+
+        push @perfdata => [ $db, $outdated, undef, undef, 1, 0 ];
+    }
+
+    return critical( $me, \@msg, \@perfdata, \@longmsg ) if $tot_outdated > 0;
+
+    return ok( $me, \@msg, \@perfdata, \@longmsg );
 }
 
 
