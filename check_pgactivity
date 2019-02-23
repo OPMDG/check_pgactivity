@@ -1768,7 +1768,7 @@ sub check_archiver {
         #  2) pg_last_wal_receive_lsn always returns zero if the slave is fed with pure log shipping (streaming is ok)
         my $query = q{
         WITH s AS
-		(SELECT setting::bigint * CASE unit WHEN '8kB' THEN 8192 WHEN 'B' THEN 1 ELSE 0 END as walsegsize
+        (SELECT setting::bigint * CASE unit WHEN '8kB' THEN 8192 WHEN 'B' THEN 1 ELSE 0 END as walsegsize
                   FROM pg_catalog.pg_settings
                   WHERE name = 'wal_segment_size' )
         SELECT COALESCE(
@@ -2365,11 +2365,11 @@ sub check_backends_status {
                 push @msg_crit => "$status{$s}[0] $s for $status{$s}[1] seconds";
                 next STATUS_LOOP;
               }
-	    }
+        }
             elsif ( $status{$s}[0] >= $crit{$s} ) {
               push @msg_crit => "$status{$s}[0] $s";
               next STATUS_LOOP;
-	    }
+        }
         }
 
         # Warning
@@ -2379,7 +2379,7 @@ sub check_backends_status {
                 push @msg_warn => "$status{$s}[0] $s for $status{$s}[1] seconds";
                 next STATUS_LOOP;
               }
-	    }
+        }
             elsif ( $status{$s}[0] >= $warn{$s} ) {
               push @msg_warn => "$status{$s}[0] $s";
               next STATUS_LOOP;
@@ -5295,9 +5295,9 @@ Optionally, a C<--global-pattern> option can be supplied to check for an
 additional global file.
 
 Tip : For compatibility with pg_back, you should use
-		C<--path> '/path/*{dump,sql}'
-		C<--pattern> '(\w+)_[0-9-_]+.dump'
-		C<--global-pattern> 'pg_global_[0-9-_]+.sql'
+        C<--path> '/path/*{dump,sql}'
+        C<--pattern> '(\w+)_[0-9-_]+.dump'
+        C<--global-pattern> 'pg_global_[0-9-_]+.sql'
 
 The C<--critical> and C<--warning> thresholds are optional. They accept a list
 of 'metric=value' separated by a comma. Available metrics are C<oldest> and
@@ -5785,7 +5785,7 @@ sub check_replication_slots {
                      CASE WHEN pg_is_in_recovery() THEN pg_last_xlog_receive_location()
                           ELSE pg_current_xlog_location()
                       END
-		, slot.restart_lsn)
+        , slot.restart_lsn)
                 - (pg_xlogfile_name_offset(restart_lsn)).file_offset
                 )
                 / (s.val)
@@ -6250,7 +6250,7 @@ SELECT
                 next;
             }
 
-	    if ($sequences{$seq}->{LASTVALSEQ} eq '') {
+        if ($sequences{$seq}->{LASTVALSEQ} eq '') {
                 # Skip sequences having lastvalue not initialized
                 delete $sequences{$seq};
                 next;
@@ -6422,17 +6422,17 @@ sub check_streaming_delta {
             sent_lsn, write_lsn, flush_lsn, replay_lsn,
             CASE pg_is_in_recovery() WHEN true THEN pg_last_wal_receive_lsn() ELSE pg_current_wal_lsn() END
             FROM pg_stat_replication
-	    WHERE state NOT IN ('startup', 'backup')},
+        WHERE state NOT IN ('startup', 'backup')},
         $PG_VERSION_92 => q{SELECT application_name, client_addr, pid,
             sent_location, write_location, flush_location, replay_location,
             CASE pg_is_in_recovery() WHEN true THEN pg_last_xlog_receive_location() ELSE pg_current_xlog_location() END
             FROM pg_stat_replication
-	    WHERE state NOT IN ('startup', 'backup')},
+        WHERE state NOT IN ('startup', 'backup')},
         $PG_VERSION_91 => q{SELECT application_name, client_addr, procpid,
             sent_location, write_location, flush_location, replay_location,
             CASE pg_is_in_recovery() WHEN true THEN pg_last_xlog_receive_location() ELSE pg_current_xlog_location() END
             FROM pg_stat_replication
-	    WHERE state NOT IN ('startup', 'backup')}
+        WHERE state NOT IN ('startup', 'backup')}
     );
     # FIXME this service should check for given slaves in opts!
 
@@ -7165,10 +7165,10 @@ sub check_temp_files {
                                                WHERE spcname !~ '^pg_' ) AS spc ) sr
                              WHERE sr.spc_root ~ ('^PG_'||sr.v)
                              UNION ALL
-			     SELECT 0, 'pg_default', 'base' AS dir, 'pgsql_tmp' AS sub
+                 SELECT 0, 'pg_default', 'base' AS dir, 'pgsql_tmp' AS sub
                                FROM pg_ls_dir('base') AS l
                               WHERE l='pgsql_tmp'
-			  ) AS ls
+              ) AS ls
                  ) AS agg
            WHERE current_setting('is_superuser')::bool
            GROUP BY 1, 2
@@ -7176,7 +7176,7 @@ sub check_temp_files {
           SELECT 'db', d.datname, s.temp_files, s.temp_bytes
             FROM pg_database AS d
             JOIN pg_stat_database AS s ON s.datid=d.oid
-	},
+    },
     );
 
     @hosts = @{ parse_hosts %args };
@@ -7390,7 +7390,7 @@ sub check_uptime {
                    extract('epoch' from (current_timestamp - pg_conf_load_time())) AS time_since_conf_reload,
                    pg_postmaster_start_time(),
                    pg_conf_load_time(),
-                   -- oldest child (usually checkpointer, startup...) 
+                   -- oldest child (usually checkpointer, startup...)
                    extract('epoch' from (current_timestamp - min(backend_start))) AS age_oldest_child_process,
                    min(backend_start) AS oldest_child_process
             FROM pg_stat_activity WHERE backend_type != 'client backend'
@@ -7413,7 +7413,7 @@ sub check_uptime {
     $uptime = int( $rs[0][0] );
     $msg_uptime = "postmaster started for ".to_interval($uptime)." (since $rs[0][2])" ;
     push @perfdata => [ 'postmaster uptime', $uptime , 's', undef, undef, 0 ];
-    
+
     # time since configuration reload
     $reload_conf_flag = !(check_compat $hosts[0], $PG_VERSION_81, $PG_VERSION_84);
     if ($reload_conf_flag) {
