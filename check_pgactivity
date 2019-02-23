@@ -5778,26 +5778,24 @@ sub check_replication_slots {
             FROM pg_settings
             WHERE name = 'wal_segment_size' --usually 2048 (blocks)
         )
-        SELECT slot.slot_name,slot.slot_type,
+        SELECT slot.slot_name, slot.slot_type,
         COALESCE(
             floor(
                 (pg_xlog_location_diff(
-                     CASE WHEN pg_is_in_recovery() THEN pg_last_xlog_receive_location()
-                          ELSE pg_current_xlog_location()
+                     CASE WHEN pg_is_in_recovery()
+                        THEN pg_last_xlog_receive_location()
+                        ELSE pg_current_xlog_location()
                       END
-        , slot.restart_lsn)
-                - (pg_xlogfile_name_offset(restart_lsn)).file_offset
+                      , slot.restart_lsn)
+                -- this is needed to account for whole WAL retention and not
+                -- only size retention
+                + (pg_xlogfile_name_offset(restart_lsn)).file_offset
                 )
                 / (s.val)
-            ),0
-        ) replslot_wal_keep,null as replslot_files
+            ), 0
+        ) replslot_wal_keep, null as replslot_files
         FROM pg_replication_slots slot
         CROSS JOIN wal_size s},
-
-#  slot_name  | slot_type | replslot_wal_keep | replslot_files
-#-------------+-----------+-------------------+----------------
-# node_a_slot | physical  |                 0 |
-# slot2       | logical   |                -1 |
 
        $PG_VERSION_100 => q{
         WITH wal_size AS (
@@ -5814,7 +5812,9 @@ sub check_replication_slots {
           COALESCE(
                  floor(
                      (pg_wal_lsn_diff(pg_current_wal_lsn(), slot.restart_lsn)
-                     - (pg_walfile_name_offset(restart_lsn)).file_offset
+                     -- this is needed to account for whole WAL retention and
+                     -- not only size retention
+                     + (pg_walfile_name_offset(restart_lsn)).file_offset
                      )
                      / (s.val)
                  ),0
@@ -5845,7 +5845,9 @@ sub check_replication_slots {
            COALESCE(
                   floor(
                       (pg_wal_lsn_diff(pg_current_wal_lsn(), slot.restart_lsn)
-                      - (pg_walfile_name_offset(restart_lsn)).file_offset
+                      -- this is needed to account for whole WAL retention and
+                      -- not only size retention
+                      + (pg_walfile_name_offset(restart_lsn)).file_offset
                       )
                       / s.wal_segment_size
                   ),0
@@ -5861,10 +5863,6 @@ sub check_replication_slots {
          CROSS JOIN wal_size s
           ) as d
          GROUP BY slot_name,slot_type,replslot_wal_keep}
-# slot_name | slot_type | replslot_wal_keep | replslot_files
-# ----------+-----------+------------- -----+---------------
-# mysub3    | logical   |                -1 |             1
-# mysub     | logical   |                -1 |             1
     );
 
     @hosts = @{ parse_hosts %args };
