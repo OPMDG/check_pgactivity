@@ -1006,7 +1006,7 @@ sub query($$;$$$) {
 
     print $tmpfile "$query;" or die "Could not create or write in a temp file!";
 
-    $psqlcmd  = qq{ $args{'psql'} --set "ON_ERROR_STOP=1" }
+    $psqlcmd  = qq{ $args{'psql'} -w --set "ON_ERROR_STOP=1" }
               . qq{ -qXAf $tmpfile -R $RS -F $FS };
     $psqlcmd .= qq{ --dbname='$db' } if defined $db;
     $res      = qx{ $psqlcmd 2>&1 };
