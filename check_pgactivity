@@ -107,6 +107,10 @@ my %services = (
         'sub'  => \&check_backends_status,
         'desc' => 'Number of connections in relation to their status.'
     },
+    'checksum_errors' => {
+        'sub'  => \&check_checksum_errors,
+        'desc' => 'Check data checksums errors.'
+    },
     'commit_ratio' => {
         'sub'  => \&check_commit_ratio,
         'desc' => 'Commit and rollback rate per second and commit ratio since last execution.'
@@ -119,7 +123,6 @@ my %services = (
         'sub'  => \&check_table_unlogged,
         'desc' => 'Check unlogged tables'
     },
-
     'wal_files' => {
         'sub'  => \&check_wal_files,
         'desc' => 'Total number of WAL files.',
@@ -2396,6 +2399,98 @@ sub check_backends_status {
     return ok( $me, [ "$num_backends backend connected" ], \@perfdata );
 }
 
+
+=item B<checksum_errors> (12+)
+
+Check for data checksums error, reported in pg_stat_database.
+
+This service requires that data checksums are enabled on the target instance.
+UNKNOWN will be returned if that's not the case.
+
+Critical and Warning thresholds are optional. They only accept a raw number of
+checksums errors per database.  If the thresholds are not provided, a default
+value of `1` will be used for both thresholds.
+
+Checksums errors are CRITICAL issues, so it's highly recommended to keep
+default threshold, as immediate action should be taken as soon as such a
+problem arises.
+
+Perfdata contains the number of error per database.
+
+Required privileges: unprivileged user.
+
+=cut
+
+sub check_checksum_errors {
+    my @msg_crit;
+    my @msg_warn;
+    my @rs;
+    my @perfdata;
+    my @hosts;
+    my %args       = %{ $_[0] };
+    my $me         = 'POSTGRES_CHECKSUM_ERRORS';
+    my $db_checked = 0;
+    my $sql        = q{SELECT COALESCE(s.datname, '<shared objects>'),
+        checksum_failures
+        FROM pg_catalog.pg_stat_database s};
+    my $w_limit;
+    my $c_limit;
+
+    # Warning and critical are optional
+    pod2usage(
+        -message => "FATAL: you must specify both critical and warning thresholds.",
+        -exitval => 127
+    ) if ((defined $args{'warning'} and not defined $args{'critical'})
+      or (not defined $args{'warning'} and defined $args{'critical'})) ;
+
+    # Warning and critical default to 1
+    if (not defined $args{'warning'} or not defined $args{'critical'}) {
+        $w_limit = $c_limit = 1;
+    } else {
+        $w_limit = $args{'warning'};
+        $c_limit = $args{'critical'};
+    }
+
+    @hosts = @{ parse_hosts %args };
+
+    pod2usage(
+        -message => 'FATAL: you must give only one host with service "database_size".',
+        -exitval => 127
+    ) if @hosts != 1;
+
+    is_compat $hosts[0], 'checksum_error', $PG_VERSION_120 or exit 1;
+
+    # Check if data checksums are enabled
+    @rs = @{ query( $hosts[0], "SELECT pg_catalog.current_setting('data_checksums')" ) };
+
+    return unknown( $me, ['Data checksums are not enabled!'] )
+        unless ($rs[0][0] eq "on");
+
+    @rs = @{ query( $hosts[0], $sql ) };
+
+    DB_LOOP: foreach my $db (@rs) {
+        $db_checked++;
+
+        push @perfdata => [ $db->[0], $db->[1], '', $w_limit, $c_limit ];
+
+        if ( $db->[1] >= $c_limit ) {
+            push @msg_crit => "$db->[0]: $db->[1] error(s)";
+            next DB_LOOP;
+        }
+
+        if ( $db->[1] >= $w_limit ) {
+            push @msg_warn => "$db->[0]: $db->[1] error(s)";
+            next DB_LOOP;
+        }
+    }
+
+    return critical( $me, [ @msg_crit, @msg_warn ], \@perfdata )
+        if scalar @msg_crit > 0;
+
+    return warning( $me, \@msg_warn, \@perfdata ) if scalar @msg_warn > 0;
+
+    return ok( $me, [ "$db_checked database(s) checked" ], \@perfdata );
+}
 
 =item B<backup_label_age> (8.1+)
 
