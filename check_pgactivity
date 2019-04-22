@@ -76,6 +76,7 @@ my $PG_VERSION_95  =  90500;
 my $PG_VERSION_96  =  90600;
 my $PG_VERSION_100 = 100000;
 my $PG_VERSION_110 = 110000;
+my $PG_VERSION_120 = 120000;
 
 # reference to the output sub
 my $output_fmt;
