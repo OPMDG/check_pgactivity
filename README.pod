@@ -368,6 +368,25 @@ excluded backends.
 Required privileges: an unprivileged user only sees its own queries;
 a pg_monitor (10+) or superuser (<10) role is required to see all queries.
 
+=item B<checksum_errors> (12+)
+
+Check for data checksums error, reported in pg_stat_database.
+
+This service requires that data checksums are enabled on the target instance.
+UNKNOWN will be returned if that's not the case.
+
+Critical and Warning thresholds are optional. They only accept a raw number of
+checksums errors per database.  If the thresholds are not provided, a default
+value of `1` will be used for both thresholds.
+
+Checksums errors are CRITICAL issues, so it's highly recommended to keep
+default threshold, as immediate action should be taken as soon as such a
+problem arises.
+
+Perfdata contains the number of error per database.
+
+Required privileges: unprivileged user.
+
 =item B<backup_label_age> (8.1+)
 
 Check the age of the backup label file.
@@ -809,9 +828,9 @@ Optionally, a C<--global-pattern> option can be supplied to check for an
 additional global file.
 
 Tip : For compatibility with pg_back, you should use
-		C<--path> '/path/*{dump,sql}'
-		C<--pattern> '(\w+)_[0-9-_]+.dump'
-		C<--global-pattern> 'pg_global_[0-9-_]+.sql'
+        C<--path> '/path/*{dump,sql}'
+        C<--pattern> '(\w+)_[0-9-_]+.dump'
+        C<--global-pattern> 'pg_global_[0-9-_]+.sql'
 
 The C<--critical> and C<--warning> thresholds are optional. They accept a list
 of 'metric=value' separated by a comma. Available metrics are C<oldest> and
@@ -1150,5 +1169,5 @@ For license terms, see the LICENSE provided with the sources.
 =head1 AUTHORS
 
 Author: Open PostgreSQL Monitoring Development Group
-Copyright: (C) 2012-2018 Open PostgreSQL Monitoring Development Group
+Copyright: (C) 2012-2019 Open PostgreSQL Monitoring Development Group
 
