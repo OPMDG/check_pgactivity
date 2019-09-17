@@ -1776,28 +1776,52 @@ sub check_archiver {
         #  2) pg_last_wal_receive_lsn always returns zero if the slave is fed
         #     with pure log shipping (streaming is ok)
         my $query = q{
-        WITH s AS
-        (SELECT setting::bigint * CASE unit WHEN '8kB' THEN 8192 WHEN 'B' THEN 1 ELSE 0 END as walsegsize
-                  FROM pg_catalog.pg_settings
-                  WHERE name = 'wal_segment_size' )
-        SELECT COALESCE(
-                 (4294967296/walsegsize)*('x'||lpad(split_part(current_pos, '/', 1),8,'0'))::bit(32)::bigint
-                 + ('x'||lpad(split_part(current_pos, '/', 2),8,'0'))::bit(32)::bigint / walsegsize
-                 - ('x' || substr(last_failed_wal, 9, 8))::bit(32)::bigint * (4294967296/walsegsize)
-                 - ('x' || substr(last_failed_wal, 17, 8))::bit(32)::bigint,
-                 0 /* return 0 if NULL */) AS ready_archives,
-               extract('epoch' from (current_timestamp - last_failed_time)) AS oldest_archive_failure
-        FROM (SELECT CASE WHEN (last_failed_time >= last_archived_time)
-                               OR (last_archived_time IS NULL AND last_failed_time IS NOT NULL)
-                            THEN last_failed_wal
-                            ELSE NULL
-                       END AS last_failed_wal,
-                       CASE WHEN pg_is_in_recovery() THEN pg_last_wal_receive_lsn()::text
-                            ELSE pg_current_wal_lsn()::text
-                       END AS current_pos,
-                       last_failed_time
-                  FROM pg_stat_archiver
-             ) stats, s
+        SELECT pg_wal_lsn_diff(
+                    current_pos,
+                    /* compute LSN from last archived offset */
+                    (to_hex(last_archived_off/4294967296)
+                    ||'/'||to_hex(last_archived_off%4294967296))::pg_lsn
+                )::bigint / walsegsize,
+                CASE WHEN failing
+                THEN extract('epoch' from (current_timestamp - last_archived_time))
+                ELSE 0
+                END, last_archived_wal, last_failed_wal,
+                /* mod time of the next wal to archive */
+                extract('epoch' from (current_timestamp -
+                    (pg_stat_file('pg_wal/'||pg_walfile_name(
+                        (to_hex((last_archived_off+1)/4294967296)
+                        ||'/'||to_hex((last_archived_off+1)%4294967296))::pg_lsn
+                    ))).modification )
+                ) AS oldest
+        FROM (
+            SELECT last_archived_wal, last_archived_time, last_failed_wal,
+                walsegsize,
+                /* compute last archive offset */
+                -- WAL offset
+                ('x'||substr(last_archived_wal, 9, 8))::bit(32)::bigint*4294967296
+                    -- offset to the begining of the segment
+                    + ('x'||substr(last_archived_wal, 17, 8))::bit(32)::bigint * walsegsize
+                    -- offset to the end of the segment
+                    + walsegsize AS last_archived_off,
+                CASE WHEN pg_is_in_recovery()
+                THEN pg_last_wal_receive_lsn()
+                ELSE pg_current_wal_lsn()
+                END AS current_pos,
+                (last_failed_time >= last_archived_time)
+                    OR (last_archived_time IS NULL AND last_failed_time IS NOT NULL)
+                    AS failing
+              FROM pg_stat_archiver, (
+                SELECT setting::bigint *
+                    CASE unit
+                    WHEN '8kB' THEN 8192
+                    WHEN 'B' THEN 1
+                    ELSE 0
+                    END as walsegsize
+                FROM pg_catalog.pg_settings
+                WHERE name = 'wal_segment_size'
+              ) AS s
+
+        ) stats
         };
 
         @rs = @{ query( $hosts[0], $query ) };
@@ -1806,8 +1830,14 @@ sub check_archiver {
 
         push @perfdata => [ 'ready_archive', $nb_files, undef, $args{'warning'}, $args{'critical'}, 0 ];
 
+        if ( $rs[0][1] > 0 ) {
+            push @msg => sprintf 'archiver failing on %s', $rs[0][3];
+            push @longmsg => sprintf '%s could not be archived since %ds',
+                                $rs[0][3], $rs[0][1];
+        }
+
         if ( $nb_files > 0 ) {
-            push @perfdata => [ 'oldest_ready_wal', int( $rs[0][1] ), 's',
+            push @perfdata => [ 'oldest_ready_wal', int( $rs[0][4] ), 's',
                                 undef, undef, 0 ];
         }
         else {
@@ -1815,7 +1845,6 @@ sub check_archiver {
         }
 
         push @msg => "$nb_files WAL files ready to archive";
-
     }
 
     return critical( $me, \@msg, \@perfdata, \@longmsg ) if scalar @msg > 1;
