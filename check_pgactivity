@@ -6875,8 +6875,12 @@ sub check_table_bloat {
     my @dbexclude = @{ $args{'dbexclude'} };
     my $me        = 'POSTGRES_TABLE_BLOAT';
     my %queries   = (
-        # The following queries come straight from:
+        # The base for the following queries come from:
         #   https://github.com/ioguix/pgsql-bloat-estimation
+        #
+        # Changes:
+        # * use pg_statistic instead of pg_stats for performance
+        # * as pg_namespace is not useful in subquery "s", move it as the very last join
 
         # Text types header is 4, page header is 20 and block size 8192 for 7.4.
         # page header is 24 and GUC block_size appears for 8.0
@@ -7033,7 +7037,64 @@ sub check_table_bloat {
             ) as s2
           ) AS s3 JOIN pg_namespace AS ns ON ns.oid = s3.relnamespace
           WHERE NOT is_na
-          ORDER BY ns.nspname,s3.tblname}
+          ORDER BY ns.nspname,s3.tblname},
+        # relhasoids has disappeared, performance improvements
+        $PG_VERSION_120 => q{
+        SELECT current_database(), ns.nspname, tblname, bs*tblpages AS real_size,
+          (tblpages-est_tblpages)*bs AS extra_size,
+          CASE WHEN tblpages - est_tblpages > 0
+            THEN 100 * (tblpages - est_tblpages)/tblpages::float
+            ELSE 0
+          END AS extra_ratio, fillfactor,
+          CASE WHEN tblpages - est_tblpages_ff > 0
+            THEN (tblpages-est_tblpages_ff)*bs
+            ELSE 0
+          END AS bloat_size,
+          CASE WHEN tblpages - est_tblpages_ff > 0
+            THEN 100 * (tblpages - est_tblpages_ff)/tblpages::float
+            ELSE 0
+          END AS bloat_ratio, is_na
+        FROM (
+          SELECT ceil( reltuples / ( (bs-page_hdr)/tpl_size ) ) + ceil( toasttuples / 4 ) AS est_tblpages,
+            ceil( reltuples / ( (bs-page_hdr)*fillfactor/(tpl_size*100) ) ) + ceil( toasttuples / 4 ) AS est_tblpages_ff,
+            tblpages, fillfactor, bs, tblid, relnamespace, tblname, heappages, toastpages, is_na
+          FROM (
+            SELECT
+            ( 4 + tpl_hdr_size + tpl_data_size + (2*ma)
+              - CASE WHEN tpl_hdr_size%ma = 0 THEN ma ELSE tpl_hdr_size%ma END
+              - CASE WHEN ceil(tpl_data_size)::int%ma = 0 THEN ma ELSE ceil(tpl_data_size)::int%ma END
+            ) AS tpl_size, bs - page_hdr AS size_per_block, (heappages + toastpages) AS tblpages, heappages,
+            toastpages, reltuples, toasttuples, bs, page_hdr, tblid, relnamespace, tblname, fillfactor, is_na
+            FROM (
+              SELECT
+                tbl.oid AS tblid, tbl.relnamespace, tbl.relname AS tblname, tbl.reltuples,
+                tbl.relpages AS heappages, coalesce(toast.relpages, 0) AS toastpages,
+                coalesce(toast.reltuples, 0) AS toasttuples,
+                coalesce(substring(
+                  array_to_string(tbl.reloptions, ' ')
+                    FROM 'fillfactor=([0-9]+)')::smallint, 100
+                ) AS fillfactor,
+                current_setting('block_size')::numeric AS bs,
+                CASE WHEN version()~'mingw32' OR version()~'64-bit|x86_64|ppc64|ia64|amd64' THEN 8 ELSE 4 END AS ma,
+                24 AS page_hdr,
+                23 + CASE WHEN MAX(coalesce(s.stanullfrac,0)) > 0 THEN ( 7 + count(s.staattnum) ) / 8 ELSE 0::int END
+                 + CASE WHEN bool_or(att.attname = 'oid' and att.attnum < 0) THEN 4 ELSE 0 END AS tpl_hdr_size,
+                sum( (1-coalesce(s.stanullfrac, 0)) * coalesce(s.stawidth, 0) ) AS tpl_data_size,
+                bool_or(att.atttypid = 'pg_catalog.name'::regtype)
+                  OR sum(CASE WHEN att.attnum > 0 THEN 1 ELSE 0 END) <> count(s.staattnum) AS is_na
+              FROM pg_attribute AS att
+              JOIN pg_class AS tbl ON att.attrelid = tbl.oid
+              LEFT JOIN pg_statistic AS s ON s.starelid = tbl.oid AND s.stainherit = false AND s.staattnum = att.attnum
+              LEFT JOIN pg_class AS toast ON tbl.reltoastrelid = toast.oid
+              WHERE NOT att.attisdropped AND tbl.relkind = 'r'
+              GROUP BY 1,2,3,4,5,6,7,8,9,10
+              ORDER BY 2,3
+            ) AS s
+          ) AS s2
+        ) AS s3
+        JOIN pg_namespace AS ns ON ns.oid = s3.relnamespace
+        WHERE NOT is_na
+        ORDER BY ns.nspname, s3.tblname },
     );
 
     # Warning and critical are mandatory.
