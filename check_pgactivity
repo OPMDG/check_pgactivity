@@ -3568,7 +3568,7 @@ sub check_database_size {
             $crit{$threshold} = $value if $1 and defined $2;
         }
 
-        # Further sanity check
+        # Further sanity checks
         pod2usage(
             -message => "FATAL: Size threshold only accept a raw number or a size.\n"
                 . "See documentation for more information.",
@@ -3577,11 +3577,23 @@ sub check_database_size {
         or (defined $crit{'size'} and not is_size($crit{'size'}));
 
         pod2usage(
+            -message => "FATAL: you must specify both critical and warning thresholds for size.",
+            -exitval => 127
+        ) if (defined $warn{'size'} and not defined $crit{'size'})
+          or (defined $crit{'size'} and not defined $warn{'size'});
+
+        pod2usage(
             -message => "FATAL: Delta threshold only accept a raw number, a size or a percentage.\n"
                 . "See documentation for more information.",
             -exitval => 127
         ) if (defined $warn{'delta'} and not ( is_size($warn{'delta'}) or $warn{'delta'} =~ m/^([0-9.]+)%?$/ ))
           or (defined $crit{'delta'} and not ( is_size($crit{'delta'}) or $crit{'delta'} =~ m/^([0-9.]+)%?$/ ));
+
+        pod2usage(
+            -message => "FATAL: you must specify both critical and warning thresholds for delta.",
+            -exitval => 127
+        ) if (defined $warn{'delta'} and not defined $crit{'delta'})
+          or (defined $crit{'delta'} and not defined $warn{'delta'});
     }
 
     %db_sizes = %{ load( $hosts[0], 'db_size', $args{'status-file'} ) || {} };
