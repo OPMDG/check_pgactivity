@@ -3678,13 +3678,16 @@ Critical and Warning thresholds are optional. They are a list of optional 'label
 separated by a comma. It allows to fine tune the alert based on the
 absolute C<size> and/or the C<delta> size. Eg.:
 
-    -w 'size=500GB,delta=1%' -c 'size=600GB,delta=10GB'
     -w 'size=500GB' -c 'size=600GB'
     -w 'delta=1%' -c 'delta=10%'
+    -w 'size=500GB,delta=1%' -c 'size=600GB,delta=10GB'
 
-The C<size> label accept either a raw number or a size. The C<delta> label
-accept either a raw number, a percentage, or a size.  The aim of the delta parameter is
-to detect unexpected database size variation.
+The C<size> label accepts either a raw number or a size and checks the total database size.
+The C<delta> label accepts either a raw number, a percentage, or a size.
+The aim of the delta parameter is to detect unexpected database size variations.
+Delta thresholds are absolute value, and delta percentages are computed against
+the previous database size.
+A same label must be filled for both warning and critical.
 
 For backward compatibility, if a single raw number or percentage or size is given with no
 label, it applies on the size difference for each database since the last execution.
