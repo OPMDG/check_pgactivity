@@ -33,6 +33,7 @@ use File::Basename;
 use File::Spec;
 use File::Temp ();
 use Getopt::Long qw(:config bundling no_ignore_case_always);
+use JSON::PP;
 use List::Util qw(max);
 use Pod::Usage;
 use Scalar::Util qw(looks_like_number);
@@ -339,15 +340,16 @@ The Critical threshold.
 =item B<-F>, B<--format> OUTPUT_FORMAT
 
 The output format. Supported output are: C<binary>, C<debug>, C<human>,
-C<nagios> and C<nagios_strict>.
+C<nagios>, C<nagios_strict>, C<json> and C<json_strict>.
 
 Using the C<binary> format, the results are written in a binary file (using
 perl module C<Storable>) given in argument C<--output>. If no output is given,
 defaults to file C<check_pgactivity.out> in the same directory as the script.
 
-The C<nagios_strict> format is equivalent to the C<nagios> format. The only
-difference is that it enforces the unit follow the strict Nagios specs: B, c, s
-or %. Any unit absent from this list is dropped (Bps, Tps, etc).
+The C<nagios_strict> and C<json_strict> formats are equivalent to the C<nagios>
+and C<json> formats respectively. The only difference is that they enforce the
+units to follow the strict Nagios specs: B, c, s or %. Any unit absent from
+this list is dropped (Bps, Tps, etc).
 
 =item B<--tmpdir> DIRECTORY
 
@@ -1365,6 +1367,14 @@ sub nagios_output ($$;$$$) {
     return $rc;
 }
 
+sub set_strict_units {
+    my $perfdata = shift;
+
+    map { $$_[2] = '' if exists $$_[2] and defined $$_[2]
+                and $$_[2] !~ /\A[Bcs%]\z/
+    } @{ $perfdata };
+}
+
 sub nagios_strict_output ($$;$$$) {
 
     my $rc  = shift;
@@ -1377,11 +1387,60 @@ sub nagios_strict_output ($$;$$$) {
     @perfdata = @{ $_[1] } if defined $_[1];
     @longmsg  = @{ $_[2] } if defined $_[2];
 
-    map { $$_[2] = '' if exists $$_[2] and defined $$_[2]
-                and $$_[2] !~ /\A[Bcs%]\z/
-    } @perfdata;
+    set_strict_units ( \@perfdata );
 
     return nagios_output( $rc, $ret, \@msg, \@perfdata, \@longmsg );
+}
+
+sub json_output ($$;$$$) {
+    my $rc  = shift;
+    my $service = shift;
+    my @msg;
+    my @perfdata;
+    my @longmsg;
+
+    @msg      = @{ $_[0] } if defined $_[0];
+    @perfdata = @{ $_[1] } if defined $_[1];
+    @longmsg  = @{ $_[2] } if defined $_[2];
+
+    my $obj = {};
+    $obj->{'service'} = $service;
+    $obj->{'status'} = 'OK' if $rc == 0;
+    $obj->{'status'} = 'WARNING' if $rc == 1;
+    $obj->{'status'} = 'CRITICAL' if $rc == 2;
+    $obj->{'status'} = 'UNKNOWN' if $rc == 3;
+    $obj->{'msg'} = \@msg;
+    $obj->{'longmsg'} = \@longmsg;
+
+    my %data = map{ $$_[0] => {
+            'val' => $$_[1],
+            'unit' => $$_[2],
+            'warn' => $$_[3],
+            'crit' => $$_[4],
+            'min' => $$_[5],
+            'max' => $$_[6] }
+    } @perfdata;
+    $obj->{'perfdata'} = \%data;
+
+    print encode_json( $obj );
+    return $rc;
+}
+
+sub json_strict_output ($$;$$$) {
+
+    my $rc  = shift;
+    my $ret = shift;
+    my @msg;
+    my @perfdata;
+    my @longmsg;
+
+    @msg      = @{ $_[0] } if defined $_[0];
+    @perfdata = @{ $_[1] } if defined $_[1];
+    @longmsg  = @{ $_[2] } if defined $_[2];
+
+    set_strict_units ( \@perfdata );
+
+    return json_output( $rc, $ret, \@msg, \@perfdata, \@longmsg );
 }
 
 =head2 SERVICES
@@ -8107,6 +8166,8 @@ for ( $args{'format'} ) {
     elsif ( /^human$/         ) { $output_fmt = \&human_output  }
     elsif ( /^nagios$/        ) { $output_fmt = \&nagios_output }
     elsif ( /^nagios_strict$/ ) { $output_fmt = \&nagios_strict_output }
+    elsif ( /^json$/          ) { $output_fmt = \&json_output }
+    elsif ( /^json_strict$/   ) { $output_fmt = \&json_strict_output }
     else {
         pod2usage(
             -message => "FATAL: unrecognized output format \"$_\" (see \"--format\")",
