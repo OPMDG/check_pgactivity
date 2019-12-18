@@ -682,7 +682,7 @@ For instance: "1h 55m 6" = "1h55m6s".
 
 sub is_size($){
     my $str_size = lc( shift() );
-    return 1 if $str_size =~ /^\s*[0-9]+([kmgtpez][bo]?)?\s*$/ ;
+    return 1 if $str_size =~ /^\s*[0-9]+([kmgtpez]?[bo]?)?\s*$/ ;
     return 0;
 }
 
