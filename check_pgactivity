@@ -812,6 +812,9 @@ listing multiple services separated by a comma. Eg.
 
   --dbservice service1,service2
 
+For more information about service definition, see:
+L<https://www.postgresql.org/docs/current/libpq-pgservice.html>
+
 =item B<Parameters> C<--host HOST>, C<--port PORT>, C<--user ROLE> or C<--dbname DATABASE>
 
 One parameter is enough to define a new host. Usual environment variables
