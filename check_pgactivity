@@ -1754,7 +1754,7 @@ waiting to be archived. They only accept a raw number of files.
 Whatever the given threshold, a critical alert is raised if the archiver
 process did not archive the oldest waiting WAL to be archived since last call.
 
-Required privileges: unprivileged role (10+); superuser (<10).
+Required privileges: superuser (<11), grant execute on function pg_stat_file(text) for 11+.
 
 =cut
 
