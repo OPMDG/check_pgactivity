@@ -1392,6 +1392,8 @@ sub nagios_strict_output ($$;$$$) {
 
     set_strict_units ( \@perfdata );
 
+    map { $$_[1] = 'U' if $$_[1] eq 'NaN' } @perfdata;
+
     return nagios_output( $rc, $ret, \@msg, \@perfdata, \@longmsg );
 }
 
@@ -1442,6 +1444,8 @@ sub json_strict_output ($$;$$$) {
     @longmsg  = @{ $_[2] } if defined $_[2];
 
     set_strict_units ( \@perfdata );
+
+    map { $$_[1] = 'U' if $$_[1] eq 'NaN' } @perfdata;
 
     return json_output( $rc, $ret, \@msg, \@perfdata, \@longmsg );
 }
