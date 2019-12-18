@@ -1835,12 +1835,12 @@ sub check_archiver {
         #  2) pg_last_wal_receive_lsn always returns zero if the slave is fed
         #     with pure log shipping (streaming is ok)
         my $query = q{
-        SELECT pg_wal_lsn_diff(
+        SELECT coalesce(pg_wal_lsn_diff(
                     current_pos,
                     /* compute LSN from last archived offset */
                     (to_hex(last_archived_off/4294967296)
                     ||'/'||to_hex(last_archived_off%4294967296))::pg_lsn
-                )::bigint / walsegsize,
+                )::bigint / walsegsize, 0),
                 CASE WHEN failing
                 THEN extract('epoch' from (current_timestamp - last_archived_time))
                 ELSE 0
