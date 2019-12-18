@@ -3709,7 +3709,7 @@ sub check_database_size {
     my @perfdata;
     my @hosts;
     my %new_db_sizes;
-    my %db_sizes;
+    my %old_db_sizes;
     my %warn;
     my %crit;
     my %args       = %{ $_[0] };
@@ -3791,12 +3791,15 @@ sub check_database_size {
           or (defined $crit{'delta'} and not defined $warn{'delta'});
     }
 
-    %db_sizes = %{ load( $hosts[0], 'db_size', $args{'status-file'} ) || {} };
+    # get old size from status file
+    %old_db_sizes = %{ load( $hosts[0], 'db_size', $args{'status-file'} ) || {} };
 
     @rs = @{ query( $hosts[0], $sql ) };
 
     DB_LOOP: foreach my $db (@rs) {
         my $delta;
+        # $old_db_sizes{ $db->[0] } is the previous DB size
+        # $db->[1] is the new DB size
 
         $new_db_sizes{ $db->[0] } = $db->[1];
 
@@ -3805,12 +3808,12 @@ sub check_database_size {
 
         $db_checked++;
 
-        unless ( defined $db_sizes{ $db->[0] } ) {
+        unless ( defined $old_db_sizes{ $db->[0] } ) {
             push @perfdata => [ $db->[0], $db->[1], 'B' ];
             next DB_LOOP;
         }
 
-        $delta = $db->[1] - $db_sizes{ $db->[0] };
+        $delta = $db->[1] - $old_db_sizes{ $db->[0] };
 
         # Must check threshold for each database
         if ( defined $args{'warning'} ) {
@@ -3818,7 +3821,7 @@ sub check_database_size {
             my $w_limit;
             my $c_limit;
 
-            # Check size
+            # Check against max db size
             if ( defined $crit{'size'} ) {
                 $c_limit = get_size( $crit{'size'},  $db->[1] );
                 push @msg_crit => sprintf( "%s (size: %s)", $db->[0], to_size($db->[1]) )
@@ -3834,11 +3837,13 @@ sub check_database_size {
 
             push @perfdata => [ $db->[0], $db->[1], 'B', $w_limit, $c_limit ];
 
-            # Check delta
+            # Check against delta variations (% or absolute values)
             $c_limit = undef;
             $w_limit = undef;
             if ( defined $crit{'delta'} ) {
-                $limit = get_size( $crit{'delta'},  $db->[1] );
+
+                $limit = get_size( $crit{'delta'},  $old_db_sizes{ $db->[0] });
+                dprint ("DB $db->[0] new size: $db->[1]  old size $old_db_sizes{ $db->[0] } (delta $delta) critical delta $crit{'delta'} computed limit $limit \n");
                 push @msg_crit => sprintf( "%s (delta: %s)", $db->[0], to_size($delta) )
                     if abs($delta) >= $limit;
                 $c_limit = "-$limit:$limit";
@@ -3846,7 +3851,8 @@ sub check_database_size {
             if ( defined $warn{'delta'}
                  and defined $c_limit and abs($delta) < $limit
             ) {
-                $limit = get_size( $warn{'delta'},  $db->[1] );
+                $limit = get_size( $warn{'delta'},  $old_db_sizes{ $db->[0] } );
+                dprint ("DB $db->[0] new size: $db->[1]  old size $old_db_sizes{ $db->[0] } (delta $delta) warning  delta $warn{'delta'} computed limit $limit \n");
                 push @msg_warn => sprintf( "%s (delta: %s)", $db->[0], to_size($delta) )
                     if abs($delta) >= $limit;
                 $w_limit = "-$limit:$limit";
