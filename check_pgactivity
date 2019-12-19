@@ -1370,11 +1370,14 @@ sub nagios_output ($$;$$$) {
     return $rc;
 }
 
-sub set_strict_units {
+sub set_strict_perfdata {
     my $perfdata = shift;
 
-    map { $$_[2] = '' if exists $$_[2] and defined $$_[2]
-                and $$_[2] !~ /\A[Bcs%]\z/
+    map {
+        $$_[1] = 'U' if $$_[1] eq 'NaN';
+        $$_[2] = ''  if exists $$_[2]
+                     and defined $$_[2]
+                     and $$_[2] !~ /\A[Bcs%]\z/;
     } @{ $perfdata };
 }
 
@@ -1390,9 +1393,7 @@ sub nagios_strict_output ($$;$$$) {
     @perfdata = @{ $_[1] } if defined $_[1];
     @longmsg  = @{ $_[2] } if defined $_[2];
 
-    set_strict_units ( \@perfdata );
-
-    map { $$_[1] = 'U' if $$_[1] eq 'NaN' } @perfdata;
+    set_strict_perfdata ( \@perfdata );
 
     return nagios_output( $rc, $ret, \@msg, \@perfdata, \@longmsg );
 }
@@ -1443,9 +1444,7 @@ sub json_strict_output ($$;$$$) {
     @perfdata = @{ $_[1] } if defined $_[1];
     @longmsg  = @{ $_[2] } if defined $_[2];
 
-    set_strict_units ( \@perfdata );
-
-    map { $$_[1] = 'U' if $$_[1] eq 'NaN' } @perfdata;
+    set_strict_perfdata ( \@perfdata );
 
     return json_output( $rc, $ret, \@msg, \@perfdata, \@longmsg );
 }
