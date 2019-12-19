@@ -983,7 +983,7 @@ sub query($$;$$$) {
     my $RS         = chr(30); # ASCII RS  (record separator)
     my $FS         = chr(3);  # ASCII ETX (end of text)
     my $get_fields = shift;
-    my $onfail     = shift || \&unknown;
+    my $onfail     = shift || \&status_unknown;
     my $tmpfile;
     my $psqlcmd;
     my $rc;
@@ -1046,7 +1046,7 @@ sub query($$;$$$) {
         # FATAL if the parsing was unsuccessful, eg. if one field contains x30
         # or x03.  see gh issue #155
         foreach my $row ( @res ) {
-            exit unknown('CHECK_PGACTIVITY',
+            exit status_unknown('CHECK_PGACTIVITY',
                 [ "Could not parse query result!\n" ]
             ) if scalar( @$row ) != $col_num;
         }
@@ -1196,19 +1196,19 @@ sub dprint {
     }
 }
 
-sub unknown($;$$$) {
+sub status_unknown($;$$$) {
     return $output_fmt->( 3, $_[0], $_[1], $_[2], $_[3] );
 }
 
-sub critical($;$$$) {
+sub status_critical($;$$$) {
     return $output_fmt->( 2, $_[0], $_[1], $_[2], $_[3] );
 }
 
-sub warning($;$$$) {
+sub status_warning($;$$$) {
     return $output_fmt->( 1, $_[0], $_[1], $_[2], $_[3] );
 }
 
-sub ok($;$$$) {
+sub status_ok($;$$$) {
     return $output_fmt->( 0, $_[0], $_[1], $_[2], $_[3] );
 }
 
@@ -1604,7 +1604,7 @@ sub check_archive_folder {
 
     closedir($dh);
 
-    return unknown $me, ['No archived WAL found.'] unless @filelist;
+    return status_unknown( $me, ['No archived WAL found.'] ) unless @filelist;
 
 
     $w_limit = get_time($args{'warning'});
@@ -1733,18 +1733,18 @@ sub check_archive_folder {
         }
     }
 
-    return critical( $me, \@msg, \@perfdata ) if @msg;
+    return status_critical( $me, \@msg, \@perfdata ) if @msg;
 
     push @msg => scalar(@filelist_sorted)." WAL archived in '$args{'path'}', "
         ."latest archived since ". to_interval($latest_wal_age);
 
-    return critical( $me, \@msg, \@perfdata, \@longmsg )
+    return status_critical( $me, \@msg, \@perfdata, \@longmsg )
         if $latest_wal_age >= $c_limit;
 
-    return warning( $me, \@msg, \@perfdata, \@longmsg )
+    return status_warning( $me, \@msg, \@perfdata, \@longmsg )
         if $latest_wal_age >= $w_limit;
 
-    return ok( $me, \@msg, \@perfdata, \@longmsg );
+    return status_ok( $me, \@msg, \@perfdata, \@longmsg );
 }
 
 =item B<archiver> (8.1+)
@@ -1912,16 +1912,16 @@ sub check_archiver {
         push @msg => "$nb_files WAL files ready to archive";
     }
 
-    return critical( $me, \@msg, \@perfdata, \@longmsg ) if scalar @msg > 1;
+    return status_critical( $me, \@msg, \@perfdata, \@longmsg ) if scalar @msg > 1;
 
     if ( defined $args{'critical'} and $nb_files >= $args{'critical'} ) {
-        return critical( $me, \@msg, \@perfdata );
+        return status_critical( $me, \@msg, \@perfdata );
     }
     elsif ( defined $args{'warning'} and $nb_files >= $args{'warning'} ) {
-        return warning( $me, \@msg, \@perfdata );
+        return status_warning( $me, \@msg, \@perfdata );
     }
 
-    return ok( $me, \@msg, \@perfdata );
+    return status_ok( $me, \@msg, \@perfdata );
 }
 
 
@@ -2043,7 +2043,7 @@ sub check_autovacuum {
     push @msg, "Number of autovacuum: $numautovac";
     push @msg, "Oldest autovacuum: " . to_interval($oldest) if $oldest ne "NaN";
 
-    return ok( $me, \@msg , \@perfdata, \@longmsg );
+    return status_ok( $me, \@msg , \@perfdata, \@longmsg );
 
 }
 
@@ -2186,13 +2186,13 @@ sub check_backends {
 
     push @msg => "$num_backends connections on $rs[0][2]";
 
-    return critical( $me, \@msg, \@perfdata )
+    return status_critical( $me, \@msg, \@perfdata )
         if $num_backends >= $args{'critical'};
 
-    return warning( $me, \@msg, \@perfdata )
+    return status_warning( $me, \@msg, \@perfdata )
         if $num_backends >= $args{'warning'};
 
-    return ok( $me, \@msg, \@perfdata );
+    return status_ok( $me, \@msg, \@perfdata );
 }
 
 
@@ -2500,12 +2500,12 @@ sub check_backends_status {
         }
     }
 
-    return critical( $me, [ @msg_crit, @msg_warn ], \@perfdata )
+    return status_critical( $me, [ @msg_crit, @msg_warn ], \@perfdata )
         if scalar @msg_crit > 0;
 
-    return warning( $me, \@msg_warn, \@perfdata ) if scalar @msg_warn > 0;
+    return status_warning( $me, \@msg_warn, \@perfdata ) if scalar @msg_warn > 0;
 
-    return ok( $me, [ "$num_backends backend connected" ], \@perfdata );
+    return status_ok( $me, [ "$num_backends backend connected" ], \@perfdata );
 }
 
 
@@ -2572,7 +2572,7 @@ sub check_checksum_errors {
     # Check if data checksums are enabled
     @rs = @{ query( $hosts[0], "SELECT pg_catalog.current_setting('data_checksums')" ) };
 
-    return unknown( $me, ['Data checksums are not enabled!'] )
+    return status_unknown( $me, ['Data checksums are not enabled!'] )
         unless ($rs[0][0] eq "on");
 
     @rs = @{ query( $hosts[0], $sql ) };
@@ -2593,12 +2593,12 @@ sub check_checksum_errors {
         }
     }
 
-    return critical( $me, [ @msg_crit, @msg_warn ], \@perfdata )
+    return status_critical( $me, [ @msg_crit, @msg_warn ], \@perfdata )
         if scalar @msg_crit > 0;
 
-    return warning( $me, \@msg_warn, \@perfdata ) if scalar @msg_warn > 0;
+    return status_warning( $me, \@msg_warn, \@perfdata ) if scalar @msg_warn > 0;
 
-    return ok( $me, [ "$db_checked database(s) checked" ], \@perfdata );
+    return status_ok( $me, [ "$db_checked database(s) checked" ], \@perfdata );
 }
 
 =item B<backup_label_age> (8.1+)
@@ -2661,13 +2661,13 @@ sub check_backup_label_age {
 
     push @perfdata, [ 'age', $rs, 's', $w_limit, $c_limit ];
 
-    return critical( $me, [ "age: ".to_interval($rs) ], \@perfdata )
+    return status_critical( $me, [ "age: ".to_interval($rs) ], \@perfdata )
         if $rs > $c_limit;
 
-    return warning( $me, [ "age: ".to_interval($rs) ], \@perfdata )
+    return status_warning( $me, [ "age: ".to_interval($rs) ], \@perfdata )
         if $rs > $w_limit;
 
-    return ok( $me, [ "backup_label file ".( $rs == 0 ? "absent":"present (age: ".to_interval($rs).")") ], \@perfdata );
+    return status_ok( $me, [ "backup_label file ".( $rs == 0 ? "absent":"present (age: ".to_interval($rs).")") ], \@perfdata );
 }
 
 
@@ -2770,12 +2770,12 @@ sub check_bgwriter {
 
     save $hosts[0], 'bgwriter', \%new_bgw, $args{'status-file'};
 
-    return ok( $me, ['First call'] ) unless keys %bgw
+    return status_ok( $me, ['First call'] ) unless keys %bgw
         and defined $bgw{'ts'}; # 'ts' was added in 1.25, check for existence
                                 # instead of raising some ugly Perl errors
                                 # when upgrading.
 
-    return ok( $me, ['Stats reseted since last call'] )
+    return status_ok( $me, ['Stats reseted since last call'] )
         if $new_bgw{'stat_reset'}       > $bgw{'stat_reset'}
         or $new_bgw{'checkpoint_timed'} < $bgw{'checkpoint_timed'}
         or $new_bgw{'checkpoint_req'}   < $bgw{'checkpoint_req'}
@@ -2832,13 +2832,13 @@ sub check_bgwriter {
         my $w_limit = get_size( $args{'warning'},  $delta_buff_total );
         my $c_limit = get_size( $args{'critical'}, $delta_buff_total );
 
-        return critical( $me, \@msg, \@perfdata )
+        return status_critical( $me, \@msg, \@perfdata )
             if $delta_buff_backend >= $c_limit;
-        return warning( $me, \@msg, \@perfdata )
+        return status_warning( $me, \@msg, \@perfdata )
             if $delta_buff_backend >= $w_limit;
     }
 
-    return ok( $me, \@msg, \@perfdata );
+    return status_ok( $me, \@msg, \@perfdata );
 }
 
 
@@ -3252,15 +3252,17 @@ sub check_btree_bloat {
     }
 
     # We use the warning count for the **total** number of bloated indexes
-    return critical $me,
+    return status_critical( $me,
         [ "$w_count/$total_index index(es) bloated" ],
-        [ @perfdata ], [ @longmsg ]
+        [ @perfdata ], [ @longmsg ] )
             if $c_count > 0;
-    return warning $me,
+
+    return status_warning( $me,
         [ "$w_count/$total_index index(es) bloated" ],
-        [ @perfdata ], [ @longmsg ]
+        [ @perfdata ], [ @longmsg ] )
             if $w_count > 0;
-    return ok $me, [ "Btree bloat ok" ], \@perfdata;
+
+    return status_ok( $me, [ "Btree bloat ok" ], \@perfdata );
 }
 
 
@@ -3347,7 +3349,7 @@ sub check_commit_ratio {
 
     save $hosts[0], 'commit_ratio', \%new_xacts, $args{'status-file'};
 
-    return ok( $me, ['First call'] ) unless keys %xacts;
+    return status_ok( $me, ['First call'] ) unless keys %xacts;
 
     foreach my $db ( keys %new_xacts ) {
 
@@ -3410,13 +3412,13 @@ sub check_commit_ratio {
         }
     }
 
-    return critical( $me, [ "Commits: $global_commits - Rollbacks: $global_rollbacks", @msg_crit, @msg_warn ], \@perfdata )
+    return status_critical( $me, [ "Commits: $global_commits - Rollbacks: $global_rollbacks", @msg_crit, @msg_warn ], \@perfdata )
         if scalar @msg_crit > 0;
 
-    return warning( $me, [ "Commits: $global_commits - Rollbacks: $global_rollbacks", @msg_warn ], \@perfdata )
+    return status_warning( $me, [ "Commits: $global_commits - Rollbacks: $global_rollbacks", @msg_warn ], \@perfdata )
         if scalar @msg_warn > 0;
 
-    return ok( $me, ["Commits: $global_commits - Rollbacks: $global_rollbacks"], \@perfdata );
+    return status_ok( $me, ["Commits: $global_commits - Rollbacks: $global_rollbacks"], \@perfdata );
 
 }
 
@@ -3491,10 +3493,10 @@ DB_LOOP:    foreach my $setting (@rc) {
 
     # All the entries in $result are an error. If the array isn't empty, we
     # return ERROR, and the list of errors
-    return critical( $me, \@msg_crit )
+    return status_critical( $me, \@msg_crit )
         if ( @msg_crit > 0 );
 
-    return ok( $me, [ "PostgreSQL configuration ok" ] );
+    return status_ok( $me, [ "PostgreSQL configuration ok" ] );
 }
 
 
@@ -3524,9 +3526,9 @@ sub check_connection {
         -exitval => 127
     ) if @hosts != 1;
 
-    @rs = @{ query( $hosts[0], $sql, undef, undef, \&critical ) };
+    @rs = @{ query( $hosts[0], $sql, undef, undef, \&status_critical ) };
 
-    return ok( $me, [ "Connection successful at $rs[0][0], on $rs[0][1]" ] );
+    return status_ok( $me, [ "Connection successful at $rs[0][0], on $rs[0][1]" ] );
 }
 
 
@@ -3622,7 +3624,7 @@ sub check_custom_query {
     @rs = @{ query( $hosts[0], $sql, undef, 1 ) };
     @fields = @{ shift @rs };
 
-    return unknown( $me, [ 'No row returned by the query!' ] )
+    return status_unknown( $me, [ 'No row returned by the query!' ] )
         unless defined $rs[0];
 
     pod2usage(
@@ -3668,17 +3670,17 @@ sub check_custom_query {
         }
     }
 
-    return critical( $me, [ @msg_crit, @msg_warn ], \@perfdata )
+    return status_critical( $me, [ @msg_crit, @msg_warn ], \@perfdata )
         if defined $c_limit and
             ( ( !$reverse and $bounded > $c_limit)
             or ( $reverse and $bounded < $c_limit) );
 
-    return warning( $me, [ @msg_warn ], \@perfdata )
+    return status_warning( $me, [ @msg_warn ], \@perfdata )
         if defined $w_limit and
             ( ( !$reverse and $bounded > $w_limit)
             or ( $reverse and $bounded < $w_limit) );
 
-    return ok( $me, [ "Custom query ok" ], \@perfdata );
+    return status_ok( $me, [ "Custom query ok" ], \@perfdata );
 }
 
 =item B<database_size> (8.1+)
@@ -3884,12 +3886,12 @@ sub check_database_size {
 
     save $hosts[0], 'db_size', \%new_db_sizes, $args{'status-file'};
 
-    return critical( $me, [ @msg_crit, @msg_warn ], \@perfdata )
+    return status_critical( $me, [ @msg_crit, @msg_warn ], \@perfdata )
         if scalar @msg_crit > 0;
 
-    return warning( $me, \@msg_warn, \@perfdata ) if scalar @msg_warn > 0;
+    return status_warning( $me, \@msg_warn, \@perfdata ) if scalar @msg_warn > 0;
 
-    return ok( $me, [ "$db_checked database(s) checked" ], \@perfdata );
+    return status_ok( $me, [ "$db_checked database(s) checked" ], \@perfdata );
 }
 
 
@@ -4015,14 +4017,14 @@ sub check_hit_ratio {
     save $hosts[0], 'db_hitratio', \%new_db_hitratio, $args{'status-file'};
 
     if ( defined $args{'critical'} ) {
-        return critical( $me, [ @msg_crit, @msg_warn ], \@perfdata )
+        return status_critical( $me, [ @msg_crit, @msg_warn ], \@perfdata )
             if scalar @msg_crit;
 
-        return warning( $me, \@msg_warn, \@perfdata )
+        return status_warning( $me, \@msg_warn, \@perfdata )
             if scalar @msg_warn;
     }
 
-    return ok( $me, [ "$db_checked database(s) checked" ], \@perfdata );
+    return status_ok( $me, [ "$db_checked database(s) checked" ], \@perfdata );
 }
 
 
@@ -4115,14 +4117,15 @@ sub check_hot_standby_delta {
 
     # Check that all clusters have the same major version.
     foreach my $host ( @hosts ) {
-        return critical($me, ["PostgreSQL major versions differ amongst clusters ($hosts[0]{'version'} vs. $host->{'version'})."] )
-            if substr($hosts[0]{'version_num'}, 0, -2) != substr($host->{'version_num'}, 0, -2);
+        return status_critical( $me,
+            ["PostgreSQL major versions differ amongst clusters ($hosts[0]{'version'} vs. $host->{'version'})."]
+        ) if substr($hosts[0]{'version_num'}, 0, -2)
+            != substr($host->{'version_num'}, 0, -2);
     }
 
-    return critical($me, ['No cluster in production.'])
-        if $num_clusters == 0;
+    return status_critical( $me, ['No cluster in production.'] ) if $num_clusters == 0;
 
-    return critical($me, ['More than one cluster in production.'])
+    return status_critical( $me, ['More than one cluster in production.'] )
         if $num_clusters != 1;
 
     if ( defined $args{'critical'} ) {
@@ -4202,12 +4205,12 @@ sub check_hot_standby_delta {
         $num_clusters++;
     }
 
-    return critical( $me, [ @msg_crit, @msg_warn ], \@perfdata )
+    return status_critical( $me, [ @msg_crit, @msg_warn ], \@perfdata )
         if @msg_crit > 0;
 
-    return warning( $me, \@msg_warn, \@perfdata ) if @msg_warn > 0;
+    return status_warning( $me, \@msg_warn, \@perfdata ) if @msg_warn > 0;
 
-    return ok($me, [ "$num_clusters Hot standby checked" ], \@perfdata);
+    return status_ok( $me, [ "$num_clusters Hot standby checked" ], \@perfdata );
 }
 
 
@@ -4242,8 +4245,8 @@ sub check_is_hot_standby {
     is_compat $hosts[0], 'is_hot_standby', $PG_VERSION_90 or exit 1;
     @rs = @{ query_ver( $hosts[0], %queries )->[0] };
 
-    return critical( $me, [ "Cluster is not hot standby" ] ) if $rs[0] eq "f";
-    return ok( $me, [ "Cluster is hot standby" ] );
+    return status_critical( $me, [ "Cluster is not hot standby" ] ) if $rs[0] eq "f";
+    return status_ok( $me, [ "Cluster is hot standby" ] );
 }
 
 
@@ -4281,8 +4284,8 @@ sub check_is_master {
 
     @rs = @{ query_ver( $hosts[0], %queries )->[0] };
 
-    return critical( $me, [ "Cluster is not master" ] ) if $rs[0] eq "t";
-    return ok( $me, [ "Cluster is master" ] );
+    return status_critical( $me, [ "Cluster is not master" ] ) if $rs[0] eq "t";
+    return status_ok( $me, [ "Cluster is master" ] );
 }
 
 =item B<invalid_indexes>
@@ -4381,10 +4384,12 @@ sub check_invalid_indexes {
         if $total_extbl > 0;
 
     # we use the critical count for the **total** number of invalid index
-    return critical $me, [ "$c_count/$total_idx index(es) invalid" ],
-        \@perfdata, \@longmsg if $c_count > 0;
+    return status_critical( $me,
+        [ "$c_count/$total_idx index(es) invalid" ],
+        \@perfdata, \@longmsg
+    ) if $c_count > 0;
 
-    return ok $me, [ "No invalid index" ], \@perfdata, \@longmsg ;
+    return status_ok( $me, [ "No invalid index" ], \@perfdata, \@longmsg );
 }
 
 
@@ -4477,7 +4482,7 @@ sub check_is_replay_paused {
 
     @rs = @{ query_ver( $hosts[0], %queries )->[0] };
 
-    return unknown ( $me,
+    return status_unknown( $me,
         [ "Server is not standby." ],
         [ [ 'is_paused', 'NaN' ],
           [ 'lag_time', 'NaN', 's' ],
@@ -4489,17 +4494,22 @@ sub check_is_replay_paused {
     push @perfdata, [ "has_data_delta", $rs[3] ];
 
     # Always return ok if replay is not paused
-    return ok( $me, [ ' replay is not paused' ], \@perfdata ) if not $rs[1];
+    return status_ok( $me, [ ' replay is not paused' ], \@perfdata ) if not $rs[1];
 
     # Do we have thresholds?
     if ( $c_limit != -1 ) {
-        return critical( $me, [' replay lag time: ' . to_interval( $rs[2] ) ], \@perfdata )
-            if $rs[3] and $rs[2] > $c_limit;
-        return warning( $me, [' replay lag time: ' . to_interval( $rs[2] ) ], \@perfdata )
-            if $rs[3] and $rs[2] > $w_limit;
+        return status_critical( $me,
+            [' replay lag time: ' . to_interval( $rs[2] ) ],
+            \@perfdata
+        ) if $rs[3] and $rs[2] > $c_limit;
+
+        return status_warning( $me,
+            [' replay lag time: ' . to_interval( $rs[2] ) ],
+            \@perfdata
+        ) if $rs[3] and $rs[2] > $w_limit;
     }
 
-    return ok( $me, [ ' replay is paused.' ], \@perfdata );
+    return status_ok( $me, [ ' replay is paused.' ], \@perfdata );
 }
 
 
@@ -4613,12 +4623,12 @@ LOOP_DB: foreach my $db (@all_db) {
     save $hosts[0], "${type}_counts", \%new_counts, $args{'status-file'}
         if $hosts[0]->{'version_num'} >= $PG_VERSION_91;
 
-    return critical( $me, [ @msg_crit, @msg_warn ], \@perfdata )
+    return status_critical( $me, [ @msg_crit, @msg_warn ], \@perfdata )
         if scalar @msg_crit > 0;
 
-    return warning( $me, \@msg_warn, \@perfdata ) if scalar @msg_warn > 0;
+    return status_warning( $me, \@msg_warn, \@perfdata ) if scalar @msg_warn > 0;
 
-    return ok( $me, [ "$dbchecked database(s) checked" ], \@perfdata );
+    return status_ok( $me, [ "$dbchecked database(s) checked" ], \@perfdata );
 }
 
 
@@ -4856,13 +4866,13 @@ sub check_locks {
 
     push @msg => "$total_locks locks, $total_pred_locks predicate locks, $waiting_locks waiting locks";
 
-    return critical( $me, \@msg, \@perfdata )
+    return status_critical( $me, \@msg, \@perfdata )
         if $total_locks >= $args{'critical'} or ( $hosts[0]->{'version_num'} >= $PG_VERSION_91 and $total_pred_locks >= $args{'predcritical'} );
 
-    return warning( $me, \@msg, \@perfdata )
+    return status_warning( $me, \@msg, \@perfdata )
         if $total_locks >= $args{'warning'} or ( $hosts[0]->{'version_num'} >= $PG_VERSION_91 and $total_pred_locks >= $args{'predwarning'});
 
-    return ok( $me, \@msg, \@perfdata );
+    return status_ok( $me, \@msg, \@perfdata );
 }
 
 
@@ -5031,13 +5041,13 @@ sub check_longest_query {
         }
     }
 
-    return critical( $me, \@msg, \@perfdata )
+    return status_critical( $me, \@msg, \@perfdata )
         if $longest_query > $c_limit;
 
-    return warning( $me, \@msg, \@perfdata )
+    return status_warning( $me, \@msg, \@perfdata )
         if $longest_query > $w_limit;
 
-    return ok( $me, [ "$nb_query running querie(s)" ], \@perfdata );
+    return status_ok( $me, [ "$nb_query running querie(s)" ], \@perfdata );
 }
 
 
@@ -5157,16 +5167,17 @@ sub check_max_freeze_age {
         }
     }
 
-    return critical( $me, [
-        'Critical: '. join(',', @msg_crit)
-        . (scalar @msg_warn? 'Warning: '. join(',', @msg_warn):'')
-    ], \@perfdata ) if scalar @msg_crit;
+    return status_critical( $me, [
+            'Critical: '. join(',', @msg_crit)
+            . (scalar @msg_warn? 'Warning: '. join(',', @msg_warn):'')
+        ], \@perfdata
+    ) if scalar @msg_crit;
 
-    return warning( $me,
+    return status_warning( $me,
         [ 'Warning: '. join(',', @msg_warn) ], \@perfdata
     ) if scalar @msg_warn;
 
-    return ok( $me, [ "oldest database is $oldestdb with age of $oldestage" ], \@perfdata );
+    return status_ok( $me, [ "oldest database is $oldestdb with age of $oldestage" ], \@perfdata );
 }
 
 
@@ -5272,7 +5283,7 @@ sub check_minor_version {
             }
         }
 
-        return unknown($me, [ 'Could not fetch PostgreSQL latest versions' ])
+        return status_unknown( $me, [ 'Could not fetch PostgreSQL latest versions' ] )
             unless $rss;
 
         # Versions until 9.6
@@ -5312,7 +5323,7 @@ sub check_minor_version {
 
     unless ( defined $latest_versions{$major_version} ) {
         push @msg => "Unknown major PostgreSQL version $major_version";
-        return unknown( $me, \@msg );
+        return status_unknown( $me, \@msg );
     }
 
     push @perfdata => [ 'version', $hosts[0]{'version_num'}, 'PGNUMVER' ];
@@ -5321,14 +5332,13 @@ sub check_minor_version {
         push @msg => "PostgreSQL version ". $hosts[0]{'version'}
             ." (should be $latest_versions{$major_version}[1])";
 
-        return warning( $me, \@msg, \@perfdata )
-            if defined $args{'warning'};
-        return critical( $me, \@msg, \@perfdata );
+        return status_warning( $me, \@msg, \@perfdata ) if defined $args{'warning'};
+        return status_critical( $me, \@msg, \@perfdata );
     }
 
     push @msg => "PostgreSQL version ". $hosts[0]{'version'};
 
-    return ok( $me, \@msg, \@perfdata );
+    return status_ok( $me, \@msg, \@perfdata );
 }
 
 
@@ -5441,13 +5451,13 @@ sub check_oldest_2pc {
 
     unshift @msg => "$nb_2pc prepared transaction(s)";
 
-    return critical( $me, \@msg, \@perfdata )
+    return status_critical( $me, \@msg, \@perfdata )
         if $oldest_2pc > $c_limit;
 
-    return warning( $me, \@msg, \@perfdata )
+    return status_warning( $me, \@msg, \@perfdata )
         if $oldest_2pc > $w_limit;
 
-    return ok( $me, \@msg, \@perfdata );
+    return status_ok( $me, \@msg, \@perfdata );
 }
 
 
@@ -5580,13 +5590,13 @@ sub check_oldest_idlexact {
 
     unshift @msg => "$nb_idle idle transaction(s)";
 
-    return critical( $me, \@msg, \@perfdata )
+    return status_critical( $me, \@msg, \@perfdata )
         if $oldest_idle > $c_limit;
 
-    return warning( $me, \@msg, \@perfdata )
+    return status_warning( $me, \@msg, \@perfdata )
         if $oldest_idle > $w_limit;
 
-    return ok( $me, \@msg, \@perfdata );
+    return status_ok( $me, \@msg, \@perfdata );
 }
 
 
@@ -5882,13 +5892,13 @@ sub check_pg_dump_backup {
     save $hosts[0], 'pg_dump_backup', \%lasts, $args{'status-file'}
         if $args{'status-file'};
 
-    return critical( $me, [ @msg_crit, @msg_warn ], \@perfdata )
+    return status_critical( $me, [ @msg_crit, @msg_warn ], \@perfdata )
         if scalar @msg_crit;
 
-    return warning( $me, \@msg_warn, \@perfdata )
+    return status_warning( $me, \@msg_warn, \@perfdata )
         if scalar @msg_warn;
 
-    return ok($me, [], \@perfdata);
+    return status_ok( $me, [], \@perfdata );
 }
 
 =item B<pga_version>
@@ -5922,15 +5932,15 @@ sub check_pga_version {
     ) if ( defined $args{'critical'} and $args{'critical'} !~ m/^\d\.\d+(?:_?(?:dev|beta|rc)\d*)?$/ )
         or (defined $args{'warning'} and $args{'warning'} !~ m/^\d\.\d+(?:_?(?:dev|beta|rc)\d*)?$/ );
 
-    return critical( $me,
+    return status_critical( $me,
         [ sprintf($msg, "(should be $args{'critical'}!)", $^V) ]
     ) if defined $args{'critical'} and $VERSION ne $args{'critical'};
 
-    return warning( $me,
+    return status_warning( $me,
         [ sprintf($msg, "(should be $args{'warning'}!)", $^V) ]
     ) if defined $args{'warning'} and $VERSION ne $args{'warning'};
 
-    return ok( $me, [ sprintf($msg, "", $^V) ] );
+    return status_ok( $me, [ sprintf($msg, "", $^V) ] );
 }
 
 =item B<pgdata_permission> (8.2+)
@@ -5986,9 +5996,9 @@ sub check_pgdata_permission {
 
     $data_directory = $rs[0][0];
 
-    return unknown( $me, [
-        "Postgresql returned this PGDATA: $data_directory, but I cannot access it: $!"
-    ]) unless @stat = stat( $data_directory );
+    return status_unknown( $me,
+        [ "Postgresql returned this PGDATA: $data_directory, but I cannot access it: $!" ]
+    ) unless @stat = stat( $data_directory );
 
     $mode    = $stat[2];
     $dir_uid = $stat[4];
@@ -6048,9 +6058,9 @@ sub check_pgdata_permission {
         push @msg, ( "Owner of $data_directory is ($pg_uid)" );
     }
 
-    return warning( $me, \@msg, undef, \@longmsg )  if $criticity == 1;
-    return critical( $me, \@msg, undef, \@longmsg ) if $criticity;
-    return ok( $me, \@msg, undef, \@longmsg );
+    return status_warning( $me, \@msg, undef, \@longmsg )  if $criticity == 1;
+    return status_critical( $me, \@msg, undef, \@longmsg ) if $criticity;
+    return status_ok( $me, \@msg, undef, \@longmsg );
 }
 
 
@@ -6269,13 +6279,13 @@ SLOTS_LOOP: foreach my $row (@rs) {
     }
 
 
-    return critical( $me, [ @msg_crit, @msg_warn ], \@perfdata, \@longmsg )
+    return status_critical( $me, [ @msg_crit, @msg_warn ], \@perfdata, \@longmsg )
         if scalar @msg_crit > 0;
 
-    return warning( $me, [ @msg_warn ], \@perfdata, \@longmsg )
+    return status_warning( $me, [ @msg_warn ], \@perfdata, \@longmsg )
         if scalar @msg_warn > 0;
 
-    return ok( $me, [ "Replication slots OK" ], \@perfdata, \@longmsg );
+    return status_ok( $me, [ "Replication slots OK" ], \@perfdata, \@longmsg );
 }
 
 =item B<settings> (9.0+)
@@ -6377,16 +6387,16 @@ PARAM_LOOP: foreach my $row (@rs) {
 
     if ( $args{'save'} ) {
         save $hosts[0], 'settings', \%new_settings, $args{'status-file'};
-        return ok( $me, [ "Setting saved" ] )
+        return status_ok( $me, [ "Setting saved" ] )
     }
 
-    return warning( $me, [ 'Setting changed and pending restart!' ], undef, \@long_msg )
+    return status_warning( $me, [ 'Setting changed and pending restart!' ], undef, \@long_msg )
         if $pending_count > 0;
 
-    return warning( $me, [ 'Setting changed!' ], undef, \@long_msg )
+    return status_warning( $me, [ 'Setting changed!' ], undef, \@long_msg )
         if scalar @long_msg;
 
-    return ok( $me, [ "Setting OK" ] );
+    return status_ok( $me, [ "Setting OK" ] );
 }
 
 =item B<sequences_exhausted> (7.4+)
@@ -6620,9 +6630,9 @@ SELECT
             }
         }
     }
-    return warning( $me, \@msg, \@perfdata, \@longmsg ) if ($criticity==1);
-    return critical( $me, \@msg, \@perfdata, \@longmsg ) if ($criticity==2);
-    return ok( $me, \@msg, \@perfdata );
+    return status_warning( $me, \@msg, \@perfdata, \@longmsg ) if $criticity == 1;
+    return status_critical( $me, \@msg, \@perfdata, \@longmsg ) if $criticity == 2;
+    return status_ok( $me, \@msg, \@perfdata );
 }
 
 =item B<stat_snapshot_age> (9.5+)
@@ -6685,11 +6695,11 @@ sub check_stat_snapshot_age {
 
         push @{ $perfdata[0] } => ( $w_limit, $c_limit );
 
-        return critical( $me, \@msg, \@perfdata ) if $stats_age >= $c_limit;
-        return warning( $me, \@msg, \@perfdata )  if $stats_age >= $w_limit;
+        return status_critical( $me, \@msg, \@perfdata ) if $stats_age >= $c_limit;
+        return status_warning( $me, \@msg, \@perfdata )  if $stats_age >= $w_limit;
     }
 
-    return ok( $me, \@msg, \@perfdata );
+    return status_ok( $me, \@msg, \@perfdata );
 }
 
 =item B<streaming_delta> (9.1+)
@@ -6780,7 +6790,7 @@ sub check_streaming_delta {
 
     @rs = @{ query_ver( $hosts[0], %queries ) };
 
-    return unknown( $me, ['No slaves connected'], \@perfdata )
+    return status_unknown( $me, ['No slaves connected'], \@perfdata )
         unless scalar @rs;
 
     $rs[0][7] =~ m{^([0-9A-F]+)/([0-9A-F]+)$};
@@ -6878,12 +6888,12 @@ sub check_streaming_delta {
         unshift @msg_crit => "$host not connected" unless $connected;
     }
 
-    return critical( $me, [ @msg_crit, @msg_warn ], \@perfdata )
+    return status_critical( $me, [ @msg_crit, @msg_warn ], \@perfdata )
         if @msg_crit > 0;
 
-    return warning( $me, \@msg_warn, \@perfdata ) if @msg_warn > 0;
+    return status_warning( $me, \@msg_warn, \@perfdata ) if @msg_warn > 0;
 
-    return ok($me, [ "$num_clusters slaves checked" ], \@perfdata);
+    return status_ok( $me, [ "$num_clusters slaves checked" ], \@perfdata );
 }
 
 
@@ -6997,14 +7007,12 @@ sub check_table_unlogged {
         if $total_extbl > 0;
 
     # we use the critical count for the **total** number of unlogged tables
-    return critical $me,
+    return status_critical( $me,
         [ "$c_count/$total_tbl table(s) unlogged" ],
         \@perfdata, \@longmsg
-            if $c_count > 0;
+    ) if $c_count > 0;
 
-    return ok $me,
-        [ "No unlogged table" ],
-        \@perfdata, \@longmsg;
+    return status_ok( $me, [ "No unlogged table" ], \@perfdata, \@longmsg );
 }
 
 =item B<table_bloat>
@@ -7352,15 +7360,17 @@ sub check_table_bloat {
     }
 
     # We use the warning count for the **total** number of bloated tables
-    return critical $me,
+    return status_critical( $me,
         [ "$w_count/$total_tbl table(s) bloated" ],
         \@perfdata, [ @longmsg ]
-            if $c_count > 0;
-    return warning $me,
+    ) if $c_count > 0;
+
+    return status_warning( $me,
         [ "$w_count/$total_tbl table(s) bloated" ],
         \@perfdata, [ @longmsg ]
-            if $w_count > 0;
-    return ok $me, [ "Table bloat ok" ], \@perfdata;
+    ) if $w_count > 0;
+
+    return status_ok( $me, [ "Table bloat ok" ], \@perfdata );
 }
 
 
@@ -7711,12 +7721,12 @@ DB_LOOP: foreach my $stat (@rs) {
 
     save $hosts[0], 'temp_files', \%new_temp_files, $args{'status-file'};
 
-    return critical( $me, [ @msg_crit, @msg_warn ], \@perfdata )
+    return status_critical( $me, [ @msg_crit, @msg_warn ], \@perfdata )
         if scalar @msg_crit > 0;
 
-    return warning( $me, \@msg_warn, \@perfdata ) if scalar @msg_warn > 0;
+    return status_warning( $me, \@msg_warn, \@perfdata ) if scalar @msg_warn > 0;
 
-    return ok( $me, [ scalar(@rs) . " $obj checked" ], \@perfdata );
+    return status_ok( $me, [ scalar(@rs) . " $obj checked" ], \@perfdata );
 }
 
 
@@ -7862,9 +7872,13 @@ sub check_uptime {
         push @msg => $msg_reload_conf;
     }
 
-    return critical ( $me, [ @msg_crit, @msg_warn, @msg ], \@perfdata) if ( @msg_crit ) ;
-    return warning  ( $me, [ @msg_warn, @msg ], \@perfdata) if ( @msg_warn ) ;
-    return ok( $me, \@msg, \@perfdata );
+    return status_critical( $me, [ @msg_crit, @msg_warn, @msg ], \@perfdata )
+        if @msg_crit;
+
+    return status_warning( $me, [ @msg_warn, @msg ], \@perfdata )
+        if @msg_warn;
+
+    return status_ok( $me, \@msg, \@perfdata );
 }
 
 =item B<wal_files> (8.1+)
@@ -8133,11 +8147,11 @@ sub check_wal_files {
 
         push @{ $perfdata[0] } => ( $w_limit, $c_limit, 1, $max_segs );
 
-        return critical( $me, \@msg, \@perfdata ) if $num_seg >= $c_limit;
-        return warning( $me, \@msg, \@perfdata )  if $num_seg >= $w_limit;
+        return status_critical( $me, \@msg, \@perfdata ) if $num_seg >= $c_limit;
+        return status_warning( $me, \@msg, \@perfdata )  if $num_seg >= $w_limit;
     }
 
-    return ok( $me, \@msg, \@perfdata );
+    return status_ok( $me, \@msg, \@perfdata );
 }
 
 # End of SERVICE section in pod doc
