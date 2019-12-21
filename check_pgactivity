@@ -165,6 +165,10 @@ my %services = (
         'sub'  => \&check_oldest_idlexact,
         'desc' => 'Check the oldest idle transaction.'
     },
+    'oldest_xmin' => {
+        'sub'  => \&check_oldest_xmin,
+        'desc' => 'Check the xmin horizon per distinct sources of xmin retention.'
+    },
     'longest_query' => {
         'sub'  => \&check_longest_query,
         'desc' => 'Check the longest running query.'
@@ -5701,6 +5705,167 @@ sub check_oldest_idlexact {
 
     return status_warning( $me, \@msg, \@perfdata )
         if $oldest_idle > $w_limit;
+
+    return status_ok( $me, \@msg, \@perfdata );
+}
+
+
+=item B<oldest_xmin> (8.4+)
+
+Check the xmin I<horizon> per distinct sources of xmin retention.
+
+Perfdata contains the oldest xmin and maximum age for the following source of
+xmin retention: C<query> (a currently executing query), C<active_xact> (an
+opened transaction currently executin a query), C<idle_xact> (an opened
+transaction being idle), C<2pc> (a pending prepared transaction), C<repslot> (a
+recpliation slot) and C<walwender> (a WAL sender replication process).  If a
+source doesn't retain any transaction, NaN is returned.
+For versions prior to 9.4, only C<2pc> source of xmin retention is available,
+so other sources won't appear in the perfdata.
+
+Critical and Warning thresholds only accept a raw number of transaction.
+
+Required privileges: an unprivileged role checks only its own queries;
+a pg_read_all_stats (10+) or superuser (<10) role is required to check
+pg_stat_replication.  2PC, pg_stat_activity, and replication slots don't
+require special privileges.
+
+=cut
+
+sub check_oldest_xmin {
+    my @rs;
+    my @perfdata;
+    my @msg;
+    my @msg_crit;
+    my @msg_warn;
+    my @hosts;
+    my $c_limit;
+    my $w_limit;
+    my %args        = %{ $_[0] };
+    my $me          = 'POSTGRES_OLDEST_XMIN';
+    my %queries     = (
+        # 8.4 is the first supported version as we rely on window functions to
+        # get the oldest xmin.  Only 2PC has transaction information available
+        $PG_VERSION_84 => q{
+        WITH ordered AS (
+          SELECT '2pc' AS kind,
+          -- xid type doesn't have range operators as the value will wraparound.
+          -- Instead, rely on age() function and row_number() window function
+          -- to get the oldest xid found.
+          row_number() OVER (
+            ORDER BY age(transaction) DESC NULLS LAST
+          ) rownum, age(transaction) AS age, transaction
+          FROM (SELECT transaction FROM pg_prepared_xact
+            UNION ALL SELECT NULL
+          ) sql
+        )
+        SELECT kind, age, xmin FROM ordered
+        WHERE rownum = 1
+        },
+        # backend_xmin and backend_xid added to pg_stat_activity,
+        # backend_xmin added to pg_stat_replication,
+        # replication slots introduced
+        $PG_VERSION_94 => q{
+        WITH raw AS (
+          -- regular backends
+          SELECT
+          CASE WHEN xact_start = query_start
+            THEN 'query'
+            ELSE
+              CASE WHEN state = 'idle in transaction'
+                THEN 'idle_xact'
+                ELSE 'active_xact'
+              END
+          END AS kind,
+          coalesce(backend_xmin, backend_xid) AS xmin
+          FROM pg_stat_activity
+          UNION ALL (
+            -- 2PC
+            SELECT '2pc' AS kind,
+            transaction AS xmin
+            FROM  pg_prepared_xacts
+            WHERE database = current_database()
+          ) UNION ALL (
+            -- replication slots
+            SELECT 'repslot' AS kind, xmin AS xmin
+            FROM  pg_replication_slots
+            WHERE coalesce(database, current_database()) = current_database()
+          ) UNION ALL (
+            -- walsenders
+            SELECT 'walsender' AS kind, backend_xmin AS xmin
+            FROM pg_stat_replication
+          )
+        ),
+        ordered AS (
+          SELECT f.kind,
+          -- xid type doesn't have range operators as the value will wraparound.
+          -- Instead, rely on age() function and row_number() window function
+          -- to get the oldest xid found.
+          row_number() OVER (
+            PARTITION BY f.kind
+            ORDER BY age(xmin) DESC NULLS LAST
+          ) rownum, age(xmin) AS age, xmin
+          FROM raw
+          RIGHT JOIN (
+            SELECT           'query'
+            UNION ALL SELECT 'idle_xact'
+            UNION ALL SELECT 'active_xact'
+            UNION ALL SELECT '2pc'
+            UNION ALL SELECT 'repslot'
+            UNION ALL SELECT 'walsender'
+          ) f(kind) ON raw.kind = f.kind
+        )
+        SELECT kind, age, xmin FROM ordered
+        WHERE rownum = 1
+        }
+    );
+
+    # warning and critical must be raw.
+    pod2usage(
+        -message => "FATAL: critical and warning thresholds only accept raw number of transactions.",
+        -exitval => 127
+    ) unless $args{'warning'}  =~ m/^([0-9.]+)$/
+        and  $args{'critical'} =~ m/^([0-9.]+)$/;
+
+    $c_limit = $args{'critical'};
+    $w_limit = $args{'warning'};
+
+    @hosts = @{ parse_hosts %args };
+
+    pod2usage(
+        -message => 'FATAL: you must give only one host with service "oldest_xmin".',
+        -exitval => 127
+    ) if @hosts != 1;
+
+    is_compat $hosts[0], 'oldest_xmin', $PG_VERSION_84 or exit 1;
+
+    @rs = @{ query_ver( $hosts[0], %queries ) };
+
+    REC_LOOP: foreach my $r (@rs) {
+        map { $_ = 'NaN' if $_ eq ''} @{$r}[1..2];
+        push @perfdata => (
+            ["$r->[0]_age", $r->[1]],
+            ["$r->[0]_xmin", $r->[2]]
+        );
+        if (defined $c_limit) {
+            if ($r->[1] ne 'NaN' and $r->[1] > $c_limit) {
+                push @msg_crit => "$r->[0]_age";
+                next REC_LOOP;
+            }
+
+            push @msg_warn => "$r->[0]_age"
+                if ($r->[1] ne 'NaN' and $r->[1] > $w_limit);
+        }
+    }
+
+    return status_critical( $me, [
+        'Critical: '. join(',', @msg_crit)
+        . (scalar @msg_warn? 'Warning: '. join(',', @msg_warn):'')
+    ], \@perfdata ) if scalar @msg_crit;
+
+    return status_warning( $me,
+        [ 'Warning: '. join(',', @msg_warn) ], \@perfdata
+    ) if scalar @msg_warn;
 
     return status_ok( $me, \@msg, \@perfdata );
 }
