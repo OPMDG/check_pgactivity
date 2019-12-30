@@ -5169,7 +5169,7 @@ sub check_max_freeze_age {
 
     return status_critical( $me, [
             'Critical: '. join(',', @msg_crit)
-            . (scalar @msg_warn? 'Warning: '. join(',', @msg_warn):'')
+            . (scalar @msg_warn? ' Warning: '. join(',', @msg_warn):'')
         ], \@perfdata
     ) if scalar @msg_crit;
 
