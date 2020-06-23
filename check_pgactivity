@@ -33,7 +33,6 @@ use File::Basename;
 use File::Spec;
 use File::Temp ();
 use Getopt::Long qw(:config bundling no_ignore_case_always);
-use JSON::PP;
 use List::Util qw(max);
 use Pod::Usage;
 use Scalar::Util qw(looks_like_number);
@@ -8320,6 +8319,11 @@ unless (($args{'service'} eq 'pg_dump_backup') or ($args{'service'} eq 'oldest_i
 }
 
 $_ = qr/$_/ for @{ $args{'dbexclude'} };
+
+if ( $args{'format'} =~ '^json' ) {
+    require JSON::PP;
+    JSON::PP->import;
+}
 
 # Output format
 for ( $args{'format'} ) {
