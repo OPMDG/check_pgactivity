@@ -33,7 +33,6 @@ use File::Basename;
 use File::Spec;
 use File::Temp ();
 use Getopt::Long qw(:config bundling no_ignore_case_always);
-use JSON::PP;
 use List::Util qw(max);
 use Pod::Usage;
 use Scalar::Util qw(looks_like_number);
@@ -8336,6 +8335,11 @@ for ( $args{'format'} ) {
             -exitval => 127
         );
     }
+}
+
+if ( $args{'format'} =~ '^json' ) {
+    require JSON::PP;
+    JSON::PP->import;
 }
 
 exit $services{ $args{'service'} }{'sub'}->( \%args );
