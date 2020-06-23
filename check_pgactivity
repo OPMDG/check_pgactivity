@@ -8320,11 +8320,6 @@ unless (($args{'service'} eq 'pg_dump_backup') or ($args{'service'} eq 'oldest_i
 
 $_ = qr/$_/ for @{ $args{'dbexclude'} };
 
-if ( $args{'format'} =~ '^json' ) {
-    require JSON::PP;
-    JSON::PP->import;
-}
-
 # Output format
 for ( $args{'format'} ) {
        if ( /^binary$/        ) { $output_fmt = \&bin_output  }
@@ -8340,6 +8335,11 @@ for ( $args{'format'} ) {
             -exitval => 127
         );
     }
+}
+
+if ( $args{'format'} =~ '^json' ) {
+    require JSON::PP;
+    JSON::PP->import;
 }
 
 exit $services{ $args{'service'} }{'sub'}->( \%args );
