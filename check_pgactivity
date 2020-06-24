@@ -4541,9 +4541,11 @@ sub check_last_maintenance {
         },
         $PG_VERSION_91 => qq{
             SELECT coalesce(min(
-                extract(epoch FROM current_timestamp -
-                    greatest(last_${type}, last_auto${type})
-                )), 'NaN'::float),
+                       coalesce(extract(epoch FROM
+		                 current_timestamp -
+                                 greatest(last_${type}, last_auto${type})),
+                        '-infinity'::float)),
+                   'NaN'::float),
                 coalesce(sum(${type}_count), 0) AS ${type}_count,
                 coalesce(sum(auto${type}_count), 0) AS auto${type}_count
             FROM pg_stat_user_tables
