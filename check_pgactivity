@@ -4287,9 +4287,9 @@ sub check_is_master {
     return status_ok( $me, [ "Cluster is master" ] );
 }
 
-=item B<invalid_indexes>
+=item B<invalid_indexes> (8.2+)
 
-Check if there is there are invalid indexes in a database.
+Check if there are invalid indexes in a database.
 
 A critical alert is raised if an invalid index is detected.
 
