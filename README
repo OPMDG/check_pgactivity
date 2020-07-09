@@ -548,8 +548,8 @@ DESCRIPTION
 
         Required privileges: unprivileged role.
 
-    invalid_indexes
-        Check if there is there are invalid indexes in a database.
+    invalid_indexes (8.2+)
+        Check if there are invalid indexes in a database.
 
         A critical alert is raised if an invalid index is detected.
 
