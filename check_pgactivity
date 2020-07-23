@@ -1759,7 +1759,7 @@ waiting to be archived. They only accept a raw number of files.
 Whatever the given threshold, a critical alert is raised if the archiver
 process did not archive the oldest waiting WAL to be archived since last call.
 
-Required privileges: superuser (<11), grant execute on function pg_stat_file(text) for 11+.
+Required privileges: superuser (<v11), grant execute on function pg_stat_file(text) for v11+.
 
 =cut
 
@@ -6081,7 +6081,7 @@ number of files in pg_replslot for each slot.
 Required privileges:
  <10: unprivileged role
  v10: unprivileged role, or superuser to monitor logical replication
- v11: unpriviledged user with GRANT EXECUTE on function pg_ls_dir(text)
+ v11+: unprivileged user with GRANT EXECUTE on function pg_ls_dir(text)
 
 Here is an example:
 
@@ -7420,7 +7420,7 @@ that it cannot access, nor live temp files
  v11: an unprivileged role is possible but must be granted EXECUTE
 on functions pg_ls_dir(text), pg_read_file(text), pg_stat_file(text);
 the same restrictions than on v10 will still apply
- v12: a role with pg_monitor privilege.  
+ v12+: a role with pg_monitor privilege.
 
 =cut
 
@@ -7953,7 +7953,7 @@ For 9.5 and above, the limit is:
 Required privileges:
  <10:superuser (<10)
  v10:unprivileged user with pg_monitor
- v11:unprivileged user with pg_monitor, or with grant EXECUTE on function
+ v11+ :unprivileged user with pg_monitor, or with grant EXECUTE on function
 pg_ls_waldir
 
 =cut

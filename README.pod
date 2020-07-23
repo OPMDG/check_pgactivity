@@ -88,15 +88,16 @@ The Critical threshold.
 =item B<-F>, B<--format> OUTPUT_FORMAT
 
 The output format. Supported output are: C<binary>, C<debug>, C<human>,
-C<nagios> and C<nagios_strict>.
+C<nagios>, C<nagios_strict>, C<json> and C<json_strict>.
 
-Using the C<binary> format, the results are written in a binary file (using perl
-module C<Storable>) given in argument C<--output>. If no output is given,
+Using the C<binary> format, the results are written in a binary file (using
+perl module C<Storable>) given in argument C<--output>. If no output is given,
 defaults to file C<check_pgactivity.out> in the same directory as the script.
 
-The C<nagios_strict> format is equivalent to the C<nagios> format. The only
-difference is that it enforces the unit follow the strict Nagios specs: B, c, s
-or %. Any unit absent from this list is dropped (Bps, Tps, etc).
+The C<nagios_strict> and C<json_strict> formats are equivalent to the C<nagios>
+and C<json> formats respectively. The only difference is that they enforce the
+units to follow the strict Nagios specs: B, c, s or %. Any unit absent from
+this list is dropped (Bps, Tps, etc).
 
 =item B<--tmpdir> DIRECTORY
 
@@ -115,7 +116,8 @@ directory as the script.
 
 =item B<--dump-status-file>
 
-Dump the content of the status file and exit. This is useful for debugging purpose.
+Dump the content of the status file and exit. This is useful for debugging
+purpose.
 
 =item B<--dump-bin-file> [PATH]
 
@@ -185,9 +187,9 @@ check_pgactivity allows two different connection specifications: by service or
 by specifying values for host, user, port, and database.
 Some services can run on multiple hosts, or needs to connect to multiple hosts.
 
-You might specify one of the parameters below to connect to your PostgreSQL instance.
-If you don't, no connection parameters are given to psql: connection relies on binary
-defaults and environment.
+You might specify one of the parameters below to connect to your PostgreSQL
+instance.  If you don't, no connection parameters are given to psql: connection
+relies on binary defaults and environment.
 
 The format for connection parameters is:
 
@@ -200,10 +202,14 @@ listing multiple services separated by a comma. Eg.
 
   --dbservice service1,service2
 
+For more information about service definition, see:
+L<https://www.postgresql.org/docs/current/libpq-pgservice.html>
+
 =item B<Parameters> C<--host HOST>, C<--port PORT>, C<--user ROLE> or C<--dbname DATABASE>
 
-One parameter is enough to define a new host. Usual environment variables (PGHOST, PGPORT, PGDATABASE, PGUSER, PGSERVICE) or default values
-are used for missing parameters.
+One parameter is enough to define a new host. Usual environment variables
+(PGHOST, PGPORT, PGDATABASE, PGUSER, PGSERVICE) or default values are used for
+missing parameters.
 
 If multiple values are given, define as many host as maximum given values.
 
@@ -231,7 +237,8 @@ supports only one host, the second host is ignored.
 
 =item B<Mutual exclusion between both methods>
 
-You can not overwrite services connections variables with parameters C<--host HOST>, C<--port PORT>, C<--user ROLE> or C<--dbname DATABASE>
+You can not overwrite services connections variables with parameters C<--host HOST>,
+C<--port PORT>, C<--user ROLE> or C<--dbname DATABASE>
 
 =back
 
@@ -272,9 +279,9 @@ If needed, provide your own command that writes the uncompressed file
 to standard output with the C<--unarchiver> argument.
 
 Optional argument C<--ignore-wal-size> skips the WAL size check. This is useful
-if your archived WALs are compressed and check_pgactivity is unable to guess the
-original size. Here are the commands check_pgactivity uses to guess the original
-size of .gz, .xz or .zip files:
+if your archived WALs are compressed and check_pgactivity is unable to guess
+the original size. Here are the commands check_pgactivity uses to guess the
+original size of .gz, .xz or .zip files:
 
   gzip -ql
   xz -ql
@@ -308,17 +315,17 @@ Perfdata returns the number of WAL files waiting to be archived.
 Critical and Warning thresholds are optional. They apply on the number of files
 waiting to be archived. They only accept a raw number of files.
 
-Whatever the given threshold, a critical alert is raised if the archiver process
-did not archive the oldest waiting WAL to be archived since last call.
+Whatever the given threshold, a critical alert is raised if the archiver
+process did not archive the oldest waiting WAL to be archived since last call.
 
-Required privileges: unprivileged role (10+); superuser (<10).
+Required privileges: superuser (<v11), grant execute on function pg_stat_file(text) for v11+.
 
 =item B<autovacuum> (8.1+)
 
 Check the autovacuum activity on the cluster.
 
-Perfdata contains the age of oldest running autovacuum and the number of workers
-by type (VACUUM, VACUUM ANALYZE, ANALYZE, VACUUM FREEZE).
+Perfdata contains the age of oldest running autovacuum and the number of
+workers by type (VACUUM, VACUUM ANALYZE, ANALYZE, VACUUM FREEZE).
 
 Thresholds, if any, are ignored.
 
@@ -461,8 +468,8 @@ Critical and Warning thresholds are optional. They accept a list of comma
 separated 'label=value'. Available labels are B<rollbacks>, B<rollback_rate>
 and B<rollback_ratio>, which will be compared to the number of rollbacks, the
 rollback rate and the rollback ratio of each database. Warning or critical will
-be raised if the reported value is greater than B<rollbacks>, B<rollback_rate> or
-B<rollback_ratio>.
+be raised if the reported value is greater than B<rollbacks>, B<rollback_rate>
+or B<rollback_ratio>.
 
 Required privileges: unprivileged role.
 
@@ -501,9 +508,9 @@ The warning and critical arguments are optional. They can be of format integer
 Warning and Critical will be raised if they are greater than the first column,
 or less if the C<--reverse> option is used.
 
-All other columns will be used to generate the perfdata. Each field name is used
-as the name of the perfdata. The field value must contain your perfdata value
-and its unit appended to it. You can add as many fields as needed. Eg.:
+All other columns will be used to generate the perfdata. Each field name is
+used as the name of the perfdata. The field value must contain your perfdata
+value and its unit appended to it. You can add as many fields as needed. Eg.:
 
   SELECT pg_database_size('postgres'),
          pg_database_size('postgres')||'B' AS db_size
@@ -517,12 +524,29 @@ databases.
 
 This service uses the status file (see C<--status-file> parameter).
 
-Perfdata contains the size of each database.
+Perfdata contains the size of each database and their size delta since last call.
 
-Critical and Warning thresholds accept either a raw number, a percentage, or a
-size (eg. 2.5G). They are applied on the size difference for each database
-since the last execution. The aim is to detect unexpected database size
-variation.
+Critical and Warning thresholds are optional. They are a list of optional 'label=value'
+separated by a comma. It allows to fine tune the alert based on the
+absolute C<size> and/or the C<delta> size. Eg.:
+
+    -w 'size=500GB' -c 'size=600GB'
+    -w 'delta=1%' -c 'delta=10%'
+    -w 'size=500GB,delta=1%' -c 'size=600GB,delta=10GB'
+
+The C<size> label accepts either a raw number or a size and checks the total database size.
+The C<delta> label accepts either a raw number, a percentage, or a size.
+The aim of the delta parameter is to detect unexpected database size variations.
+Delta thresholds are absolute value, and delta percentages are computed against
+the previous database size.
+A same label must be filled for both warning and critical.
+
+For backward compatibility, if a single raw number or percentage or size is given with no
+label, it applies on the size difference for each database since the last execution.
+Both threshold bellow are equivalent:
+
+    -w 'delta=1%' -c 'delta=10%'
+    -w '1%' -c '10%'
 
 This service supports both C<--dbexclude> and C<--dbinclude> parameters.
 
@@ -621,10 +645,10 @@ returned if the standby is not paused, even if replication delta time hits the
 thresholds.
 
 Critical or warning are raised if last reported replayed timestamp is greater
-than given threshold AND some data received from the master are not applied yet.
-OK will always be returned if the standby is paused, or if the standby has
-already replayed everything from master and until some write activity happens
-on the master.
+than given threshold AND some data received from the master are not applied
+yet.  OK will always be returned if the standby is paused, or if the standby
+has already replayed everything from master and until some write activity
+happens on the master.
 
 Perfdata returned:
   * paused status (0 no, 1 yes, NaN if master)
@@ -635,8 +659,8 @@ Required privileges: unprivileged role.
 
 =item B<last_analyze> (8.2+)
 
-Check on each databases that the oldest C<analyze> (from autovacuum or not) is not
-older than the given threshold.
+Check on each databases that the oldest C<analyze> (from autovacuum or not) is
+not older than the given threshold.
 
 This service uses the status file (see C<--status-file> parameter) with
 PostgreSQL 9.1+.
@@ -724,8 +748,8 @@ Checks oldest database by transaction age.
 Critical and Warning thresholds are optional. They accept either a raw number
 or percentage for PostgreSQL 8.2 and more. If percentage is given, the
 thresholds are computed based on the "autovacuum_freeze_max_age" parameter.
-100% means that some table(s) reached the maximum age and will trigger an autovacuum
-freeze. Percentage thresholds should therefore be greater than 100%.
+100% means that some table(s) reached the maximum age and will trigger an
+autovacuum freeze. Percentage thresholds should therefore be greater than 100%.
 
 Even with no threshold, this service will raise a critical alert if a database
 has a negative age.
@@ -808,10 +832,10 @@ Check the age and size of backups.
 
 This service uses the status file (see C<--status-file> parameter).
 
-The C<--path> argument contains the location to the backup folder. The supported
-format is a glob pattern matching every folder or file that you need to check. If
-appropriate, the probe should be run as a user with sufficient privileges to check
-for the existence of files.
+The C<--path> argument contains the location to the backup folder. The
+supported format is a glob pattern matching every folder or file that you need
+to check. If appropriate, the probe should be run as a user with sufficient
+privileges to check for the existence of files.
 
 The C<--pattern> is required, and must contain a regular expression matching
 the backup file name, extracting the database name from the first matching
@@ -835,9 +859,9 @@ Tip : For compatibility with pg_back, you should use
 The C<--critical> and C<--warning> thresholds are optional. They accept a list
 of 'metric=value' separated by a comma. Available metrics are C<oldest> and
 C<newest>, respectively the age of the oldest and newest backups, and C<size>,
-which must be the maximum variation of size since the last check, expressed
-as a size or a percentage. C<mindeltasize>, expressed in B, is the minimum variation
-of size needed to raise an alert.
+which must be the maximum variation of size since the last check, expressed as
+a size or a percentage. C<mindeltasize>, expressed in B, is the minimum
+variation of size needed to raise an alert.
 
 This service supports the C<--dbinclude> and C<--dbexclude> arguments, to
 respectively test for the presence of include or exclude files.
@@ -881,21 +905,22 @@ PGDATA: B<the service has to be executed locally on the monitored server.>
 
 =item B<replication_slots> (9.4+)
 
-Check the number of WAL files and pg_replslot files retained by each replication slots.
+Check the number of WAL files and pg_replslot files retained by each
+replication slots.
 
 Perfdata returns the number of WAL and pg_replslot files that each replication
 slot has to keep. This service needs superuser privileges since v10 to obtain
 pg_replslot files. Unless replslot_files will be at 0.
 
-Critical and Warning thresholds are optional. They accept either a raw number (for
-backward compatibility, only wal threshold will be used) or a list 'wal=value'
-and 'replslot=value'. Respectively number of kept wal files or number of files
-in pg_replslot for each slot.
+Critical and Warning thresholds are optional. They accept either a raw number
+(for backward compatibility, only wal threshold will be used) or a list
+'wal=value' and 'replslot=value'. Respectively number of kept wal files or
+number of files in pg_replslot for each slot.
 
 Required privileges:
  <10: unprivileged role
  v10: unprivileged role, or superuser to monitor logical replication
- v11: unpriviledged user with GRANT EXECUTE on function pg_ls_dir(text)
+ v11+: unprivileged user with GRANT EXECUTE on function pg_ls_dir(text)
 
 Here is an example:
 
@@ -903,7 +928,8 @@ Here is an example:
 
 =item B<settings> (9.0+)
 
-Check if the current settings have changed since they were stored in the service file.
+Check if the current settings have changed since they were stored in the
+service file.
 
 The "known" settings are recorded during the very first call of the service.
 To update the known settings after a configuration change, call this service
@@ -919,8 +945,9 @@ Required privileges: unprivileged role.
 
 =item B<sequences_exhausted> (7.4+)
 
-Check all sequences assigned to a column (the smallserial, serial and bigserial types),
-and raise an alarm if the column or sequences gets too close to the maximum value.
+Check all sequences assigned to a column (the smallserial, serial and bigserial
+types), and raise an alarm if the column or sequences gets too close to the
+maximum value.
 
 Perfdata returns the sequences that trigger the alert.
 
@@ -944,7 +971,8 @@ Required privileges: unprivileged role.
 
 =item B<streaming_delta> (9.1+)
 
-Check the data delta between a cluster and its standbys in streaming replication.
+Check the data delta between a cluster and its standbys in streaming
+replication.
 
 Optional argument C<--slave> allows you to specify some slaves that MUST be
 connected. This argument can be used as many times as desired to check multiple
@@ -974,10 +1002,11 @@ Required privileges: unprivileged role.
 
 =item B<table_unlogged> (9.5+)
 
-Check if tables are changed to unlogged. In 9.5, you can switch between logged and unlogged.
+Check if tables are changed to unlogged. In 9.5, you can switch between logged
+and unlogged.
 
-Without C<--critical>  or C<--warning> parameters, this service attempts to fetch
-all unlogged tables.
+Without C<--critical>  or C<--warning> parameters, this service attempts to
+fetch all unlogged tables.
 
 A critical alert is raised if an unlogged table is detected.
 
@@ -1070,6 +1099,7 @@ that it cannot access, nor live temp files
  v11: an unprivileged role is possible but must be granted EXECUTE
 on functions pg_ls_dir(text), pg_read_file(text), pg_stat_file(text);
 the same restrictions than on v10 will still apply
+ v12+: a role with pg_monitor privilege.
 
 =item B<uptime> (8.1+)
 
@@ -1081,15 +1111,18 @@ Please note that the uptime is unaffected when the postmaster resets
 all its children (for example after a kill -9 on a process or a failure).
 
 From 10+, the 'time since shared memory init' aims at detecting this situation:
-in fact we use the age of the oldest non-client child process (usually checkpointer,
-writer or startup). This needs pg_monitor access to read pg_stat_activity.
+in fact we use the age of the oldest non-client child process (usually
+checkpointer, writer or startup). This needs pg_monitor access to read
+pg_stat_activity.
 
 Critical and Warning thresholds are optional. If both are set, Critical is
-raised when the postmaster uptime or the time since shared memory initialization
-is less than the critical threshold.
-Warning is raised when the time since configuration reload is less than the warning threshold.
-If only a warning or critical threshold is given, it will be used for both cases.
-Obviously these alerts will disappear from themselves once enough time has passed.
+raised when the postmaster uptime or the time since shared memory
+initialization is less than the critical threshold.
+
+Warning is raised when the time since configuration reload is less than the
+warning threshold.  If only a warning or critical threshold is given, it will
+be used for both cases.  Obviously these alerts will disappear from themselves
+once enough time has passed.
 
 Perfdata contain the three values (when available).
 
@@ -1126,7 +1159,7 @@ For 9.5 and above, the limit is:
 Required privileges:
  <10:superuser (<10)
  v10:unprivileged user with pg_monitor
- v11:unprivileged user with pg_monitor, or with grant EXECUTE on function
+ v11+ :unprivileged user with pg_monitor, or with grant EXECUTE on function
 pg_ls_waldir
 
 =back
