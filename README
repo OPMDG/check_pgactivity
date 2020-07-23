@@ -74,17 +74,17 @@ DESCRIPTION
 
     -F, --format OUTPUT_FORMAT
         The output format. Supported output are: "binary", "debug", "human",
-        "nagios" and "nagios_strict".
+        "nagios", "nagios_strict", "json" and "json_strict".
 
         Using the "binary" format, the results are written in a binary file
         (using perl module "Storable") given in argument "--output". If no
         output is given, defaults to file "check_pgactivity.out" in the same
         directory as the script.
 
-        The "nagios_strict" format is equivalent to the "nagios" format. The
-        only difference is that it enforces the unit follow the strict
-        Nagios specs: B, c, s or %. Any unit absent from this list is
-        dropped (Bps, Tps, etc).
+        The "nagios_strict" and "json_strict" formats are equivalent to the
+        "nagios" and "json" formats respectively. The only difference is
+        that they enforce the units to follow the strict Nagios specs: B, c,
+        s or %. Any unit absent from this list is dropped (Bps, Tps, etc).
 
     --tmpdir DIRECTORY
         Path to a directory where the script can create temporary files. The
@@ -165,6 +165,9 @@ DESCRIPTION
         defined by listing multiple services separated by a comma. Eg.
 
           --dbservice service1,service2
+
+        For more information about service definition, see:
+        <https://www.postgresql.org/docs/current/libpq-pgservice.html>
 
     Parameters "--host HOST", "--port PORT", "--user ROLE" or "--dbname
     DATABASE"
@@ -277,7 +280,8 @@ DESCRIPTION
         archiver process did not archive the oldest waiting WAL to be
         archived since last call.
 
-        Required privileges: unprivileged role (10+); superuser (<10).
+        Required privileges: superuser (<v11), grant execute on function
+        pg_stat_file(text) for v11+.
 
     autovacuum (8.1+)
         Check the autovacuum activity on the cluster.
@@ -481,12 +485,32 @@ DESCRIPTION
 
         This service uses the status file (see "--status-file" parameter).
 
-        Perfdata contains the size of each database.
+        Perfdata contains the size of each database and their size delta
+        since last call.
 
-        Critical and Warning thresholds accept either a raw number, a
-        percentage, or a size (eg. 2.5G). They are applied on the size
-        difference for each database since the last execution. The aim is to
-        detect unexpected database size variation.
+        Critical and Warning thresholds are optional. They are a list of
+        optional 'label=value' separated by a comma. It allows to fine tune
+        the alert based on the absolute "size" and/or the "delta" size. Eg.:
+
+            -w 'size=500GB' -c 'size=600GB'
+            -w 'delta=1%' -c 'delta=10%'
+            -w 'size=500GB,delta=1%' -c 'size=600GB,delta=10GB'
+
+        The "size" label accepts either a raw number or a size and checks
+        the total database size. The "delta" label accepts either a raw
+        number, a percentage, or a size. The aim of the delta parameter is
+        to detect unexpected database size variations. Delta thresholds are
+        absolute value, and delta percentages are computed against the
+        previous database size. A same label must be filled for both warning
+        and critical.
+
+        For backward compatibility, if a single raw number or percentage or
+        size is given with no label, it applies on the size difference for
+        each database since the last execution. Both threshold bellow are
+        equivalent:
+
+            -w 'delta=1%' -c 'delta=10%'
+            -w '1%' -c '10%'
 
         This service supports both "--dbexclude" and "--dbinclude"
         parameters.
@@ -857,7 +881,7 @@ DESCRIPTION
         slot.
 
         Required privileges: <10: unprivileged role v10: unprivileged role,
-        or superuser to monitor logical replication v11: unpriviledged user
+        or superuser to monitor logical replication v11+: unprivileged user
         with GRANT EXECUTE on function pg_ls_dir(text)
 
         Here is an example:
@@ -1038,7 +1062,7 @@ DESCRIPTION
         nor live temp files v11: an unprivileged role is possible but must
         be granted EXECUTE on functions pg_ls_dir(text), pg_read_file(text),
         pg_stat_file(text); the same restrictions than on v10 will still
-        apply
+        apply v12+: a role with pg_monitor privilege.
 
     uptime (8.1+)
         Returns time since postmaster start ("uptime", from 8.1), since
@@ -1057,6 +1081,7 @@ DESCRIPTION
         Critical and Warning thresholds are optional. If both are set,
         Critical is raised when the postmaster uptime or the time since
         shared memory initialization is less than the critical threshold.
+
         Warning is raised when the time since configuration reload is less
         than the warning threshold. If only a warning or critical threshold
         is given, it will be used for both cases. Obviously these alerts
@@ -1097,7 +1122,7 @@ DESCRIPTION
                 + wal_keep_segments (if set)
 
         Required privileges: <10:superuser (<10) v10:unprivileged user with
-        pg_monitor v11:unprivileged user with pg_monitor, or with grant
+        pg_monitor v11+ :unprivileged user with pg_monitor, or with grant
         EXECUTE on function pg_ls_waldir
 
   EXAMPLES
