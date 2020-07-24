@@ -3915,9 +3915,17 @@ upgrades or a pg_upgrade.
 Perfdata returns the number of outdated extensions in each database.
 
 This service supports both C<--dbexclude> and C<--dbinclude> parameters.
+Schemas are ignored, as an extension cannot be installed more than once
+in a database.
 
 This service supports multiple C<--exclude> argument to exclude one or
-more extensions from the check.
+more extensions from the check. To ignore an extension only in a particular database,
+use  'dbname/extension_name' syntax.
+
+Examples:
+
+    --dbexclude 'devdb' --exclude 'testdb/postgis' --exclude 'testdb/postgis_topology'
+    --dbinclude 'proddb' --dbinclude 'testdb'  --exclude 'powa'
 
 Required privileges: unprivileged role able to log in all databases
 
@@ -3962,7 +3970,7 @@ sub check_extensions_versions {
 
         REC_LOOP: foreach my $ext (sort @rs) {
             foreach my $exclude_re ( @{ $args{'exclude'} } ) {
-                next REC_LOOP if $ext->[0] =~ /$exclude_re/;
+                next REC_LOOP if $ext->[0] =~ /$exclude_re/ or "$db/$ext->[0]" =~ /$exclude_re/ ;
             }
 
             $outdated++;
