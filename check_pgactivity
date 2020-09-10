@@ -5614,27 +5614,45 @@ This service uses the status file (see C<--status-file> parameter).
 
 The C<--path> argument contains the location to the backup folder. The
 supported format is a glob pattern matching every folder or file that you need
-to check. If appropriate, the probe should be run as a user with sufficient
-privileges to check for the existence of files.
+to check.
 
 The C<--pattern> is required, and must contain a regular expression matching
 the backup file name, extracting the database name from the first matching
-group. For example, the pattern "(\w+)-\d+.dump" can be used to match dumps of
-the form:
-
-    mydb-20150803.dump
-    otherdb-20150803.dump
-    mydb-20150806.dump
-    otherdb-20150806.dump
-    mydb-20150807.dump
+group.
 
 Optionally, a C<--global-pattern> option can be supplied to check for an
 additional global file.
 
-Tip : For compatibility with pg_back, you should use
-        C<--path> '/path/*{dump,sql}'
-        C<--pattern> '(\w+)_[0-9-_]+.dump'
-        C<--global-pattern> 'pg_global_[0-9-_]+.sql'
+Examples:
+
+To monitor backups like:
+
+    /var/lib/backups/mydb-20150803.dump
+    /var/lib/backups/otherdb-20150803.dump
+    /var/lib/backups/mydb-20150804.dump
+    /var/lib/backups/otherdb-20150804.dump
+
+you must set:
+
+    --path    '/var/lib/backups/*'
+    --pattern '(\w+)-\d+.dump'
+
+If the path contains the date, like this:
+
+   /var/lib/backups/2015-08-03-daily/mydb.dump
+   /var/lib/backups/2015-08-03-daily/otherdb.dump
+
+then you can set:
+
+    --path    '/var/lib/backups/*/*.dump'
+    --pattern '/\d+-\d+-\d+-daily/(.*).dump'
+
+For compatibility with pg_back (https://github.com/orgrim/pg_back),
+you should use:
+
+   --path '/path/*{dump,sql}'
+   --pattern '(\w+)_[0-9-_]+.dump'
+   --global-pattern 'pg_global_[0-9-_]+.sql'
 
 The C<--critical> and C<--warning> thresholds are optional. They accept a list
 of 'metric=value' separated by a comma. Available metrics are C<oldest> and
