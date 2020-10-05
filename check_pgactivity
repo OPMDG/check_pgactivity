@@ -818,8 +818,12 @@ L<https://www.postgresql.org/docs/current/libpq-pgservice.html>
 =item B<Parameters> C<--host HOST>, C<--port PORT>, C<--user ROLE> or C<--dbname DATABASE>
 
 One parameter is enough to define a new host. Usual environment variables
-(PGHOST, PGPORT, PGDATABASE, PGUSER, PGSERVICE) or default values are used for
+(PGHOST, PGPORT, PGDATABASE, PGUSER, PGSERVICE, PGPASSWORD) or default values are used for
 missing parameters.
+
+As for usual PostgreSQL tools, there is no option for a password,
+to avoid exposing it as a command line argument.
+Use PGPASSWORD, .pgpass, or a service file (recommended)
 
 If multiple values are given, define as many host as maximum given values.
 
