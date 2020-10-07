@@ -7572,7 +7572,7 @@ sub check_temp_files {
         # PostgreSQL 10
         $PG_VERSION_100 => q{
           SELECT 'live', agg.spcname, count(agg.tmpfile),
-                 SUM((pg_stat_file(agg.dir||'/'||agg.tmpfile)).size) AS SIZE
+                 SUM(COALESCE((pg_stat_file(agg.dir||'/'||agg.tmpfile, true)).size, 0)) AS SIZE
             FROM ( SELECT ls.oid, ls.spcname AS spcname,
                           ls.dir||'/'||ls.sub AS dir,
                           pg_ls_dir(ls.dir||'/'||ls.sub) AS tmpfile
