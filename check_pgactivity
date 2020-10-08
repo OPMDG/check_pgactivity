@@ -7421,7 +7421,7 @@ Required privileges:
  v10: an unprivileged role is possible but it will not monitor databases
 that it cannot access, nor live temp files
  v11: an unprivileged role is possible but must be granted EXECUTE
-on functions pg_ls_dir(text), pg_read_file(text), pg_stat_file(text);
+on functions pg_ls_dir(text), pg_read_file(text), pg_stat_file(text, boolean);
 the same restrictions than on v10 will still apply
  v12+: a role with pg_monitor privilege.
 
