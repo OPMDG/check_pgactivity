@@ -7948,10 +7948,14 @@ of the following formulas:
   100% = 1 + checkpoint_segments * (2 + checkpoint_completion_target)
   100% = 1 + wal_keep_segments + 2 * checkpoint_segments
 
-For 9.5 and above, the limit is:
+For 9.5 to 12, the limit is:
 
   100% =  max_wal_size      (as a number of WAL)
         + wal_keep_segments (if set)
+
+For 13 and above:
+
+  100% =  max_wal_size + wal_keep_size (as numbers of WAL)
 
 Required privileges:
  <10:superuser (<10)
@@ -7981,6 +7985,28 @@ sub check_wal_files {
      # compare against the current number of WALs (see rules above).
      # Parameters and the units stored in pg_settings have changed often across
      # versions.
+     $PG_VERSION_130 => q{
+        WITH wal_settings AS (
+          SELECT sum(setting::int) filter (WHERE name='max_wal_size') as max_wal_size, -- unit: MB
+                 sum(setting::int) filter (WHERE name='wal_segment_size') as wal_segment_size, -- unit: B
+                 sum(setting::int) filter (WHERE name='wal_keep_size') as wal_keep_size -- unit: MB
+          FROM pg_settings
+          WHERE name IN ('max_wal_size','wal_segment_size','wal_keep_size')
+        )
+        SELECT s.name,
+          (wal_keep_size + max_wal_size) / (wal_segment_size/1024^2)  AS max_nb_wal, -- unit: nb of WALs
+          CASE WHEN pg_is_in_recovery()
+            THEN NULL
+            ELSE pg_current_wal_lsn()
+          END,
+          floor(wal_keep_size / (wal_segment_size/1024^2)) AS wal_keep_segments, -- unit: nb of WALs
+          (pg_control_checkpoint()).timeline_id     AS tli
+        FROM pg_ls_waldir() AS s
+        CROSS JOIN wal_settings
+        WHERE name ~ '^[0-9A-F]{24}$'
+        ORDER BY
+          s.modification DESC,
+          name DESC},
      $PG_VERSION_110 => q{
         WITH wal_settings AS (
           SELECT sum(setting::int) filter (WHERE name='max_wal_size') as max_wal_size, -- unit: MB
