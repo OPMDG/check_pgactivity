@@ -8201,7 +8201,7 @@ sub check_wal_files {
         $curr_lsn =~ m{^([0-9A-F]+)/([0-9A-F]+)$};
         $curr_lsn = ( $wal_size * hex($1) ) + hex($2);
 
-        unless ( @prev_lsn == 0 ) {
+        unless ( @prev_lsn == 0 or $now == $prev_lsn[0] ) {
             my $rate = ($curr_lsn - $prev_lsn[1])/($now - $prev_lsn[0]);
             $rate = int($rate*100+0.5)/100;
 
