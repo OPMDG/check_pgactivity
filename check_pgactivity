@@ -167,7 +167,7 @@ my %services = (
     },
     'oldest_xmin' => {
         'sub'  => \&check_oldest_xmin,
-        'desc' => 'Check the xmin horizon per distinct sources of xmin retention.'
+        'desc' => 'Check the xmin horizon from distinct sources of xmin retention.'
     },
     'longest_query' => {
         'sub'  => \&check_longest_query,
@@ -5715,10 +5715,10 @@ sub check_oldest_idlexact {
 Check the xmin I<horizon> from distinct sources of xmin retention.
 
 Perfdata contains the oldest xmin and maximum age for the following source of
-xmin retention: C<query> (a currently executing query), C<active_xact> (an
-opened transaction currently executin a query), C<idle_xact> (an opened
+xmin retention: C<query> (a running query), C<active_xact> (an
+opened transaction currently executing a query), C<idle_xact> (an opened
 transaction being idle), C<2pc> (a pending prepared transaction), C<repslot> (a
-recpliation slot) and C<walwender> (a WAL sender replication process), for each
+replication slot) and C<walwender> (a WAL sender replication process), for each
 connectable database.  If a source doesn't retain any transaction for a
 database, NaN is returned.  For versions prior to 9.4, only C<2pc> source of
 xmin retention is available, so other sources won't appear in the perfdata.
@@ -5740,9 +5740,9 @@ sub check_oldest_xmin {
     my @hosts;
     my $c_limit;
     my $w_limit;
-    my %args        = %{ $_[0] };
-    my $me          = 'POSTGRES_OLDEST_XMIN';
-    my %queries     = (
+    my %args    = %{ $_[0] };
+    my $me      = 'POSTGRES_OLDEST_XMIN';
+    my %queries = (
         # 8.4 is the first supported version as we rely on window functions to
         # get the oldest xmin.  Only 2PC has transaction information available
         $PG_VERSION_84 => q{
