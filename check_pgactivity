@@ -3984,9 +3984,10 @@ sub check_extensions_versions {
         push @perfdata => [ $db, $outdated, undef, undef, 1, 0 ];
     }
 
-    return critical( $me, \@msg, \@perfdata, \@longmsg ) if $tot_outdated > 0;
+    return status_critical( $me, \@msg, \@perfdata, \@longmsg )
+        if $tot_outdated > 0;
 
-    return ok( $me, \@msg, \@perfdata, \@longmsg );
+    return status_ok( $me, \@msg, \@perfdata, \@longmsg );
 }
 
 
