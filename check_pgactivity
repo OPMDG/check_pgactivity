@@ -5725,6 +5725,8 @@ xmin retention is available, so other sources won't appear in the perfdata.
 
 Critical and Warning thresholds only accept a raw number of transaction.
 
+This service supports both "--dbexclude" and "--dbinclude" parameters.
+
 Required privileges: a pg_read_all_stats (10+) or superuser (<10) role is
 required to check pg_stat_replication.  2PC, pg_stat_activity, and replication
 slots don't require special privileges.
@@ -5740,9 +5742,11 @@ sub check_oldest_xmin {
     my @hosts;
     my $c_limit;
     my $w_limit;
-    my %args    = %{ $_[0] };
-    my $me      = 'POSTGRES_OLDEST_XMIN';
-    my %queries = (
+    my %args      = %{ $_[0] };
+    my $me        = 'POSTGRES_OLDEST_XMIN';
+    my @dbinclude = @{ $args{'dbinclude'} };
+    my @dbexclude = @{ $args{'dbexclude'} };
+    my %queries   = (
         # 8.4 is the first supported version as we rely on window functions to
         # get the oldest xmin.  Only 2PC has transaction information available
         $PG_VERSION_84 => q{
@@ -5765,7 +5769,7 @@ sub check_oldest_xmin {
           JOIN pg_database d ON d.datname = coalesce(sql.datname, d.datname)
           WHERE d.datallowconn
         )
-        SELECT kind, datname, age, xmin FROM ordered
+        SELECT datname, kind, age, xmin FROM ordered
         WHERE rownum = 1
         },
         # backend_xmin and backend_xid added to pg_stat_activity,
@@ -5811,33 +5815,41 @@ sub check_oldest_xmin {
           )
         ),
         ordered AS (
-          SELECT f.kind, d.datname,
+          SELECT kind, datname,
           -- xid type doesn't have range operators as the value will wraparound.
           -- Instead, rely on age() function and row_number() window function
           -- to get the oldest xid found.
           row_number() OVER (
-            PARTITION BY f.kind, d.datname
+            PARTITION BY kind, datname
             ORDER BY age(xmin) DESC NULLS LAST
           ) rownum, age(xmin) AS age, xmin
           FROM raw
-          RIGHT JOIN (VALUES
+        )
+        SELECT f.datname, f.kind, o.age, o.xmin
+        FROM ordered AS o
+        RIGHT JOIN (
+          SELECT d.datname, v.kind
+          FROM pg_catalog.pg_database d,
+          (VALUES
             ( 'query'       ),
             ( 'idle_xact'   ),
             ( 'active_xact' ),
             ( '2pc'         ),
             ( 'repslot'     ),
             ( 'walsender'   )
-          ) f(kind) ON raw.kind = f.kind
-          -- we use this JOIN condition to make sure that we'll always have a
-          -- full record for all (connectable) databases
-          JOIN pg_database d ON d.datname = coalesce(raw.datname, d.datname)
+          ) v(kind)
           WHERE d.datallowconn
-        )
-        SELECT kind, datname, age, xmin
-        FROM ordered
-        WHERE rownum = 1
+        ) f ON o.datname = f.datname
+           AND o.kind = f.kind
+        WHERE coalesce(o.rownum, 1) = 1
         }
     );
+
+    # Warning and critical are mandatory.
+    pod2usage(
+        -message => "FATAL: you must specify critical and warning thresholds.",
+        -exitval => 127
+    ) unless defined $args{'warning'} and defined $args{'critical'} ;
 
     # warning and critical must be raw.
     pod2usage(
@@ -5861,7 +5873,12 @@ sub check_oldest_xmin {
     @rs = @{ query_ver( $hosts[0], %queries ) };
 
     REC_LOOP: foreach my $r (@rs) {
+
+        next REC_LOOP if @dbexclude and     grep { $r->[0] =~ /$_/ } @dbexclude;
+        next REC_LOOP if @dbinclude and not grep { $r->[0] =~ /$_/ } @dbinclude;
+
         map { $_ = 'NaN' if $_ eq ''} @{$r}[2..3];
+
         push @perfdata => (
             ["$r->[0]_$r->[1]_age", $r->[2]],
             ["$r->[0]_$r->[1]_xmin", $r->[3]]
