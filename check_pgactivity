@@ -4637,22 +4637,46 @@ sub check_last_maintenance {
     my @dbexclude  = @{ $args{'dbexclude'} };
     my $me         = 'POSTGRES_LAST_' . uc($type);
     my %queries    = (
+        # 8.2 does not have per-database activity stats. We must aggregate
+        # from pg_stat_user_tables
         $PG_VERSION_82 => qq{
             SELECT coalesce(min(
                 extract(epoch FROM current_timestamp -
                     greatest(last_${type}, last_auto${type})
-                )), 'NaN'::float)
+                )), 'NaN'::float), NULL, NULL,
+                sum(hashtext(n_tup_ins::text
+                    ||n_tup_upd::text
+                    ||n_tup_del::text))
+            FROM pg_stat_user_tables
+        },
+        # Starting with 8.3, we can check database activity from
+        # pg_stat_database
+        $PG_VERSION_83 => qq{
+            SELECT coalesce(min(
+                extract(epoch FROM current_timestamp -
+                    greatest(last_${type}, last_auto${type})
+                )), 'NaN'::float), NULL, NULL,
+                (
+                  SELECT md5(tup_inserted::text||tup_updated::text||tup_deleted::text)
+                  FROM pg_catalog.pg_stat_database
+                  WHERE datname = current_database()
+                )
             FROM pg_stat_user_tables
         },
         $PG_VERSION_91 => qq{
             SELECT coalesce(min(
                        coalesce(extract(epoch FROM
-		                 current_timestamp -
+                         current_timestamp -
                                  greatest(last_${type}, last_auto${type})),
                         '-infinity'::float)),
                    'NaN'::float),
                 coalesce(sum(${type}_count), 0) AS ${type}_count,
-                coalesce(sum(auto${type}_count), 0) AS auto${type}_count
+                coalesce(sum(auto${type}_count), 0) AS auto${type}_count,
+                (
+                  SELECT md5(tup_inserted::text||tup_updated::text||tup_deleted::text)
+                  FROM pg_catalog.pg_stat_database
+                  WHERE datname = current_database()
+                )
             FROM pg_stat_user_tables
         }
     );
@@ -4671,7 +4695,6 @@ sub check_last_maintenance {
     $c_limit = get_time $args{'critical'};
     $w_limit = get_time $args{'warning'};
 
-
     @hosts = @{ parse_hosts %args };
 
     pod2usage(
@@ -4684,8 +4707,7 @@ sub check_last_maintenance {
 
     @all_db = @{ get_all_dbname( $hosts[0] ) };
 
-    %counts = %{ load( $hosts[0], "${type}_counts", $args{'status-file'} ) || {} }
-        if $hosts[0]->{'version_num'} >= $PG_VERSION_91;
+    %counts = %{ load( $hosts[0], "${type}_counts", $args{'status-file'} ) || {} };
 
 LOOP_DB: foreach my $db (@all_db) {
         my @perf;
@@ -4701,10 +4723,10 @@ LOOP_DB: foreach my $db (@all_db) {
 
         push @perfdata => [ $db, $rs->[0], 's', $w_limit, $c_limit ];
 
-        if ($hosts[0]->{'version_num'} >= $PG_VERSION_91 ) {
-            $new_counts{$db} = [$rs->[1], $rs->[2]];
+        $new_counts{$db} = [ $rs->[1], $rs->[2], $counts{$db}[2] ];
 
-            if ( defined $counts{$db} ) {
+        if ( defined $counts{$db} ) {
+            if ($hosts[0]->{'version_num'} >= $PG_VERSION_91 ) {
                 my $delta      = $rs->[1] - $counts{$db}[0];
                 my $delta_auto = $rs->[2] - $counts{$db}[1];
 
@@ -4713,6 +4735,10 @@ LOOP_DB: foreach my $db (@all_db) {
                     [ "$db auto$type", $delta_auto ]
                 );
             }
+
+            # try to detect no activity to avoid alerts
+            next LOOP_DB if defined $counts{$db}[2]
+                        and $counts{$db}[2] eq $rs->[3];
         }
 
         if ( $rs->[0] =~ /^-inf/i or $rs->[0] >= $c_limit ) {
@@ -4724,10 +4750,12 @@ LOOP_DB: foreach my $db (@all_db) {
             push @msg_warn => "$db: " . to_interval($rs->[0]);
             next LOOP_DB;
         }
+
+        # if everything is OK, save the current hashed status for this database
+        $new_counts{$db}[2] = $rs->[3];
     }
 
-    save $hosts[0], "${type}_counts", \%new_counts, $args{'status-file'}
-        if $hosts[0]->{'version_num'} >= $PG_VERSION_91;
+    save $hosts[0], "${type}_counts", \%new_counts, $args{'status-file'};
 
     return status_critical( $me, [ @msg_crit, @msg_warn ], \@perfdata )
         if scalar @msg_crit > 0;
