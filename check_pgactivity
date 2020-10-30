@@ -19,6 +19,13 @@ check_pgactivity - PostgreSQL plugin for Nagios
 check_pgactivity is designed to monitor PostgreSQL clusters from Nagios. It
 offers many options to measure and monitor useful performance metrics.
 
+=head1 COMPATIBILITY
+
+Each service is available from a different PostgreSQL version,
+from 7.4, as documented below.
+The psql client must be 8.3 at least. It can be used with an older server.
+Please report any undocumented incompatibility.
+
 =cut
 
 use vars qw($VERSION $PROGRAM);
@@ -363,6 +370,7 @@ script relies on the system default temporary directory if possible.
 =item B<-P>, B<--psql> FILE
 
 Path to the C<psql> executable (default: "psql").
+It should be version 8.3 at least, but the server can be older.
 
 =item B<--status-file> PATH
 
