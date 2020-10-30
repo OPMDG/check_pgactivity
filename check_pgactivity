@@ -426,6 +426,7 @@ my %args = (
     'port'                  => undef,
     'dbname'                => undef,
     'dbservice'             => undef,
+    'detailed'              => 0,
     'warning'               => undef,
     'critical'              => undef,
     'exclude'               => [],
@@ -5740,8 +5741,10 @@ sub check_oldest_xmin {
     my @msg_crit;
     my @msg_warn;
     my @hosts;
+    my $detailed;
     my $c_limit;
     my $w_limit;
+    my %oldest_xmin; # track oldest xmin and its kind for each database
     my %args      = %{ $_[0] };
     my $me        = 'POSTGRES_OLDEST_XMIN';
     my @dbinclude = @{ $args{'dbinclude'} };
@@ -5858,8 +5861,9 @@ sub check_oldest_xmin {
     ) unless $args{'warning'}  =~ m/^([0-9.]+)$/
         and  $args{'critical'} =~ m/^([0-9.]+)$/;
 
-    $c_limit = $args{'critical'};
-    $w_limit = $args{'warning'};
+    $detailed = $args{'detailed'};
+    $c_limit  = $args{'critical'};
+    $w_limit  = $args{'warning'};
 
     @hosts = @{ parse_hosts %args };
 
@@ -5879,10 +5883,23 @@ sub check_oldest_xmin {
 
         map { $_ = 'NaN' if $_ eq ''} @{$r}[2..3];
 
-        push @perfdata => (
-            ["$r->[0]_$r->[1]_age", $r->[2]],
-            ["$r->[0]_$r->[1]_xmin", $r->[3]]
-        );
+        if ($detailed) {
+            push @perfdata => (
+                ["$r->[0]_$r->[1]_age", $r->[2]],
+                ["$r->[0]_$r->[1]_xmin", $r->[3]]
+            );
+        }
+        else {
+            if ( exists $oldest_xmin{$r->[0]} ) {
+                $oldest_xmin{$r->[0]} = [ $r->[1], $r->[2] ]
+                    if $oldest_xmin{$r->[0]}[1] eq 'NaN'
+                    or $r->[2] > $oldest_xmin{$r->[0]}[1];
+            }
+            else {
+                $oldest_xmin{$r->[0]} = [ $r->[1], $r->[2] ];
+            }
+        }
+
         if (defined $c_limit) {
             if ($r->[2] ne 'NaN' and $r->[2] > $c_limit) {
                 push @msg_crit => "$r->[0]_$r->[1]_age";
@@ -5894,13 +5911,25 @@ sub check_oldest_xmin {
         }
     }
 
+    if (not $detailed) {
+        foreach my $k (keys %oldest_xmin) {
+            push @perfdata => (
+                ["${k}_age", $oldest_xmin{$k}[1]]
+            );
+
+            push @msg, "Oldest xmin in $k from ". $oldest_xmin{$k}[0]
+                if $oldest_xmin{$k}[1] ne 'NaN';
+        }
+    }
+
     return status_critical( $me, [
         'Critical: '. join(',', @msg_crit)
-        . (scalar @msg_warn? ' Warning: '. join(',', @msg_warn):'')
+        . (scalar @msg_warn? ' Warning: '. join(',', @msg_warn):''),
+        @msg
     ], \@perfdata ) if scalar @msg_crit;
 
     return status_warning( $me,
-        [ 'Warning: '. join(',', @msg_warn) ], \@perfdata
+        [ 'Warning: '. join(',', @msg_warn), @msg ], \@perfdata
     ) if scalar @msg_warn;
 
     return status_ok( $me, \@msg, \@perfdata );
@@ -8562,6 +8591,7 @@ GetOptions(
         'dbexclude=s',
         'dbinclude=s',
         'debug!',
+        'detailed!',
         'dump-status-file!',
         'dump-bin-file:s',
         'effective_cache_size=i',
