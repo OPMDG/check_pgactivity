@@ -5715,9 +5715,14 @@ sub check_oldest_idlexact {
 
 Check the xmin I<horizon> from distinct sources of xmin retention.
 
-Perfdata contains the oldest xmin and maximum age for the following source of
-xmin retention: C<query> (a running query), C<active_xact> (an
-opened transaction currently executing a query), C<idle_xact> (an opened
+Per default, Perfdata outputs the oldest known xmin age for each database among
+running queries, opened or idle transactions, pending prepared transactions,
+replication slots and walsender. For versions prior to 9.4, only C<2pc> source
+of xmin retention is checked.
+
+Using C<--detailed>, Perfdata contains the oldest xmin and maximum age for the
+following source of xmin retention: C<query> (a running query), C<active_xact>
+(an opened transaction currently executing a query), C<idle_xact> (an opened
 transaction being idle), C<2pc> (a pending prepared transaction), C<repslot> (a
 replication slot) and C<walwender> (a WAL sender replication process), for each
 connectable database.  If a source doesn't retain any transaction for a
@@ -5726,7 +5731,7 @@ xmin retention is available, so other sources won't appear in the perfdata.
 
 Critical and Warning thresholds only accept a raw number of transaction.
 
-This service supports both "--dbexclude" and "--dbinclude" parameters.
+This service supports both C<--dbexclude>" and C<--dbinclude>" parameters.
 
 Required privileges: a pg_read_all_stats (10+) or superuser (<10) role is
 required to check pg_stat_replication.  2PC, pg_stat_activity, and replication
