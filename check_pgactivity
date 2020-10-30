@@ -5729,7 +5729,8 @@ connectable database.  If a source doesn't retain any transaction for a
 database, NaN is returned.  For versions prior to 9.4, only C<2pc> source of
 xmin retention is available, so other sources won't appear in the perfdata.
 
-Critical and Warning thresholds only accept a raw number of transaction.
+Critical and Warning thresholds are optional. They only accept a raw number of
+transaction.
 
 This service supports both C<--dbexclude>" and C<--dbinclude>" parameters.
 
@@ -5855,20 +5856,25 @@ sub check_oldest_xmin {
 
     # Warning and critical are mandatory.
     pod2usage(
-        -message => "FATAL: you must specify critical and warning thresholds.",
+        -message => "FATAL: you must specify both critical and warning thresholds or none of them.",
         -exitval => 127
-    ) unless defined $args{'warning'} and defined $args{'critical'} ;
+    ) unless (    defined $args{'warning'} and     defined $args{'critical'})
+        or   (not defined $args{'warning'} and not defined $args{'critical'});
 
-    # warning and critical must be raw.
-    pod2usage(
-        -message => "FATAL: critical and warning thresholds only accept raw number of transactions.",
-        -exitval => 127
-    ) unless $args{'warning'}  =~ m/^([0-9.]+)$/
-        and  $args{'critical'} =~ m/^([0-9.]+)$/;
+    if ( defined $args{'critical'} ) {
+
+        $c_limit  = $args{'critical'};
+        $w_limit  = $args{'warning'};
+
+        # warning and critical must be raw.
+        pod2usage(
+            -message => "FATAL: critical and warning thresholds only accept raw number of transactions.",
+            -exitval => 127
+        ) unless $args{'warning'}  =~ m/^([0-9.]+)$/
+            and $args{'critical'} =~ m/^([0-9.]+)$/;
+    }
 
     $detailed = $args{'detailed'};
-    $c_limit  = $args{'critical'};
-    $w_limit  = $args{'warning'};
 
     @hosts = @{ parse_hosts %args };
 
