@@ -4637,13 +4637,22 @@ sub check_last_maintenance {
     my @dbexclude  = @{ $args{'dbexclude'} };
     my $me         = 'POSTGRES_LAST_' . uc($type);
     my %queries    = (
+        # 1st field: oldest known maintenance on a table
+        #            -inf if a table never had maintenance
+        #             NaN if nothing found
+        # 2nd field: total number of maintenance
+        # 3nd field: total number of auto-maintenance
+        # 4th field: hash(insert||update||delete) to detect write
+        #            activity between two run and avoid useless alerts
+        #
         # 8.2 does not have per-database activity stats. We must aggregate
         # from pg_stat_user_tables
         $PG_VERSION_82 => qq{
             SELECT coalesce(min(
                 extract(epoch FROM current_timestamp -
                     greatest(last_${type}, last_auto${type})
-                )), 'NaN'::float), NULL, NULL,
+                )), 'NaN'::float),
+                NULL, NULL,
                 sum(hashtext(n_tup_ins::text
                     ||n_tup_upd::text
                     ||n_tup_del::text))
@@ -4655,7 +4664,8 @@ sub check_last_maintenance {
             SELECT coalesce(min(
                 extract(epoch FROM current_timestamp -
                     greatest(last_${type}, last_auto${type})
-                )), 'NaN'::float), NULL, NULL,
+                )), 'NaN'::float),
+                NULL, NULL,
                 (
                   SELECT md5(tup_inserted::text||tup_updated::text||tup_deleted::text)
                   FROM pg_catalog.pg_stat_database
@@ -4723,9 +4733,10 @@ LOOP_DB: foreach my $db (@all_db) {
 
         push @perfdata => [ $db, $rs->[0], 's', $w_limit, $c_limit ];
 
-        $new_counts{$db} = [ $rs->[1], $rs->[2], $counts{$db}[2] ];
+        $new_counts{$db} = [ $rs->[1], $rs->[2] ];
 
-        if ( defined $counts{$db} ) {
+        if ( exists $counts{$db} ) {
+
             if ($hosts[0]->{'version_num'} >= $PG_VERSION_91 ) {
                 my $delta      = $rs->[1] - $counts{$db}[0];
                 my $delta_auto = $rs->[2] - $counts{$db}[1];
@@ -4736,9 +4747,12 @@ LOOP_DB: foreach my $db (@all_db) {
                 );
             }
 
-            # try to detect no activity to avoid alerts
-            next LOOP_DB if defined $counts{$db}[2]
-                        and $counts{$db}[2] eq $rs->[3];
+            # avoid alerts if no write activity since last call
+            if ( defined $counts{$db}[2] and $counts{$db}[2] eq $rs->[3] ) {
+                # keep old hashed status for this database
+                $new_counts{$db}[2] = $counts{$db}[2];
+                next LOOP_DB;
+            }
         }
 
         if ( $rs->[0] =~ /^-inf/i or $rs->[0] >= $c_limit ) {
@@ -4751,7 +4765,7 @@ LOOP_DB: foreach my $db (@all_db) {
             next LOOP_DB;
         }
 
-        # if everything is OK, save the current hashed status for this database
+        # iif everything is OK, save the current hashed status for this database
         $new_counts{$db}[2] = $rs->[3];
     }
 
@@ -4781,6 +4795,11 @@ returned.
 Critical and Warning thresholds only accept an interval (eg. 1h30m25s)
 and apply to the oldest execution of analyse.
 
+B<NOTE>: this service does not raise alerts if the database had strictly
+no writes since last call. In consequence, a read-only database can have
+its oldest analyze reported in perfdata way after your thresholds, but not
+raise any alerts.
+
 This service supports both C<--dbexclude> and C<--dbinclude> parameters.
 The 'postgres' database and templates are always excluded.
 
@@ -4807,6 +4826,11 @@ execution.
 
 Critical and Warning thresholds only accept an interval (eg. 1h30m25s)
 and apply to the oldest vacuum.
+
+B<NOTE>: this service does not raise alerts if the database had strictly
+no writes since last call. In consequence, a read-only database can have
+its oldest vacuum reported in perfdata way after your thresholds, but not
+raise any alerts.
 
 This service supports both C<--dbexclude> and C<--dbinclude> parameters.
 The 'postgres' database and templates are always excluded.
