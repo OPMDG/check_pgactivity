@@ -1205,6 +1205,34 @@ sub check_compat($$;$) {
     return 1;
 }
 
+# check guc value
+sub is_guc($$$) {
+    my $host = shift;
+    my $guc  = shift;
+    my $val  = shift;
+    my $ans;
+
+    $ans = query( $host, "
+        SELECT setting
+        FROM pg_catalog.pg_settings
+        WHERE name = '$guc'
+    ");
+
+    unless (exists $ans->[0][0]) {
+        warn sprintf "Unknown GUC \"$guc\".";
+        return 0;
+    }
+
+    dprint("GUC '$guc' value is '$ans->[0][0]', expected '$val'\n");
+
+    unless ( $ans->[0][0] eq $val ) {
+        warn sprintf "This service requires \"$guc=$val\".";
+        return 0;
+    }
+
+    return 1;
+}
+
 sub dprint {
     return unless $args{'debug'};
     foreach (@_) {
@@ -4637,22 +4665,56 @@ sub check_last_maintenance {
     my @dbexclude  = @{ $args{'dbexclude'} };
     my $me         = 'POSTGRES_LAST_' . uc($type);
     my %queries    = (
+        # 1st field: oldest known maintenance on a table
+        #            -inf if a table never had maintenance
+        #             NaN if nothing found
+        # 2nd field: total number of maintenance
+        # 3nd field: total number of auto-maintenance
+        # 4th field: hash(insert||update||delete) to detect write
+        #            activity between two run and avoid useless alerts
+        #
+        # 8.2 does not have per-database activity stats. We must aggregate
+        # from pg_stat_user_tables
         $PG_VERSION_82 => qq{
             SELECT coalesce(min(
                 extract(epoch FROM current_timestamp -
                     greatest(last_${type}, last_auto${type})
-                )), 'NaN'::float)
+                )), 'NaN'::float),
+                NULL, NULL,
+                sum(hashtext(n_tup_ins::text
+                    ||n_tup_upd::text
+                    ||n_tup_del::text))
+            FROM pg_stat_user_tables
+        },
+        # Starting with 8.3, we can check database activity from
+        # pg_stat_database
+        $PG_VERSION_83 => qq{
+            SELECT coalesce(min(
+                extract(epoch FROM current_timestamp -
+                    greatest(last_${type}, last_auto${type})
+                )), 'NaN'::float),
+                NULL, NULL,
+                (
+                  SELECT md5(tup_inserted::text||tup_updated::text||tup_deleted::text)
+                  FROM pg_catalog.pg_stat_database
+                  WHERE datname = current_database()
+                )
             FROM pg_stat_user_tables
         },
         $PG_VERSION_91 => qq{
             SELECT coalesce(min(
                        coalesce(extract(epoch FROM
-		                 current_timestamp -
+                         current_timestamp -
                                  greatest(last_${type}, last_auto${type})),
                         '-infinity'::float)),
                    'NaN'::float),
                 coalesce(sum(${type}_count), 0) AS ${type}_count,
-                coalesce(sum(auto${type}_count), 0) AS auto${type}_count
+                coalesce(sum(auto${type}_count), 0) AS auto${type}_count,
+                (
+                  SELECT md5(tup_inserted::text||tup_updated::text||tup_deleted::text)
+                  FROM pg_catalog.pg_stat_database
+                  WHERE datname = current_database()
+                )
             FROM pg_stat_user_tables
         }
     );
@@ -4671,7 +4733,6 @@ sub check_last_maintenance {
     $c_limit = get_time $args{'critical'};
     $w_limit = get_time $args{'warning'};
 
-
     @hosts = @{ parse_hosts %args };
 
     pod2usage(
@@ -4681,11 +4742,18 @@ sub check_last_maintenance {
 
     is_compat $hosts[0], "last_$type", $PG_VERSION_82 or exit 1;
 
+    # check required GUCs
+    if ($hosts[0]->{'version_num'} < $PG_VERSION_83) {
+        is_guc $hosts[0], 'stats_start_collector', 'on' or exit 1;
+        is_guc $hosts[0], 'stats_row_level', 'on' or exit 1;
+    }
+    else {
+        is_guc $hosts[0], 'track_counts', 'on' or exit 1;
+    }
 
     @all_db = @{ get_all_dbname( $hosts[0] ) };
 
-    %counts = %{ load( $hosts[0], "${type}_counts", $args{'status-file'} ) || {} }
-        if $hosts[0]->{'version_num'} >= $PG_VERSION_91;
+    %counts = %{ load( $hosts[0], "${type}_counts", $args{'status-file'} ) || {} };
 
 LOOP_DB: foreach my $db (@all_db) {
         my @perf;
@@ -4701,10 +4769,11 @@ LOOP_DB: foreach my $db (@all_db) {
 
         push @perfdata => [ $db, $rs->[0], 's', $w_limit, $c_limit ];
 
-        if ($hosts[0]->{'version_num'} >= $PG_VERSION_91 ) {
-            $new_counts{$db} = [$rs->[1], $rs->[2]];
+        $new_counts{$db} = [ $rs->[1], $rs->[2] ];
 
-            if ( defined $counts{$db} ) {
+        if ( exists $counts{$db} ) {
+
+            if ($hosts[0]->{'version_num'} >= $PG_VERSION_91 ) {
                 my $delta      = $rs->[1] - $counts{$db}[0];
                 my $delta_auto = $rs->[2] - $counts{$db}[1];
 
@@ -4712,6 +4781,13 @@ LOOP_DB: foreach my $db (@all_db) {
                     [ "$db $type", $delta ],
                     [ "$db auto$type", $delta_auto ]
                 );
+            }
+
+            # avoid alerts if no write activity since last call
+            if ( defined $counts{$db}[2] and $counts{$db}[2] eq $rs->[3] ) {
+                # keep old hashed status for this database
+                $new_counts{$db}[2] = $counts{$db}[2];
+                next LOOP_DB;
             }
         }
 
@@ -4724,10 +4800,12 @@ LOOP_DB: foreach my $db (@all_db) {
             push @msg_warn => "$db: " . to_interval($rs->[0]);
             next LOOP_DB;
         }
+
+        # iif everything is OK, save the current hashed status for this database
+        $new_counts{$db}[2] = $rs->[3];
     }
 
-    save $hosts[0], "${type}_counts", \%new_counts, $args{'status-file'}
-        if $hosts[0]->{'version_num'} >= $PG_VERSION_91;
+    save $hosts[0], "${type}_counts", \%new_counts, $args{'status-file'};
 
     return status_critical( $me, [ @msg_crit, @msg_warn ], \@perfdata )
         if scalar @msg_crit > 0;
@@ -4752,6 +4830,11 @@ returned.
 
 Critical and Warning thresholds only accept an interval (eg. 1h30m25s)
 and apply to the oldest execution of analyse.
+
+B<NOTE>: this service does not raise alerts if the database had strictly
+no writes since last call. In consequence, a read-only database can have
+its oldest analyze reported in perfdata way after your thresholds, but not
+raise any alerts.
 
 This service supports both C<--dbexclude> and C<--dbinclude> parameters.
 The 'postgres' database and templates are always excluded.
@@ -4779,6 +4862,11 @@ execution.
 
 Critical and Warning thresholds only accept an interval (eg. 1h30m25s)
 and apply to the oldest vacuum.
+
+B<NOTE>: this service does not raise alerts if the database had strictly
+no writes since last call. In consequence, a read-only database can have
+its oldest vacuum reported in perfdata way after your thresholds, but not
+raise any alerts.
 
 This service supports both C<--dbexclude> and C<--dbinclude> parameters.
 The 'postgres' database and templates are always excluded.
