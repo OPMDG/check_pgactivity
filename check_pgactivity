@@ -1205,6 +1205,34 @@ sub check_compat($$;$) {
     return 1;
 }
 
+# check guc value
+sub is_guc($$$) {
+    my $host = shift;
+    my $guc  = shift;
+    my $val  = shift;
+    my $ans;
+
+    $ans = query( $host, "
+        SELECT setting
+        FROM pg_catalog.pg_settings
+        WHERE name = '$guc'
+    ");
+
+    unless (exists $ans->[0][0]) {
+        warn sprintf "Unknown GUC \"$guc\".";
+        return 0;
+    }
+
+    dprint("GUC '$guc' value is '$ans->[0][0]', expected '$val'\n");
+
+    unless ( $ans->[0][0] eq $val ) {
+        warn sprintf "This service requires \"$guc=$val\".";
+        return 0;
+    }
+
+    return 1;
+}
+
 sub dprint {
     return unless $args{'debug'};
     foreach (@_) {
@@ -4714,6 +4742,14 @@ sub check_last_maintenance {
 
     is_compat $hosts[0], "last_$type", $PG_VERSION_82 or exit 1;
 
+    # check required GUCs
+    if ($hosts[0]->{'version_num'} < $PG_VERSION_83) {
+        is_guc $hosts[0], 'stats_start_collector', 'on' or exit 1;
+        is_guc $hosts[0], 'stats_row_level', 'on' or exit 1;
+    }
+    else {
+        is_guc $hosts[0], 'track_counts', 'on' or exit 1;
+    }
 
     @all_db = @{ get_all_dbname( $hosts[0] ) };
 
