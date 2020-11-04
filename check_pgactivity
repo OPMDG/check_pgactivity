@@ -5728,6 +5728,8 @@ replication slot) and C<walwender> (a WAL sender replication process), for each
 connectable database.  If a source doesn't retain any transaction for a
 database, NaN is returned.  For versions prior to 9.4, only C<2pc> source of
 xmin retention is available, so other sources won't appear in the perfdata.
+Note that xmin retention from walsender is only set if C<hot_standby_feedback>
+is enabled on remote standby.
 
 Critical and Warning thresholds are optional. They only accept a raw number of
 transaction.
