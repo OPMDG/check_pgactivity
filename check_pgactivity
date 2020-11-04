@@ -5854,7 +5854,7 @@ sub check_oldest_xmin {
         }
     );
 
-    # Warning and critical are mandatory.
+    # Either both warning and critical are required or none.
     pod2usage(
         -message => "FATAL: you must specify both critical and warning thresholds or none of them.",
         -exitval => 127
@@ -8716,6 +8716,13 @@ pod2usage(
     -message => 'FATAL: "slave" is only allowed with "streaming_delta" service.',
     -exitval => 127
 ) if scalar @{ $args{'slave'} }  and $args{'service'} ne 'streaming_delta';
+
+
+# Check "oldest_xmin" specific args --detailed
+pod2usage(
+    -message => 'FATAL: "detailed" argument is only allowed with "oldest_xmin" service.',
+    -exitval => 127
+) if scalar $args{'detailed'} and $args{'service'} ne 'oldest_xmin';
 
 
 # Set psql absolute path
