@@ -1,9 +1,33 @@
 Changelog
 =========
 
+2020-11-04 v2.5:
+
+  - add: new `oldest_xmin` service
+  - add: new `extensions_versions` service
+  - add: new `checksum_errors` service
+  - add: support for v13 and other improvements on `replication_slots`
+  - add: v13 compatibility for service `wal_files`
+  - add: various documentation details and examples
+  - add: support service `replication_slots` on standby
+  - add: accept single `b` or `o` as size unit
+  - add: json and json_strict output formats
+  - add: `size` and/or `delta` threshold for `database_size` service
+  - add: thresholds are now optional for service `database_size`
+  - regression: on service `replication_slots`: threshold `repslot` becomes `spilled`
+  - fix: avoid alerts for lack of maintenance on inactive db
+  - fix: forbid rare cases of division by zero in `wal_files`
+  - fix: do not alert on missing file in `temp_files` for v10+
+  - fix: detect lack of maintenance in `last_vacuum` and `last_analyze` for never maintained tables
+  - fix: backend count for v10+
+  - fix: replace NaN with "U" for strict outputs
+  - fix: do not count walsenders as part of `max_connections`
+  - fix: broken `archiver` service with v10+
+  - fix: perl warning when archiver is not active
+
 2019-01-30 v2.4:
 
-  - add a new uptime service
+  - add a new `uptime` service
   - add ability to filter by application_name in longest_query and oldest_idlexact service
   - add minimal delta size to pgdump_backup service to avoid alert when backup grows small in size
   - allow psql connections without providing connection arguments:
