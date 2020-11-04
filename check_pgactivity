@@ -6279,89 +6279,103 @@ sub check_pgdata_permission {
 
 =item B<replication_slots> (9.4+)
 
-Check the number of WAL files and pg_replslot files retained by each
-replication slots.
+Check the number of WAL files retained and spilled files for each replication
+slots.
 
-Perfdata returns the number of WAL kept for each slot. The current number of
-spill files in pg_replslot is given for each logical replication slot. This
-service needs superuser privileges since v10 to obtain the number of spill
-files or returns 0 in last resort. Since v13, if C<max_slot_wal_keep_size> is
-greater or equal to 0, perfdata reports the size of WAL to produce before each
-slot becomes C<unreserved> or C<lost>. Note that this size can become negative
-if the WAL status for the limited time where the slot becomes C<unreserved>. It
-is set to zero as soon as the last checkpoint finished and the status becomes
-C<lost>.
+Perfdata returns the number of WAL kept for each slot and the number of spilled
+files in pg_replslot for each logical replication slot. Since v13, if
+C<max_slot_wal_keep_size> is greater or equal to 0, perfdata reports the size
+of WAL to produce before each slot becomes C<unreserved> or C<lost>. Note that
+this size can become negative if the WAL status for the limited time where the
+slot becomes C<unreserved>. It is set to zero as soon as the last checkpoint
+finished and the status becomes C<lost>.
+
+This service needs superuser privileges to obtain the number of spill files or
+returns 0 in last resort.
 
 Critical and Warning thresholds are optional. They accept either a raw number
 (for backward compatibility, only wal threshold will be used) or a list of
-'wal=value' and/or 'replslot=value' and/or remaining=value. Respectively number
-of kept wal files, number of files in pg_replslot for each slot and remaining
-bytes before a slot becomes C<unreserved> or C<lost>.
+'wal=value' and/or 'spilled=value' and/or 'remaining=size'. Respectively number
+of kept wal files, number of spilled files in pg_replslot for each logical slot
+and remaining bytes before a slot becomes C<unreserved> or C<lost>.
 
 Moreover, with v13 and after, the service raises a warning alert if a slot
 becomes C<unreserved>. It raises a critical alert if the slot becomes C<lost>.
 
 Required privileges:
- <10: unprivileged role
- v10: unprivileged role, or superuser to monitor logical replication
+ v9.4: unprivileged role, or superuser to monitor spilled files for logical replication
  v11+: unprivileged user with GRANT EXECUTE on function pg_ls_dir(text)
 
-Here is an example:
+Here is somes examples:
 
-    -w 'wal=50,replslot=20' -c 'wal=100,replslot=40'
-    -w 'replslot=20,remaining=160MB' -c 'replslot=40,remaining=48MB'
+    -w 'wal=50,spilled=20' -c 'wal=100,spilled=40'
+    -w 'spilled=20,remaining=160MB' -c 'spilled=40,remaining=48MB'
 
 =cut
 
 sub check_replication_slots {
-    my $me  = 'POSTGRES_REPLICATION_SLOTS';
+    my $me   = 'POSTGRES_REPLICATION_SLOTS';
+    my %args = %{ $_[0] };
     my @msg_crit;
     my @msg_warn;
     my @longmsg;
     my @perfdata;
     my @hosts;
     my @rs;
-    my %args = %{ $_[0] };
+    my @perf_wal_limits;
+    my @perf_spilled_limits;
+    my @perf_remaining_limits;
     my %warn;
     my %crit;
-    my @perf_wal_limits;
-    my @perf_replslot_limits;
-    my @perf_remaining_limits;
     my %queries = (
         # 1st field: slot name
         # 2nd field: slot type
         # 3rd field: number of WAL kept because of the slot
-        # 4th field: number of spill files for logical replication (v10+)
+        # 4th field: number of spill files for logical replication
         # 5th field: wal status for this slot (v13+)
         # 6th field: remaining safe bytes before max_slot_wal_keep_size (v13+)
        $PG_VERSION_94 => q{
         WITH wal_size AS (
-            SELECT current_setting('wal_block_size')::int * setting::int AS val
-            FROM pg_settings
-            WHERE name = 'wal_segment_size' --usually 2048 (blocks)
+           SELECT current_setting('wal_block_size')::int * setting::int AS val
+           FROM pg_settings
+           WHERE name = 'wal_segment_size' -- usually 2048 (blocks)
         )
-        SELECT slot.slot_name, slot.slot_type,
-        COALESCE(
-            floor(
-                CASE WHEN pg_is_in_recovery()
-                THEN (
-                  pg_xlog_location_diff(pg_last_xlog_receive_location(), slot.restart_lsn)
-                  -- this is needed to account for whole WAL retention and
-                  -- not only size retention
-                  + (pg_xlog_location_diff(restart_lsn, '0/0') % s.val)
-                ) / s.val
-                ELSE (
-                  pg_xlog_location_diff(pg_current_xlog_location(), slot.restart_lsn)
-                  -- this is needed to account for whole WAL retention and
-                  -- not only size retention
-                  + (pg_xlogfile_name_offset(restart_lsn)).file_offset
-                ) / s.val
-                END
-            ), 0
-        ) replslot_wal_keep, null as replslot_files,
-        NULL, NULL
-        FROM pg_replication_slots slot
-        CROSS JOIN wal_size s},
+        SELECT slot_name, slot_type, replslot_wal_keep,
+              count(slot_file) as replslot_files, -- 0 if not superuser
+              NULL, NULL
+        FROM
+          (SELECT slot.slot_name,
+                  CASE WHEN slot_file <> 'state' THEN 1 END AS slot_file,
+                  slot_type,
+          COALESCE(
+                 floor(
+                      CASE WHEN pg_is_in_recovery()
+                      THEN (
+                        pg_xlog_location_diff(pg_last_xlog_receive_location(), slot.restart_lsn)
+                        -- this is needed to account for whole WAL retention and
+                        -- not only size retention
+                        + (pg_xlog_location_diff(restart_lsn, '0/0') % s.val)
+                      ) / s.val
+                      ELSE (
+                        pg_xlog_location_diff(pg_current_xlog_location(), slot.restart_lsn)
+                        -- this is needed to account for whole WAL retention and
+                        -- not only size retention
+                        + (pg_xlogfile_name_offset(restart_lsn)).file_offset
+                      ) / s.val
+                      END
+                 ),0
+             ) as replslot_wal_keep
+            FROM pg_replication_slots slot
+            -- trick when user is not superuser
+            LEFT JOIN (
+              SELECT slot2.slot_name,
+                    pg_ls_dir('pg_replslot/'||slot2.slot_name) as slot_file
+                FROM pg_replication_slots slot2
+                WHERE current_setting('is_superuser')::bool
+            ) files(slot_name,slot_file) ON slot.slot_name=files.slot_name
+        CROSS JOIN wal_size s
+         ) as d
+        GROUP BY slot_name,slot_type,replslot_wal_keep},
 
        $PG_VERSION_100 => q{
         WITH wal_size AS (
@@ -6370,7 +6384,7 @@ sub check_replication_slots {
            WHERE name = 'wal_segment_size' -- usually 2048 (blocks)
         )
         SELECT slot_name, slot_type, replslot_wal_keep,
-              count(slot_file) as replslot_files, -- 0 if not superuser
+              count(slot_file) AS spilled_files, -- 0 if not superuser
               NULL, NULL
         FROM
           (SELECT slot.slot_name,
@@ -6400,8 +6414,8 @@ sub check_replication_slots {
               SELECT slot2.slot_name,
                     pg_ls_dir('pg_replslot/'||slot2.slot_name) as slot_file
                 FROM pg_replication_slots slot2
-                WHERE current_setting('is_superuser')::bool) files(slot_name,slot_file)
-            ON  slot.slot_name=files.slot_name
+                WHERE current_setting('is_superuser')::bool
+            ) files(slot_name,slot_file) ON slot.slot_name=files.slot_name
         CROSS JOIN wal_size s
          ) as d
         GROUP BY slot_name,slot_type,replslot_wal_keep},
@@ -6413,7 +6427,7 @@ sub check_replication_slots {
             WHERE name = 'wal_segment_size'
          )
          SELECT slot_name, slot_type, replslot_wal_keep,
-               count(slot_file) as replslot_files, -- 0 if not superuser
+               count(slot_file) AS spilled_files, -- 0 if not superuser
                NULL, NULL
          FROM
            (SELECT slot.slot_name,
@@ -6461,7 +6475,7 @@ sub check_replication_slots {
             WHERE name = 'max_slot_wal_keep_size'
          )
          SELECT slot_name, slot_type, replslot_wal_keep,
-               count(slot_file) as replslot_files, -- 0 if not superuser
+               count(slot_file) AS spilled_files, -- 0 if not superuser
                wal_status, remaining_sz
          FROM (
             SELECT slot.slot_name,
@@ -6520,7 +6534,7 @@ sub check_replication_slots {
 
     # build warn/crit thresholds
     if ( defined $args{'warning'} ) {
-        my $threshods_re = qr/(wal|replslot|remaining)\s*=\s*(?:([^,]+))/i;
+        my $threshods_re = qr/(wal|spilled|remaining)\s*=\s*(?:([^,]+))/i;
 
         if ($args{'warning'} =~ m/^$threshods_re(\s*,\s*$threshods_re)*$/
             and $args{'critical'} =~ m/^$threshods_re(\s*,\s*$threshods_re)*$/
@@ -6532,7 +6546,12 @@ sub check_replication_slots {
                     $warn{$threshold} = get_size $value;
                 }
                 else {
-                    $warn{$threshold.'_files'} = $value;
+                    pod2usage(
+                        -message => "FATAL: $threshold accept a raw number\n",
+                        -exitval => 127
+                    ) unless $value =~ m/^([0-9]+)$/;
+
+                    $warn{$threshold} = $value;
                 }
             }
 
@@ -6543,7 +6562,12 @@ sub check_replication_slots {
                     $crit{$threshold} = get_size $value;
                 }
                 else {
-                    $crit{$threshold.'_files'} = $value;
+                    pod2usage(
+                        -message => "FATAL: $threshold accept a raw number\n",
+                        -exitval => 127
+                    ) unless $value =~ m/^([0-9]+)$/;
+
+                    $crit{$threshold} = $value;
                 }
             }
         }
@@ -6552,31 +6576,31 @@ sub check_replication_slots {
         elsif ($args{'warning'}  =~ m/^([0-9]+)$/
                and $args{'critical'} =~ m/^([0-9]+)$/
         ) {
-            $warn{wal_files} = $args{'warning'};
-            $crit{wal_files} = $args{'critical'};
+            $warn{'wal'} = $args{'warning'};
+            $crit{'wal'} = $args{'critical'};
         }
 
         else {
             pod2usage(
                 -message => "FATAL: critical and warning thresholds only accept:\n"
                     . "- raw numbers for backward compatibility to set wal threshold.\n"
-                    . "- a list 'wal=value' and/or 'replslot=value' and/or remaining=value separated by comma.\n"
+                    . "- a list 'wal=value' and/or 'spilled=value' and/or remaining=size separated by comma.\n"
                     . "See documentation for more information.",
                 -exitval => 127
             )
         }
 
         pod2usage(
-            -message => "FATAL: \"remaining=value\" can only be set for PostgreSQL 13 and after.",
+            -message => "FATAL: \"remaining=size\" can only be set for PostgreSQL 13 and after.",
             -exitval => 127
         ) if $hosts[0]->{'version_num'} < $PG_VERSION_130
          and ( exists $warn{'remaining'} or exists $crit{'remaining'} );
     }
 
-    @perf_wal_limits = ( $warn{'wal_files'}, $crit{'wal_files'} )
-        if defined $warn{'wal_files'} or defined $crit{'wal_files'};
-    @perf_replslot_limits = ( $warn{'replslot_files'}, $crit{'replslot_files'} )
-        if defined $warn{'replslot_files'} or defined $crit{'replslot_files'};
+    @perf_wal_limits = ( $warn{'wal'}, $crit{'wal'} )
+        if defined $warn{'wal'} or defined $crit{'wal'};
+    @perf_spilled_limits = ( $warn{'spilled'}, $crit{'spilled'} )
+        if defined $warn{'spilled'} or defined $crit{'spilled'};
     @perf_remaining_limits = ( $warn{'remaining'}, $crit{'remaining'} )
         if defined $warn{'remaining'} or defined $crit{'remaining'};
 
@@ -6588,7 +6612,7 @@ SLOTS_LOOP: foreach my $row (@rs) {
             unless $row->[4] and $row->[4] eq 'lost';
 
         # add number of spilled files if logical replication slot
-        push @perfdata => [ "$row->[0]_replslots", $row->[3], 'File', @perf_replslot_limits ]
+        push @perfdata => [ "$row->[0]_spilled", $row->[3], 'File', @perf_spilled_limits ]
             if $row->[1] eq 'logical';
 
         # add remaining safe bytes if available
@@ -6596,30 +6620,30 @@ SLOTS_LOOP: foreach my $row (@rs) {
             if $row->[5];
 
         # alert on number of WAL kept
-        if ( defined $crit{'wal_files'} and $row->[2] > $crit{'wal_files'} ) {
+        if ( defined $crit{'wal'} and $row->[2] > $crit{'wal'} ) {
             push @msg_crit, "$row->[0] wal files : $row->[2]";
             push @longmsg => sprintf("Slot: %s wal files = %s above crit threshold %s",
-                $row->[0], $row->[2], $crit{wal_files}
+                $row->[0], $row->[2], $crit{'wal'}
             );
         }
-        elsif ( defined $warn{'wal_files'} and $row->[2] > $warn{'wal_files'} ) {
+        elsif ( defined $warn{'wal'} and $row->[2] > $warn{'wal'} ) {
               push @msg_warn, "$row->[0] wal files : $row->[2]";
               push @longmsg => sprintf("Slot: %s wal files = %s above warn threshold %s",
-                  $row->[0], $row->[2], $warn{'wal_files'}
+                  $row->[0], $row->[2], $warn{'wal'}
               );
         }
 
         # alert on number of spilled files for logical replication
-        if ( defined $crit{'replslot_files'} and $row->[3] > $crit{'replslot_files'} ) {
-            push @msg_crit, "$row->[0] pg_replslot files : $row->[3]";
-            push @longmsg => sprintf("Slot: %s pg_replslot files = %s above crit threshold %s",
-                $row->[0], $row->[3], $crit{'replslot_files'}
+        if ( defined $crit{'spilled'} and $row->[3] > $crit{'spilled'} ) {
+            push @msg_crit, "$row->[0] spilled files : $row->[3]";
+            push @longmsg => sprintf("Slot: %s spilled files = %s above critical threshold %s",
+                $row->[0], $row->[3], $crit{'spilled'}
             );
         }
-        elsif ( defined $warn{'replslot_files'} and $row->[3] > $warn{'replslot_files'} ) {
-              push @msg_warn, "$row->[0] pg_replslot files : $row->[3]";
-              push @longmsg => sprintf("Slot: %s pg_replslot files = %s above warn threshold %s",
-                  $row->[0], $row->[3], $warn{'replslot_files'}
+        elsif ( defined $warn{'spilled'} and $row->[3] > $warn{'spilled'} ) {
+              push @msg_warn, "$row->[0] spilled files : $row->[3]";
+              push @longmsg => sprintf("Slot: %s spilled files = %s above warning threshold %s",
+                  $row->[0], $row->[3], $warn{'spilled'}
               );
         }
 
