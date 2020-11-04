@@ -6070,8 +6070,8 @@ you must set:
 
 If the path contains the date, like this:
 
-   /var/lib/backups/2015-08-03-daily/mydb.dump
-   /var/lib/backups/2015-08-03-daily/otherdb.dump
+   /var/lib/backups/2015-08-03-daily/mydb.dump
+   /var/lib/backups/2015-08-03-daily/otherdb.dump
 
 then you can set:
 

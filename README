@@ -11,6 +11,12 @@ DESCRIPTION
     It offers many options to measure and monitor useful performance
     metrics.
 
+COMPATIBILITY
+    Each service is available from a different PostgreSQL version, from 7.4,
+    as documented below. The psql client must be 8.3 at least. It can be
+    used with an older server. Please report any undocumented
+    incompatibility.
+
     -s, --service SERVICE
         The Nagios service to run. See section SERVICES for a description of
         available services or use "--list" for a short service and
@@ -91,7 +97,8 @@ DESCRIPTION
         script relies on the system default temporary directory if possible.
 
     -P, --psql FILE
-        Path to the "psql" executable (default: "psql").
+        Path to the "psql" executable (default: "psql"). It should be
+        version 8.3 at least, but the server can be older.
 
     --status-file PATH
         Path to the file where service status information is kept between
@@ -172,8 +179,12 @@ DESCRIPTION
     Parameters "--host HOST", "--port PORT", "--user ROLE" or "--dbname
     DATABASE"
         One parameter is enough to define a new host. Usual environment
-        variables (PGHOST, PGPORT, PGDATABASE, PGUSER, PGSERVICE) or default
-        values are used for missing parameters.
+        variables (PGHOST, PGPORT, PGDATABASE, PGUSER, PGSERVICE,
+        PGPASSWORD) or default values are used for missing parameters.
+
+        As for usual PostgreSQL tools, there is no command line argument to
+        set the password, to avoid exposing it. Use PGPASSWORD, .pgpass or a
+        service file (recommended).
 
         If multiple values are given, define as many host as maximum given
         values.
@@ -517,6 +528,32 @@ DESCRIPTION
 
         Required privileges: unprivileged role.
 
+    extensions_versions (9.1+)
+        Check all extensions installed in all databases (including
+        templates) and raise a critical alert if the current version is not
+        the default version available on the instance (according to
+        pg_available_extensions).
+
+        Typically, it is used to detect forgotten extension upgrades after
+        package upgrades or a pg_upgrade.
+
+        Perfdata returns the number of outdated extensions in each database.
+
+        This service supports both "--dbexclude" and "--dbinclude"
+        parameters. Schemas are ignored, as an extension cannot be installed
+        more than once in a database.
+
+        This service supports multiple "--exclude" argument to exclude one
+        or more extensions from the check. To ignore an extension only in a
+        particular database, use 'dbname/extension_name' syntax.
+
+        Examples:
+
+            --dbexclude 'devdb' --exclude 'testdb/postgis' --exclude 'testdb/postgis_topology'
+            --dbinclude 'proddb' --dbinclude 'testdb'  --exclude 'powa'
+
+        Required privileges: unprivileged role able to log in all databases
+
     hit_ratio (all)
         Check the cache hit ratio on the cluster.
 
@@ -631,6 +668,11 @@ DESCRIPTION
         Critical and Warning thresholds only accept an interval (eg.
         1h30m25s) and apply to the oldest execution of analyse.
 
+        NOTE: this service does not raise alerts if the database had
+        strictly no writes since last call. In consequence, a read-only
+        database can have its oldest analyze reported in perfdata way after
+        your thresholds, but not raise any alerts.
+
         This service supports both "--dbexclude" and "--dbinclude"
         parameters. The 'postgres' database and templates are always
         excluded.
@@ -650,6 +692,11 @@ DESCRIPTION
 
         Critical and Warning thresholds only accept an interval (eg.
         1h30m25s) and apply to the oldest vacuum.
+
+        NOTE: this service does not raise alerts if the database had
+        strictly no writes since last call. In consequence, a read-only
+        database can have its oldest vacuum reported in perfdata way after
+        your thresholds, but not raise any alerts.
 
         This service supports both "--dbexclude" and "--dbinclude"
         parameters. The 'postgres' database and templates are always
@@ -791,6 +838,37 @@ DESCRIPTION
         queries; a pg_monitor (10+) or superuser (<10) role is required to
         check all queries.
 
+    oldest_xmin (8.4+)
+        Check the xmin *horizon* from distinct sources of xmin retention.
+
+        Per default, Perfdata outputs the oldest known xmin age for each
+        database among running queries, opened or idle transactions, pending
+        prepared transactions, replication slots and walsender. For versions
+        prior to 9.4, only "2pc" source of xmin retention is checked.
+
+        Using "--detailed", Perfdata contains the oldest xmin and maximum
+        age for the following source of xmin retention: "query" (a running
+        query), "active_xact" (an opened transaction currently executing a
+        query), "idle_xact" (an opened transaction being idle), "2pc" (a
+        pending prepared transaction), "repslot" (a replication slot) and
+        "walwender" (a WAL sender replication process), for each connectable
+        database. If a source doesn't retain any transaction for a database,
+        NaN is returned. For versions prior to 9.4, only "2pc" source of
+        xmin retention is available, so other sources won't appear in the
+        perfdata. Note that xmin retention from walsender is only set if
+        "hot_standby_feedback" is enabled on remote standby.
+
+        Critical and Warning thresholds are optional. They only accept a raw
+        number of transaction.
+
+        This service supports both "--dbexclude"" and "--dbinclude""
+        parameters.
+
+        Required privileges: a pg_read_all_stats (10+) or superuser (<10)
+        role is required to check pg_stat_replication. 2PC,
+        pg_stat_activity, and replication slots don't require special
+        privileges.
+
     pg_dump_backup
         Check the age and size of backups.
 
@@ -798,26 +876,45 @@ DESCRIPTION
 
         The "--path" argument contains the location to the backup folder.
         The supported format is a glob pattern matching every folder or file
-        that you need to check. If appropriate, the probe should be run as a
-        user with sufficient privileges to check for the existence of files.
+        that you need to check.
 
         The "--pattern" is required, and must contain a regular expression
         matching the backup file name, extracting the database name from the
-        first matching group. For example, the pattern "(\w+)-\d+.dump" can
-        be used to match dumps of the form:
-
-            mydb-20150803.dump
-            otherdb-20150803.dump
-            mydb-20150806.dump
-            otherdb-20150806.dump
-            mydb-20150807.dump
+        first matching group.
 
         Optionally, a "--global-pattern" option can be supplied to check for
         an additional global file.
 
-        Tip : For compatibility with pg_back, you should use "--path"
-        '/path/*{dump,sql}' "--pattern" '(\w+)_[0-9-_]+.dump'
-        "--global-pattern" 'pg_global_[0-9-_]+.sql'
+        Examples:
+
+        To monitor backups like:
+
+            /var/lib/backups/mydb-20150803.dump
+            /var/lib/backups/otherdb-20150803.dump
+            /var/lib/backups/mydb-20150804.dump
+            /var/lib/backups/otherdb-20150804.dump
+
+        you must set:
+
+            --path    '/var/lib/backups/*'
+            --pattern '(\w+)-\d+.dump'
+
+        If the path contains the date, like this:
+
+           /var/lib/backups/2015-08-03-daily/mydb.dump
+           /var/lib/backups/2015-08-03-daily/otherdb.dump
+
+        then you can set:
+
+            --path    '/var/lib/backups/*/*.dump'
+            --pattern '/\d+-\d+-\d+-daily/(.*).dump'
+
+        For compatibility with pg_back (https://github.com/orgrim/pg_back),
+        you should use:
+
+           --path '/path/*{dump,sql}'
+           --pattern '(\w+)_[0-9-_]+.dump'
+           --global-pattern 'pg_global_[0-9-_]+.sql'
 
         The "--critical" and "--warning" thresholds are optional. They
         accept a list of 'metric=value' separated by a comma. Available
@@ -866,27 +963,40 @@ DESCRIPTION
         the monitored server.
 
     replication_slots (9.4+)
-        Check the number of WAL files and pg_replslot files retained by each
+        Check the number of WAL files retained and spilled files for each
         replication slots.
 
-        Perfdata returns the number of WAL and pg_replslot files that each
-        replication slot has to keep. This service needs superuser
-        privileges since v10 to obtain pg_replslot files. Unless
-        replslot_files will be at 0.
+        Perfdata returns the number of WAL kept for each slot and the number
+        of spilled files in pg_replslot for each logical replication slot.
+        Since v13, if "max_slot_wal_keep_size" is greater or equal to 0,
+        perfdata reports the size of WAL to produce before each slot becomes
+        "unreserved" or "lost". Note that this size can become negative if
+        the WAL status for the limited time where the slot becomes
+        "unreserved". It is set to zero as soon as the last checkpoint
+        finished and the status becomes "lost".
+
+        This service needs superuser privileges to obtain the number of
+        spill files or returns 0 in last resort.
 
         Critical and Warning thresholds are optional. They accept either a
         raw number (for backward compatibility, only wal threshold will be
-        used) or a list 'wal=value' and 'replslot=value'. Respectively
-        number of kept wal files or number of files in pg_replslot for each
-        slot.
+        used) or a list of 'wal=value' and/or 'spilled=value' and/or
+        'remaining=size'. Respectively number of kept wal files, number of
+        spilled files in pg_replslot for each logical slot and remaining
+        bytes before a slot becomes "unreserved" or "lost".
 
-        Required privileges: <10: unprivileged role v10: unprivileged role,
-        or superuser to monitor logical replication v11+: unprivileged user
-        with GRANT EXECUTE on function pg_ls_dir(text)
+        Moreover, with v13 and after, the service raises a warning alert if
+        a slot becomes "unreserved". It raises a critical alert if the slot
+        becomes "lost".
 
-        Here is an example:
+        Required privileges: v9.4: unprivileged role, or superuser to
+        monitor spilled files for logical replication v11+: unprivileged
+        user with GRANT EXECUTE on function pg_ls_dir(text)
 
-            -w 'wal=50,replslot=20' -c 'wal=100,replslot=40'
+        Here is somes examples:
+
+            -w 'wal=50,spilled=20' -c 'wal=100,spilled=40'
+            -w 'spilled=20,remaining=160MB' -c 'spilled=40,remaining=48MB'
 
     settings (9.0+)
         Check if the current settings have changed since they were stored in
@@ -1061,8 +1171,8 @@ DESCRIPTION
         possible but it will not monitor databases that it cannot access,
         nor live temp files v11: an unprivileged role is possible but must
         be granted EXECUTE on functions pg_ls_dir(text), pg_read_file(text),
-        pg_stat_file(text); the same restrictions than on v10 will still
-        apply v12+: a role with pg_monitor privilege.
+        pg_stat_file(text, boolean); the same restrictions than on v10 will
+        still apply v12+: a role with pg_monitor privilege.
 
     uptime (8.1+)
         Returns time since postmaster start ("uptime", from 8.1), since
@@ -1116,10 +1226,14 @@ DESCRIPTION
           100% = 1 + checkpoint_segments * (2 + checkpoint_completion_target)
           100% = 1 + wal_keep_segments + 2 * checkpoint_segments
 
-        For 9.5 and above, the limit is:
+        For 9.5 to 12, the limit is:
 
           100% =  max_wal_size      (as a number of WAL)
                 + wal_keep_segments (if set)
+
+        For 13 and above:
+
+          100% =  max_wal_size + wal_keep_size (as numbers of WAL)
 
         Required privileges: <10:superuser (<10) v10:unprivileged user with
         pg_monitor v11+ :unprivileged user with pg_monitor, or with grant
