@@ -1,7 +1,7 @@
 Changelog
 =========
 
-2020-11-04 v2.5:
+2020-11-06 v2.5:
 
   - add: new `oldest_xmin` service
   - add: new `extensions_versions` service

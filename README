@@ -1260,7 +1260,7 @@ COMPATIBILITY
           check_pgactivity -p 5433 -h slave --service hit_ratio --dbinclude importantone -w 90% -c 80%
 
 VERSION
-    check_pgactivity version 2.5, released on Thu Nov 05 2020
+    check_pgactivity version 2.5, released on Fri Nov 06 2020
 
 LICENSING
     This program is open source, licensed under the PostgreSQL license. For
