@@ -9,7 +9,6 @@ use warnings;
 
 use File::Find;
 use Test::More;
-use Data::Dumper;
 
 # Try to catch all copyright mentions in source code and
 # fail if the second part of the year is bad.

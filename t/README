@@ -29,21 +29,22 @@ export PG_REGRESS PERL5LIB
 
 Tests must be run from the root folder of the project using `perl` or `prove`:
 
-~~~
-$ PG_REGRESS="$(pg_config --pkglibdir)/pgxs/src/test/regress/pg_regress"
-$ PERL5LIB="$(pg_config --pkglibdir)/pgxs/src/test/perl/:$PERL5LIB"
-$ export PG_REGRESS PERL5LIB
+~~~console
+~/git/check_pgactivity$ PG_REGRESS="$(pg_config --pkglibdir)/pgxs/src/test/regress/pg_regress"
+~/git/check_pgactivity$ PERL5LIB="$(pg_config --pkglibdir)/pgxs/src/test/perl/:$PERL5LIB"
+~/git/check_pgactivity$ export PG_REGRESS PERL5LIB
 
-$ perl t/01-connection.t 
+~/git/check_pgactivity$ perl t/01-connection.t
 ok 1 - check_cnx status (got 0 vs expected 0)
 ok 2 - check_cnx stdout /(?^:POSTGRES_CONNECTION OK: Connection successful)/
 1..2
 
-$ prove t
+~/git/check_pgactivity$ prove
 t/00-copyright-year.t .. ok   
 t/01-connection.t ...... ok   
+t/10-streaming.t ....... ok    
 All tests successful.
-Files=2, Tests=9,  2 wallclock secs ( 0.03 usr  0.00 sys +  1.30 cusr  0.21 csys =  1.54 CPU)
+Files=3, Tests=21,  3 wallclock secs ( 0.02 usr  0.01 sys +  1.94 cusr  0.58 csys =  2.55 CPU)
 Result: PASS
 ~~~
 
