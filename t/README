@@ -1,0 +1,50 @@
+This folder contains all the tests related to `check_pgactivity`.
+
+# Environment
+
+The tests depend on some PostgreSQL perl modules and `pg_regress` binary. In
+PostgreSQL source tree, they are located in `src/test/perl` and
+`src/test/regress/pg_regress` (after building for the later).
+
+On Debian, they are installed by package `postgresql-client-$MAJ`.
+ON EL, they are installed by package `postgresql$MAJ-devel` (PGDG packages
+seem broken though).
+
+Once you installed one of these packages, dependencies can be found using:
+
+~~~
+$(pg_config --pkglibdir)/pgxs/src/test/perl/
+$(pg_config --pkglibdir)/pgxs/src/test/regress/pg_regress
+~~~
+
+To setup your environment:
+
+~~~
+PG_REGRESS="$(pg_config --pkglibdir)/pgxs/src/test/regress/pg_regress"
+PERL5LIB="$(pg_config --pkglibdir)/pgxs/src/test/perl/:$PERL5LIB"
+export PG_REGRESS PERL5LIB
+~~~
+
+# run
+
+Tests must be run from the root folder of the project using `perl` or `prove`:
+
+~~~
+$ PG_REGRESS="$(pg_config --pkglibdir)/pgxs/src/test/regress/pg_regress"
+$ PERL5LIB="$(pg_config --pkglibdir)/pgxs/src/test/perl/:$PERL5LIB"
+$ export PG_REGRESS PERL5LIB
+
+$ perl t/01-connection.t 
+ok 1 - check_cnx status (got 0 vs expected 0)
+ok 2 - check_cnx stdout /(?^:POSTGRES_CONNECTION OK: Connection successful)/
+1..2
+
+$ prove t
+t/00-copyright-year.t .. ok   
+t/01-connection.t ...... ok   
+All tests successful.
+Files=2, Tests=9,  2 wallclock secs ( 0.03 usr  0.00 sys +  1.30 cusr  0.21 csys =  1.54 CPU)
+Result: PASS
+~~~
+
+If tests are failing, log files are kept under `tmp_check/` folder.
