@@ -10,7 +10,6 @@ use warnings;
 use lib 't';
 use PostgresNode;
 use Test::More;
-use TestLib 'command_checks_all';
 
 my $node = PostgresNode->get_new_node('prod'); # declare instance named "prod"
 
@@ -20,11 +19,10 @@ $node->start;
 
 ### Begin of tests ###
 
-command_checks_all( [
+# This command sets PGHOST and PGPORT, then call and test the given command
+$node->command_checks_all( [
     # command to run
     './check_pgactivity', '--service'  => 'connection',
-                          '--host'     => $node->host,
-                          '--port'     => $node->port,
                           '--username' => getlogin
     ],
     # expected return code
