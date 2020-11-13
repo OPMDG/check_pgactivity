@@ -192,8 +192,125 @@ $prim->command_checks_all( [
     'no standby connected'
 );
 
-### End of tests ###
+## warning on flush
+note "warning on flush";
+$stb1->start;
+$prim->wait_for_catchup($stb1, 'write', $prim->lsn('insert'));
 
+$prim->command_checks_all( [
+    'perl', '-It', '-MMocker::Streaming',
+    './check_pgactivity', '--service'  => 'streaming_delta',
+                          '--username' => getlogin,
+                          '--slave'    => 'sec1 ',
+                          '--warning'  => '512,4MB',
+                          '--critical' => '4MB,4MB',
+                          '--format'   => 'human'
+    ],
+    1,
+    [
+        qr/Service  *: POSTGRES_STREAMING_DELTA$/m,
+        qr/Returns  *: 1 \(WARNING\)$/m,
+        qr/Message  *: warning flush lag: 2MB for sec1\@$/m,
+        qr/Perfdata *: sent delta sec1@=0B$/m,
+        qr/Perfdata *: wrote delta sec1@=1024kB$/m,
+        qr/Perfdata *: flushed delta sec1@=2MB warn=512B crit=4MB$/m,
+        qr/Perfdata *: replay delta sec1@=3MB warn=4MB crit=4MB$/m,
+        qr/Perfdata *: pid sec1@=\d+$/m,
+        qr/Perfdata *: # of excluded slaves=0$/m,
+        qr/Perfdata *: # of slaves=1$/m
+    ],
+    undef,
+    'one explicit standby warning on flush lag'
+);
+
+## criticial on flush
+note "criticial on flush";
+
+$prim->command_checks_all( [
+    'perl', '-It', '-MMocker::Streaming',
+    './check_pgactivity', '--service'  => 'streaming_delta',
+                          '--username' => getlogin,
+                          '--slave'    => 'sec1 ',
+                          '--warning'  => '512,4MB',
+                          '--critical' => '1MB,4MB',
+                          '--format'   => 'human'
+    ],
+    2,
+    [
+        qr/Service  *: POSTGRES_STREAMING_DELTA$/m,
+        qr/Returns  *: 2 \(CRITICAL\)$/m,
+        qr/Message  *: critical flush lag: 2MB for sec1\@$/m,
+        qr/Perfdata *: sent delta sec1@=0B$/m,
+        qr/Perfdata *: wrote delta sec1@=1024kB$/m,
+        qr/Perfdata *: flushed delta sec1@=2MB warn=512B crit=1024kB$/m,
+        qr/Perfdata *: replay delta sec1@=3MB warn=4MB crit=4MB$/m,
+        qr/Perfdata *: pid sec1@=\d+$/m,
+        qr/Perfdata *: # of excluded slaves=0$/m,
+        qr/Perfdata *: # of slaves=1$/m
+    ],
+    undef,
+    'one explicit standby critical on flush lag'
+);
+
+## warning on replay
+note "warning on replay";
+
+$prim->command_checks_all( [
+    'perl', '-It', '-MMocker::Streaming',
+    './check_pgactivity', '--service'  => 'streaming_delta',
+                          '--username' => getlogin,
+                          '--slave'    => 'sec1 ',
+                          '--warning'  => '3MB,512',
+                          '--critical' => '4MB,4MB',
+                          '--format'   => 'human'
+    ],
+    1,
+    [
+        qr/Service  *: POSTGRES_STREAMING_DELTA$/m,
+        qr/Returns  *: 1 \(WARNING\)$/m,
+        qr/Message  *: warning replay lag: 3MB for sec1\@$/m,
+        qr/Perfdata *: sent delta sec1@=0B$/m,
+        qr/Perfdata *: wrote delta sec1@=1024kB$/m,
+        qr/Perfdata *: flushed delta sec1@=2MB warn=3MB crit=4MB$/m,
+        qr/Perfdata *: replay delta sec1@=3MB warn=512B crit=4MB$/m,
+        qr/Perfdata *: pid sec1@=\d+$/m,
+        qr/Perfdata *: # of excluded slaves=0$/m,
+        qr/Perfdata *: # of slaves=1$/m
+    ],
+    undef,
+    'one explicit standby warning on replay lag'
+);
+
+## criticial on replay
+note "criticial on replay";
+
+$prim->command_checks_all( [
+    'perl', '-It/', '-MMocker::Streaming',
+    './check_pgactivity', '--service'  => 'streaming_delta',
+                          '--username' => getlogin,
+                          '--slave'    => 'sec1 ',
+                          '--warning'  => '3MB,512',
+                          '--critical' => '4MB,2MB',
+                          '--format'   => 'human'
+    ],
+    2,
+    [
+        qr/Service  *: POSTGRES_STREAMING_DELTA$/m,
+        qr/Returns  *: 2 \(CRITICAL\)$/m,
+        qr/Message  *: critical replay lag: 3MB for sec1\@$/m,
+        qr/Perfdata *: sent delta sec1@=0B$/m,
+        qr/Perfdata *: wrote delta sec1@=1024kB$/m,
+        qr/Perfdata *: flushed delta sec1@=2MB warn=3MB crit=4MB$/m,
+        qr/Perfdata *: replay delta sec1@=3MB warn=512B crit=2MB$/m,
+        qr/Perfdata *: pid sec1@=\d+$/m,
+        qr/Perfdata *: # of excluded slaves=0$/m,
+        qr/Perfdata *: # of slaves=1$/m
+    ],
+    undef,
+    'one explicit standby critical on replay lag'
+);
+
+### End of tests ###
 $stb1->stop;
 $stb2->stop;
 $prim->stop;
