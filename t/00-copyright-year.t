@@ -8,7 +8,7 @@ use strict;
 use warnings;
 
 use File::Find;
-use Test::More;
+use Test::More tests => 10;
 
 # Try to catch all copyright mentions in source code and
 # fail if the second part of the year is bad.
@@ -35,7 +35,7 @@ foreach my $f (@filelist) {
 
     while (<$fh>) {
         if ( m/(copyright.*?\d+\s*-\s*(\d+).*)$/i ) {
-            is($2, $year, "wrong copyright year in $f:$.")
+            is($2, $year, "up to date copyright year in $f:$.")
                 or diag("The copyright mention is: $1");
         }
     }
@@ -44,5 +44,3 @@ foreach my $f (@filelist) {
 }
 
 ### End of tests ###
-
-done_testing;

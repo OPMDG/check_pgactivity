@@ -7,9 +7,8 @@
 use strict;
 use warnings;
 
-use lib 't';
 use PostgresNode;
-use Test::More;
+use Test::More tests => 8;
 
 my $node = PostgresNode->get_new_node('prod'); # declare instance named "prod"
 
@@ -28,14 +27,31 @@ $node->command_checks_all( [
     # expected return code
     0,
     # array of regex matching expected standard output
-    [ qr/POSTGRES_CONNECTION OK: Connection successful/ ],
+    [ qr/^POSTGRES_CONNECTION OK: Connection successful at [-+:\. \d]+, on PostgreSQL [\d\.]+.*$/ ],
     # array of regex matching expected error output
-    undef,
+    [ qr/^$/ ],
     # a name for this test
-    'check_connection'
+    'connection successful'
 );
+
+# Failing to connect
+# TODO: should stdout only report the user message and stderr the psql error?
+$node->command_checks_all( [
+    './check_pgactivity', '--service'  => 'connection',
+                          '--port'     => $node->port -1, # wrong port
+                          '--username' => getlogin
+    ],
+    2,
+    [
+        qr/^CHECK_PGACTIVITY CRITICAL: Query failed !$/m,
+        qr/^psql: error: could not connect to server:/m,
+        qr/^\s*Is the server running locally and accepting/m
+    ],
+    [ qr/^$/ ],
+    'connection failing'
+);
+
 
 ### End of tests ###
 
 $node->stop;
-done_testing;

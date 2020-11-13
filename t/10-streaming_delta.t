@@ -7,9 +7,8 @@
 use strict;
 use warnings;
 
-use lib 't';
 use PostgresNode;
-use Test::More;
+use Test::More tests => 108;
 
 # declare instance named "prim"
 my $prim   = PostgresNode->get_new_node('prim');
@@ -223,8 +222,8 @@ $prim->command_checks_all( [
     'one explicit standby warning on flush lag'
 );
 
-## criticial on flush
-note "criticial on flush";
+## critical on flush
+note "critical on flush";
 
 $prim->command_checks_all( [
     'perl', '-It', '-MMocker::Streaming',
@@ -281,8 +280,8 @@ $prim->command_checks_all( [
     'one explicit standby warning on replay lag'
 );
 
-## criticial on replay
-note "criticial on replay";
+## critical on replay
+note "critical on replay";
 
 $prim->command_checks_all( [
     'perl', '-It/', '-MMocker::Streaming',
@@ -311,7 +310,7 @@ $prim->command_checks_all( [
 );
 
 ### End of tests ###
+
 $stb1->stop;
 $stb2->stop;
 $prim->stop;
-done_testing;
