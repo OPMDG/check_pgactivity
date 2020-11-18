@@ -7,8 +7,9 @@
 use strict;
 use warnings;
 
-use Test::More tests => 18;
+use lib 't/lib';
 use TestLib;
+use Test::More tests => 18;
 
 ### Begin of tests ###
 

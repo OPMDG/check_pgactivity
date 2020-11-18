@@ -7,10 +7,11 @@
 use strict;
 use warnings;
 
-use PostgresNode;
+use lib 't/lib';
+use pgaTester;
 use Test::More tests => 8;
 
-my $node = PostgresNode->get_new_node('prod'); # declare instance named "prod"
+my $node = pgaTester->get_new_node('prod'); # declare instance named "prod"
 
 # create the instance and start it
 $node->init;
@@ -44,7 +45,8 @@ $node->command_checks_all( [
     2,
     [
         qr/^CHECK_PGACTIVITY CRITICAL: Query failed !$/m,
-        qr/^psql: error: could not connect to server:/m,
+        # v12 and after adds " error:" in output
+        qr/^psql:(?: error:)? could not connect to server:/m,
         qr/^\s*Is the server running locally and accepting/m
     ],
     [ qr/^$/ ],

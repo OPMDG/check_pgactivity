@@ -1,4 +1,3 @@
-#!/usr/bin/perl
 # This program is open source, licensed under the PostgreSQL License.
 # For license terms, see the LICENSE file.
 #
@@ -20,11 +19,15 @@ CHECK {
     # keep reference to old query sub
     $main::{'query_orig'} = $main::{'query'};
 
+    # FIXME: check given query
+
     # install wrapper around query sub to capture and modify the result
     $main::{'query'} = sub {
         my $res;
 
         $res = $main::{'query_orig'}->(@_);
+
+        return $res unless $_[1] =~ m/FROM pg_stat_replication/;
 
         # mock 1MB of write delta.
         #      2MB of flush delta.

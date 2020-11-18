@@ -1,51 +1,39 @@
 This folder contains all the tests related to `check_pgactivity`.
 
-# Environment
+The tests must be run from the root folder of the project using `perl` or
+`prove`.
 
-The tests depend on some PostgreSQL perl modules and `pg_regress` binary. In
-PostgreSQL source tree, they are located in `src/test/perl` and
-`src/test/regress/pg_regress` (after building for the later).
+Because these tests rely on some perl modules imported PostgreSQL, we have to
+"fake" PG_REGRESS used in these module, but useless for our tests. you'll need
+to set `PG_REGRESS=true` in your environment.
 
-On Debian, they are installed by package `postgresql-client-$MAJ`.
-ON EL, they are installed by package `postgresql$MAJ-devel` (PGDG packages
-seem broken though).
-
-Once you installed one of these packages, dependencies can be found using:
-
-~~~
-$(pg_config --pkglibdir)/pgxs/src/test/perl/
-$(pg_config --pkglibdir)/pgxs/src/test/regress/pg_regress
-~~~
-
-To setup your environment:
-
-~~~
-PG_REGRESS="$(pg_config --pkglibdir)/pgxs/src/test/regress/pg_regress"
-PERL5LIB="$(pg_config --pkglibdir)/pgxs/src/test/perl/:$PERL5LIB"
-export PG_REGRESS PERL5LIB
-~~~
-
-# run
-
-Tests must be run from the root folder of the project using `perl` or `prove`:
+The tests are run against the PostgreSQL version available in your `PATH` and
+reported by `pg_config --version`.
 
 ~~~console
-~/git/check_pgactivity$ PG_REGRESS="$(pg_config --pkglibdir)/pgxs/src/test/regress/pg_regress"
-~/git/check_pgactivity$ PERL5LIB="$(pg_config --pkglibdir)/pgxs/src/test/perl/:$PERL5LIB"
-~/git/check_pgactivity$ export PG_REGRESS PERL5LIB
+check_pgactivity$ export PATH="/home/ioguix/usr/local/pgsql/REL_13_STABLE/bin:$PATH"
+check_pgactivity$ export PG_REGRESS=true
+check_pgactivity$ perl t/01-connection.t
+1..8
+ok 1 - connection successful status (got 0 vs expected 0)
+[...]
 
-~/git/check_pgactivity$ perl t/01-connection.t
-ok 1 - check_cnx status (got 0 vs expected 0)
-ok 2 - check_cnx stdout /(?^:POSTGRES_CONNECTION OK: Connection successful)/
-1..2
-
-~/git/check_pgactivity$ prove
-t/00-copyright-year.t .. ok   
-t/01-connection.t ...... ok   
-t/10-streaming.t ....... ok    
+check_pgactivity$ prove
+t/00-copyright-year.t ... ok
+t/01-connection.t ....... ok
+t/01-pga_version.t ...... ok
+t/10-streaming_delta.t .. ok
 All tests successful.
-Files=3, Tests=21,  3 wallclock secs ( 0.02 usr  0.01 sys +  1.94 cusr  0.58 csys =  2.55 CPU)
+Files=4, Tests=170,  7 wallclock secs ( 0.05 usr  0.00 sys +  4.62 cusr  0.85 csys =  5.52 CPU)
 Result: PASS
+
+$ prove t/10-streaming_delta.t
+t/10-streaming_delta.t .. ok
+All tests successful.
+Files=1, Tests=121,  3 wallclock secs ( 0.03 usr  0.01 sys +  2.09 cusr  0.52 csys =  2.65 CPU)
+Result: PASS
+
 ~~~
 
-If tests are failing, log files are kept under `tmp_check/` folder.
+If tests are failing, log files are kept under `tmp_check/` folder. Make sure
+to clean or move away this folder before running new tests.

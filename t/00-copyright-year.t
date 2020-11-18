@@ -2,13 +2,13 @@
 # This program is open source, licensed under the PostgreSQL License.
 # For license terms, see the LICENSE file.
 #
-# Copyright (C) 2012-2020 Open PostgreSQL Monitoring Development Group
+# Copyright (C) 2012-2020: Open PostgreSQL Monitoring Development Group
 
 use strict;
 use warnings;
 
 use File::Find;
-use Test::More tests => 10;
+use Test::More tests => 23;
 
 # Try to catch all copyright mentions in source code and
 # fail if the second part of the year is bad.
