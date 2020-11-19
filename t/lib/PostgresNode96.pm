@@ -69,9 +69,8 @@ sub backup {
 }
 
 # need to explicitly allow replication in pg_hba.conf for 9.6 and before
-sub set_replication_conf
-{
-    my ($self) = @_;
+sub set_replication_conf {
+    my $self   = shift;
     my $pgdata = $self->data_dir;
 
     $self->is_default_host
@@ -79,23 +78,22 @@ sub set_replication_conf
 
     open my $hba, ">>$pgdata/pg_hba.conf";
     print $hba "\n# Allow replication (set up by PostgresNode.pm)\n";
-    if (!$TestLib::windows_os)
-    {
+    if (!$TestLib::windows_os) {
         print $hba "local replication all trust\n";
     }
-    else
-    {
+    else {
         my $test_localhost = $self->test_localhost;
         print $hba
 "host replication all $test_localhost/32 sspi include_realm=1 map=regress\n";
     }
+
     close $hba;
 }
 
 # various function have been renamed after 9.6
-sub lsn
-{
-    my ($self, $mode) = @_;
+sub lsn {
+    my $self  = shift;
+    my $mode  = shift;
     my %modes = (
         'insert'  => 'pg_current_xlog_insert_location()',
         'flush'   => 'pg_current_xlog_flush_location()',
@@ -111,20 +109,14 @@ sub lsn
 
     my $result = $self->safe_psql('postgres', "SELECT $modes{$mode}");
     chomp($result);
-    if ($result eq '')
-    {
-        return;
-    }
-    else
-    {
-        return $result;
-    }
+
+    return if $result eq '';
+    return $result;
 }
 
 # field renamed after 9.6
 
-sub wait_for_catchup
-{
+sub wait_for_catchup {
     my ($self, $standby_name, $mode, $target_lsn) = @_;
     my $lsn_expr;
     my $query;
@@ -142,17 +134,14 @@ sub wait_for_catchup
         unless exists($valid_modes{$mode});
 
     # Allow passing of a PostgresNode instance as shorthand
-    if (blessed($standby_name) && $standby_name->isa("PostgresNode"))
-    {
+    if (blessed($standby_name) && $standby_name->isa("PostgresNode")) {
         $standby_name = $standby_name->name;
     }
     
-    if (defined($target_lsn))
-    {
+    if (defined($target_lsn)) {
         $lsn_expr = "'$target_lsn'";
     }
-    else
-    {
+    else {
         $lsn_expr = 'pg_current_xlog_location()';
     }
 
@@ -170,6 +159,17 @@ sub wait_for_catchup
 
     print "done\n";
     return;
+}
+
+sub switch_wal {
+    my $self = shift;
+
+    my $result = $self->safe_psql('postgres', 'SELECT pg_xlogfile_name(pg_switch_xlog())');
+
+    chomp($result);
+
+    return if $result eq '';
+    return $result;
 }
 
 1;

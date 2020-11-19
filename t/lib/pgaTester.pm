@@ -12,6 +12,7 @@ use version;
 use Carp;
 use Test::More;
 use TestLib ();
+use Cwd 'cwd';
 
 our $class;
 
@@ -35,6 +36,8 @@ BEGIN {
     }
 
     require "${class}.pm";
+
+    $ENV{TESTDIR} = cwd;
 }
 
 sub new {

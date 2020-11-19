@@ -17,14 +17,14 @@ sub version { return 9.4 }
 # * "cluster-name" not supported in 9.4 and before
 # * pg_ctl -w does not wait for postmaster.pid to be ready
 #   see: f13ea95f9e473
-sub start
-{
-    my ($self, %params) = @_;
-    my $port    = $self->port;
-    my $pgdata  = $self->data_dir;
-    my $name    = $self->name;
-    my $pidfile = $self->data_dir . "/postmaster.pid";
-    my $max_attempts = 30 * 10;
+sub start {
+    my $self         = shift;
+    my %params       = @_;
+    my $port         = $self->port;
+    my $pgdata       = $self->data_dir;
+    my $name         = $self->name;
+    my $pidfile      = $self->data_dir . "/postmaster.pid";
+    my $max_attempts = 300; # 30s
     my $ret;
 
     BAIL_OUT("node \"$name\" is already running") if defined $self->{_pid};
@@ -50,16 +50,14 @@ sub start
         }
     }
 
-    if ($ret != 0)
-    {
+    if ($ret != 0) {
         print "# pg_ctl start failed; logfile:\n";
         print TestLib::slurp_file($self->logfile);
         BAIL_OUT("pg_ctl start failed") unless $params{fail_ok};
         return 0;
     }
 
-    if (not -f $pidfile)
-    {
+    if (not -f $pidfile) {
         print "# timeout while waiting for postmaster.pid; logfile:\n";
         print TestLib::slurp_file($self->logfile);
         BAIL_OUT("pg_ctl start failed") unless $params{fail_ok};
