@@ -1891,6 +1891,11 @@ sub check_archiver {
         #  1) fails while parsing an .history file
         #  2) pg_last_wal_receive_lsn always returns zero if the slave is fed
         #     with pure log shipping (streaming is ok)
+        # field 1: number of WAL segment to archive
+        # field 2: how long archiving is failing in second
+        # field 3: last segment archived
+        # field 4: last failing segment
+        # field 5: mod time of the next wal to archive
         my $query = q{
         SELECT coalesce(pg_wal_lsn_diff(
                     current_pos,
