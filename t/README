@@ -1,5 +1,7 @@
 This folder contains all the tests related to `check_pgactivity`.
 
+# Running tests
+
 The tests must be run from the root folder of the project using `perl` or
 `prove`.
 
@@ -27,13 +29,90 @@ All tests successful.
 Files=4, Tests=170,  7 wallclock secs ( 0.05 usr  0.00 sys +  4.62 cusr  0.85 csys =  5.52 CPU)
 Result: PASS
 
-$ prove t/10-streaming_delta.t
+check_pgactivity$ prove t/10-streaming_delta.t
 t/10-streaming_delta.t .. ok
 All tests successful.
 Files=1, Tests=121,  3 wallclock secs ( 0.03 usr  0.01 sys +  2.09 cusr  0.52 csys =  2.65 CPU)
 Result: PASS
 
+check_pgactivity$ prove
+t/00-copyright-year.t ... ok
+t/01-archive_folder.t ... ok
+t/01-connection.t ....... ok
+t/01-pga_version.t ...... ok
+t/01-streaming_delta.t .. ok
+All tests successful.
+Files=5, Tests=206, 10 wallclock secs ( 0.03 usr  0.01 sys +  6.33 cusr  1.15 csys =  7.52 CPU)
+Result: PASS
 ~~~
 
-If tests are failing, log files are kept under `tmp_check/` folder. Make sure
-to clean or move away this folder before running new tests.
+# Logs
+
+If tests are failing, log files are kept under `tmp_check/` folder.
+
+~~~
+# regression tests log
+check_pgactivity$ less tmp_check/log/regress_log_01-streaming_delta
+
+# PostgreSQL logs
+check_pgactivity$ less tmp_check/log/01-streaming_delta_prim.log
+~~~
+
+Make sure to clean or move away folder `tmp_check` before running new tests.
+
+# Devel
+
+The typical boilerplate to create a new test file is:
+
+~~~perl
+use lib 't/lib';
+use pgaTester;
+
+# declare instance named "prod"
+my $node = pgaTester->get_new_node('prod');
+
+# create the instance and start it
+$node->init;
+$node->start;
+
+$node->command_checks_all( [
+    # command to run
+    './check_pgactivity', '--service'  => 'connection',
+                          '--username' => getlogin
+    ],
+    # expected return code
+    0,
+    # array of regex matching expected standard output
+    [ qr/^POSTGRES_CONNECTION OK: Connection successful at [-+:\. \d]+, on PostgreSQL [\d\.]+.*$/ ],
+    # array of regex matching expected error output
+    [ qr/^$/ ],
+    # a name for this test
+    'connection successful'
+);
+
+# stop instance
+$node->stop;
+~~~
+
+Class `pgaTester` is factory class creating and returning the appropriate
+PostgresNode object depending on the PostgreSQL backend version returned by
+`pg_config --version`. Each backend version has its own `PostgresNodeXX` class
+indirectly inheriting from the PostgresNode class and overriding some methods
+for compatibility purpose.
+
+The inheritance chain is:
+`PostgresNodeXX -> PostgresNodeYY -> ... -> PostgresNodeFacet -> PostgresNode`
+
+Class PostgresNode comes straight from latest PostgreSQL source code and
+should not be patched. Any changes or methods addition must be done in
+PostgresNodeFacet.
+
+The PostgresNode class and methods are described in its embedded documentation.
+See: `perldoc t/lib/PostgresNode.pm`. Any method addition and other changes are
+documented in PostgresNodeFacet class. See: `perldoc t/lib/PostgresNodeFacet.pm`
+
+Some of the methods in these classes are just wrappers around functions coming
+from TestLib, but adding some environment context of the instance (eg. setting
+`PGHOST`). See embeded documentation of TestLib for more details about these
+functions: `perldoc t/lib/TestLib.pm`.
+
