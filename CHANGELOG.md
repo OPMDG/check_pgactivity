@@ -1,7 +1,7 @@
 Changelog
 =========
 
-2020-11-06 v2.5:
+2020-11-24 v2.5:
 
   - add: new `oldest_xmin` service
   - add: new `extensions_versions` service
@@ -14,6 +14,7 @@ Changelog
   - add: json and json_strict output formats
   - add: `size` and/or `delta` threshold for `database_size` service
   - add: thresholds are now optional for service `database_size`
+  - add: support for v12 and v13 `archive_folder`
   - regression: on service `replication_slots`: threshold `repslot` becomes `spilled`
   - fix: avoid alerts for lack of maintenance on inactive db
   - fix: forbid rare cases of division by zero in `wal_files`

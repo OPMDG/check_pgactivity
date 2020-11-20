@@ -1302,7 +1302,7 @@ pg_ls_waldir
 
 =head1 VERSION
 
-check_pgactivity version 2.5, released on Fri Nov 06 2020
+check_pgactivity version 2.5, released on Tue Nov 24 2020
 
 =head1 LICENSING
 

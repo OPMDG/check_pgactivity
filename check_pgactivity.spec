@@ -32,7 +32,7 @@ install -D -p -m 0755 check_pgactivity %{buildroot}/%{_libdir}/nagios/plugins/ch
 %doc README LICENSE
 
 %changelog
-* Fri Nov 06 2020 Jehan-Guillaume de Rorthais <jgdr@dalibo.com> 2.5-1
+* Tue Nov 24 2020 Jehan-Guillaume de Rorthais <jgdr@dalibo.com> 2.5-1
 - new major release 2.5
 
 * Wed Jan 30 2019 Christophe Courtois <christophe.courtois@dalibo.com> 2.4-1
