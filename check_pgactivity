@@ -1610,9 +1610,11 @@ sub check_archive_folder {
         '93' => 53365,
         '94' => 53374,
         '95' => 53383,
-        '96' => 53395,
-        '100' => 53399,
-        '110' => 53400
+        '96' => 53395,  # 0xD093
+        '100' => 53399, # 0xD097
+        '110' => 53400, # 0xD098
+        '120' => 53505, # 0xD101
+        '130' => 53510  # 0xD106
     );
 
     # "path" argument must be given
@@ -4651,6 +4653,7 @@ sub check_is_replay_paused {
 
 
 # Agnostic check vacuum or analyze sub
+# FIXME: we can certainly do better about temp tables
 sub check_last_maintenance {
     my $rs;
     my $c_limit;
@@ -4690,6 +4693,7 @@ sub check_last_maintenance {
                     ||n_tup_upd::text
                     ||n_tup_del::text))
             FROM pg_stat_user_tables
+            WHERE schemaname NOT LIKE 'pg_temp_%'
         },
         # Starting with 8.3, we can check database activity from
         # pg_stat_database
@@ -4705,6 +4709,8 @@ sub check_last_maintenance {
                   WHERE datname = current_database()
                 )
             FROM pg_stat_user_tables
+            WHERE schemaname NOT LIKE 'pg_temp_%'
+              AND schemaname NOT LIKE 'pg_toast_temp_%'
         },
         $PG_VERSION_91 => qq{
             SELECT coalesce(min(
@@ -4721,6 +4727,8 @@ sub check_last_maintenance {
                   WHERE datname = current_database()
                 )
             FROM pg_stat_user_tables
+            WHERE schemaname NOT LIKE 'pg_temp_%'
+              AND schemaname NOT LIKE 'pg_toast_temp_%'
         }
     );
 
