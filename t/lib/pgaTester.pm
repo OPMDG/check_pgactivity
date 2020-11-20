@@ -25,7 +25,7 @@ BEGIN {
     die "could not find pg_config version". ($err)? ": $err":''
         unless $ver;
 
-    $ver =~ /PostgreSQL (\d+)\.(\d+)(?:\.(\d+))?$/;
+    $ver =~ /PostgreSQL (\d+)\.(\d+)(?:\.(\d+))?/;
     die "could not parse initdb version: $ver" unless defined $1 and defined $2;
 
     if ($1 > 9) {

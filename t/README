@@ -1,11 +1,35 @@
 This folder contains all the tests related to `check_pgactivity`.
 
+# Environment setting
+
+The test are written using well known and used `Test::More` perl module.
+Bellow are instructions to setup basic environment to run them.
+
+CentOS 7:
+
+~~~console
+# yum install -y git perl-core "perl(IPC::Run)" "perl(Test::More)"
+~~~
+
+CentOS 8:
+
+~~~console
+# dnf install -y perl-core "perl(Test::More)"
+# dnf install -y --enablerepo=PowerTools "perl(IPC::Run)"
+~~~
+
+Debian 9 & 10:
+
+~~~console
+# apt install -y libipc-run-perl
+~~~
+
 # Running tests
 
 The tests must be run from the root folder of the project using `perl` or
 `prove`.
 
-Because these tests rely on some perl modules imported PostgreSQL, we have to
+Because they rely on some perl other modules imported PostgreSQL, we have to
 "fake" PG_REGRESS used in these module, but useless for our tests. you'll need
 to set `PG_REGRESS=true` in your environment.
 
@@ -13,7 +37,7 @@ The tests are run against the PostgreSQL version available in your `PATH` and
 reported by `pg_config --version`.
 
 ~~~console
-check_pgactivity$ export PATH="/home/ioguix/usr/local/pgsql/REL_13_STABLE/bin:$PATH"
+check_pgactivity$ export PATH="/usr/pgsql-13/bin:$PATH"
 check_pgactivity$ export PG_REGRESS=true
 check_pgactivity$ perl t/01-connection.t
 1..8
