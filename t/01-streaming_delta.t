@@ -13,7 +13,7 @@ use Test::More;
 
 my $num_tests = 118;
 
-# we have $num_tests normal tests + three test for incompatible pg versions
+# we have $num_tests normal tests + three tests for incompatible pg versions
 plan tests => $num_tests + 3;
 
 # declare instance named "prim"
@@ -345,10 +345,10 @@ SKIP: {
         'one explicit standby critical on replay lag'
     );
 
+    $stb1->stop;
+    $stb2->stop;
 } # End of SKIP
 
 ### End of tests ###
 
-$stb1->stop;
-$stb2->stop;
 $prim->stop;
