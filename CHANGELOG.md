@@ -15,7 +15,9 @@ Changelog
   - add: `size` and/or `delta` threshold for `database_size` service
   - add: thresholds are now optional for service `database_size`
   - add: support for v12 and v13 `archive_folder`
-  - regression: on service `replication_slots`: threshold `repslot` becomes `spilled`
+  - regression: threshold `repslot` becomes `spilled` in service `replication_slots`
+  - regression: a critical alert is now raised on table that were never analyzed/vacuumed
+    or lost maintenance date due to a crash in services `latest_vacuum` and `latest_analyze`
   - fix: avoid alerts for lack of maintenance on inactive db
   - fix: forbid rare cases of division by zero in `wal_files`
   - fix: do not alert on missing file in `temp_files` for v10+
