@@ -1260,13 +1260,13 @@ COMPATIBILITY
           check_pgactivity -p 5433 -h slave --service hit_ratio --dbinclude importantone -w 90% -c 80%
 
 VERSION
-    check_pgactivity version 2.4, released on Wed Jan 30 2019
+    check_pgactivity version 2.5, released on Tue Nov 24 2020
 
 LICENSING
     This program is open source, licensed under the PostgreSQL license. For
     license terms, see the LICENSE provided with the sources.
 
 AUTHORS
-    Author: Open PostgreSQL Monitoring Development Group Copyright: (C)
-    2012-2019 Open PostgreSQL Monitoring Development Group
+    Author: Open PostgreSQL Monitoring Development Group
+    Copyright: (C) 2012-2020 Open PostgreSQL Monitoring Development Group
 

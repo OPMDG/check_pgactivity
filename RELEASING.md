@@ -88,13 +88,14 @@ Ping packager on mailing list pgsql-pkg-yum if needed to update the RPM on PGDG 
 ## Nagios Exchange
 
 Update:
+
 * the release number
 * the services list
 * add latest packages, zip and tarball.
 
 https://exchange.nagios.org/directory/Plugins/Databases/PostgresQL/check_pgactivity/details
 
-Ask Thomas (frost242) Reiss  or Jehan-Guillaume (ioguix) de Rorthais for credentials.
+Ask Thomas (frost242) Reiss or Jehan-Guillaume (ioguix) de Rorthais for credentials.
 
 ## Submit a news on postgresql.org
 
