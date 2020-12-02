@@ -43,8 +43,24 @@ SKIP: {
 
 # Tests for PostreSQL 8.1 and after
 SKIP: {
+    my @stdout;
     skip "these tests requires PostgreSQL 8.1 and after", $num_tests
         unless $node->version >= 8.1;
+
+    @stdout = (
+        qr/^Service  *: POSTGRES_AUTOVACUUM$/m,
+        qr/^Returns  *: 0 \(OK\)$/m,
+        qr/^Message  *: Number of autovacuum: [0-3]$/m,
+        qr/^Perfdata *: VACUUM_FREEZE=[0-3]$/m,
+        qr/^Perfdata *: VACUUM_ANALYZE=[0-3]$/m,
+        qr/^Perfdata *: VACUUM=[0-3]$/m,
+        qr/^Perfdata *: ANALYZE=[0-3]$/m,
+        qr/^Perfdata *: oldest_autovacuum=(NaN|\d+)s$/m,
+        qr/^Perfdata *: max_workers=3$/m
+    );
+
+    push @stdout, qr/^Perfdata *: BRIN_SUMMARIZE=[0-3]$/m
+        if $node->version > 9.6;
 
     $node->command_checks_all( [
         './check_pgactivity', '--service'  => 'autovacuum',
@@ -52,21 +68,15 @@ SKIP: {
                               '--format'   => 'human'
         ],
         0,
-        [
-            qr/^Service  *: POSTGRES_AUTOVACUUM$/m,
-            qr/^Returns  *: 0 \(OK\)$/m,
-            qr/^Message  *: Number of autovacuum: [0-3]$/m,
-            qr/^Perfdata *: VACUUM_FREEZE=[0-3]$/m,
-            qr/^Perfdata *: VACUUM_ANALYZE=[0-3]$/m,
-            qr/^Perfdata *: VACUUM=[0-3]$/m,
-            qr/^Perfdata *: BRIN_SUMMARIZE=[0-3]$/m,
-            qr/^Perfdata *: ANALYZE=[0-3]$/m,
-            qr/^Perfdata *: oldest_autovacuum=(NaN|\d+)s$/m,
-            qr/^Perfdata *: max_workers=3$/m
-        ],
+        \@stdout,
         [ qr/^$/ ],
         'basic check without thresholds'
     );
+
+    {
+        skip "No autovacuum brin summarize before PgSQL 10", 1
+            if $node->version < 10;
+    }
 
     $node->stop;
 }
