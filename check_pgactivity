@@ -1871,8 +1871,8 @@ sub check_archiver {
                 save $hosts[0], 'archiver', $rs[0][0], $args{'status-file'};
             }
             else {
-                push @msg => sprintf 'archiver stalling', substr($rs[0][0], 0, 24);
-                push @longmsg => sprintf '"%s" not archived since last check',
+                push @msg => sprintf 'archiver failing on %s', substr($rs[0][0], 0, 24);
+                push @longmsg => sprintf '%s not archived since last check',
                                     substr($rs[0][0], 0, -6);
             }
         }
@@ -1960,11 +1960,11 @@ sub check_archiver {
         if ( $rs[0][1] eq 't' ) {
             push @msg => sprintf 'archiver failing on %s', $rs[0][4];
             if ( $rs[0][2] ne '' ) {
-                push @longmsg => sprintf '%s could not be archived since %ds',
+                push @longmsg => sprintf '%s not archived since %ds',
                                 $rs[0][4], $rs[0][2];
             }
-	    else {
-                push @longmsg => sprintf '%s could not be archived',
+        else {
+                push @longmsg => sprintf '%s not archived',
                                 $rs[0][4];
             }
         }

@@ -8,11 +8,14 @@ use strict;
 use warnings;
 
 use lib 't/lib';
+use TestLib ();
 use pgaTester;
 use Test::More tests => 16;
 
-my $node = pgaTester->get_new_node('prod');
+my $node      = pgaTester->get_new_node('prod');
+my $pga_datas = "$TestLib::tmp_check/pga.data";
 my $wal;
+my @stdout;
 
 $node->init(has_archiving => 1, allows_streaming => 1);
 $node->start;
@@ -33,9 +36,10 @@ $node->psql('template1', 'checkpoint');
 $node->wait_for_archive($wal);
 
 $node->command_checks_all( [
-    './check_pgactivity', '--service'  => 'archiver',
-                          '--username' => getlogin,
-                          '--format'   => 'human'
+    './check_pgactivity', '--service'     => 'archiver',
+                          '--username'    => getlogin,
+                          '--status-file' => $pga_datas,
+                          '--format'      => 'human'
     ],
     0,
     [
@@ -59,21 +63,37 @@ $wal = $node->switch_wal;
 # avoid same race condition
 $node->psql('template1', 'checkpoint');
 
+# FIXME: arbitrary sleep time to wait for archiver to fail at least one time
+sleep 1;
+
+# for 9.6 and before, the alert is raised on second call.
+TestLib::system_or_bail('./check_pgactivity',
+    '--service'     => 'archiver',
+    '--username'    => getlogin,
+    '--host'        => $node->host,
+    '--port'        => $node->port,
+    '--status-file' => $pga_datas,
+    '--format'      => 'human'
+) if $node->version <= 9.6;
+
+@stdout = (
+    qr/^Service      *: POSTGRES_ARCHIVER$/m,
+    qr/^Returns      *: 2 \(CRITICAL\)$/m,
+    qr/^Message      *: 1 WAL files ready to archive$/m,
+    qr/^Message      *: archiver failing on 000000010000000000000002$/m,
+    qr/^Long message *: 000000010000000000000002 not archived since (?:\ds|last check)$/m,
+    qr/^Perfdata     *: ready_archive=1 min=0$/m,
+    qr/^Perfdata     *: oldest_ready_wal=\ds min=0$/m
+);
+
 $node->command_checks_all( [
-    './check_pgactivity', '--service'  => 'archiver',
-                          '--username' => getlogin,
-                          '--format'   => 'human'
+    './check_pgactivity', '--service'     => 'archiver',
+                          '--username'    => getlogin,
+                          '--status-file' => $pga_datas,
+                          '--format'      => 'human'
     ],
     2,
-    [
-        qr/^Service      *: POSTGRES_ARCHIVER$/m,
-        qr/^Returns      *: 2 \(CRITICAL\)$/m,
-        qr/^Message      *: archiver failing on 000000010000000000000002$/m,
-        qr/^Message      *: 1 WAL files ready to archive$/m,
-        qr/^Long message *: 000000010000000000000002 could not be archived since \ds$/m,
-        qr/^Perfdata     *: ready_archive=1 min=0$/m,
-        qr/^Perfdata     *: oldest_ready_wal=\ds min=0$/m
-    ],
+    \@stdout,
     [ qr/^$/ ],
     'failing archiver'
 );
