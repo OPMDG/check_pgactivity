@@ -893,10 +893,9 @@ sub parse_hosts(\%) {
     # Add as many hosts than necessary depending on given parameters
     # host/port/db/user.
     # Any missing parameter will be set to its default value.
+    # if you set host or port, it will user tcp connexion.
     if (defined $args{'host'}
-        or defined $args{'username'}
         or defined $args{'port'}
-        or defined $args{'dbname'}
     ) {
         $args{'host'} = $ENV{'PGHOST'} || 'localhost'
             unless defined $args{'host'};
@@ -946,33 +945,29 @@ sub parse_hosts(\%) {
             'pgversion' => undef
         };
 
-        $hosts[0]{'host'}      = $ENV{'PGHOST'}     if defined $ENV{'PGHOST'};
-        $hosts[0]{'port'}      = $ENV{'PGPORT'}     if defined $ENV{'PGPORT'};
-        $hosts[0]{'db'}        = $ENV{'PGDATABASE'} if defined $ENV{'PGDATABASE'};
-        $hosts[0]{'user'}      = $ENV{'PGUSER'}     if defined $ENV{'PGUSER'};
-        $hosts[0]{'dbservice'} = $ENV{'PGSERVICE'}  if defined $ENV{'PGSERVICE'};
-
         if (defined $ENV{'PGHOST'} ) {
             $hosts[0]{'host'} = $ENV{'PGHOST'};
             $name .= " host:$ENV{'PGHOST'}";
         }
 
-        if (defined $ENV{'PGPORT'} ) {
-            $hosts[0]{'port'} = $ENV{'PGPORT'};
-            $name .= " port:$ENV{'PGPORT'}";
-        }
-
         if (defined $ENV{'PGDATABASE'} ) {
             $hosts[0]{'db'} = $ENV{'PGDATABASE'};
             $name .= " db:$ENV{'PGDATABASE'}";
-        }
+        } elsif (defined $args{'dbname'} ) {
+            $hosts[0]{'db'} = $args{'dbname'};
+            $name .= " db:$args{'dbname'}";
+	}
 
         if (defined $ENV{'PGSERVICE'} ) {
             $hosts[0]{'dbservice'} = $ENV{'PGSERVICE'};
             $name .= " service:$ENV{'PGSERVICE'}";
         }
 
-        $hosts[0]{'user'} = $ENV{'PGUSER'} if defined $ENV{'PGUSER'};
+	if (defined $ENV{'PGUSER'}) {
+            $hosts[0]{'user'} = $ENV{'PGUSER'};
+    	} elsif (defined $args{'username'}) {
+	    $hosts[0]{'user'} = $args{'username'};
+	}
 
         $hosts[0]{'name'} = $name;
     }
