@@ -710,6 +710,9 @@ returned.
 Critical and Warning thresholds only accept an interval (eg. 1h30m25s)
 and apply to the oldest execution of analyse.
 
+Tables that were never analyzed, or whose analyze date was lost due to a crash,
+will raise a critical alert.
+
 B<NOTE>: this service does not raise alerts if the database had strictly
 no writes since last call. In consequence, a read-only database can have
 its oldest analyze reported in perfdata way after your thresholds, but not
@@ -734,6 +737,9 @@ execution.
 
 Critical and Warning thresholds only accept an interval (eg. 1h30m25s)
 and apply to the oldest vacuum.
+
+Tables that were never vacuumed, or whose vacuum date was lost due to a crash,
+will raise a critical alert.
 
 B<NOTE>: this service does not raise alerts if the database had strictly
 no writes since last call. In consequence, a read-only database can have
@@ -1312,5 +1318,5 @@ For license terms, see the LICENSE provided with the sources.
 =head1 AUTHORS
 
 S<Author: Open PostgreSQL Monitoring Development Group>
-S<Copyright: (C) 2012-2020 Open PostgreSQL Monitoring Development Group>
+S<Copyright: (C) 2012-2021 Open PostgreSQL Monitoring Development Group>
 
