@@ -2,7 +2,7 @@
 # This program is open source, licensed under the PostgreSQL License.
 # For license terms, see the LICENSE file.
 #
-# Copyright (C) 2012-2020: Open PostgreSQL Monitoring Development Group
+# Copyright (C) 2012-2021: Open PostgreSQL Monitoring Development Group
 
 use strict;
 use warnings;
@@ -20,7 +20,7 @@ my $year = (gmtime)[5] + 1900;
 find(
     sub {
         # ignore root
-        return if m/^\.+$/; 
+        return if m/^\.+$/;
         # ignore whole hidden folders
         $File::Find::prune = 1 if -d $File::Find::name and m/^\./;
         push @filelist, $File::Find::name unless m/^\./;
