@@ -29,9 +29,9 @@ Debian 9 & 10:
 The tests must be run from the root folder of the project using `perl` or
 `prove`.
 
-Because they rely on some perl other modules imported PostgreSQL, we have to
-"fake" PG_REGRESS used in these module, but useless for our tests. you'll need
-to set `PG_REGRESS=true` in your environment.
+Because they rely on some perl other modules imported from PostgreSQL, we have
+to "fake" PG_REGRESS used in these module, but useless for our tests. you'll
+need to set `PG_REGRESS=true` in your environment.
 
 The tests are run against the PostgreSQL version available in your `PATH` and
 reported by `pg_config --version`.
@@ -43,15 +43,6 @@ check_pgactivity$ perl t/01-connection.t
 1..8
 ok 1 - connection successful status (got 0 vs expected 0)
 [...]
-
-check_pgactivity$ prove
-t/00-copyright-year.t ... ok
-t/01-connection.t ....... ok
-t/01-pga_version.t ...... ok
-t/10-streaming_delta.t .. ok
-All tests successful.
-Files=4, Tests=170,  7 wallclock secs ( 0.05 usr  0.00 sys +  4.62 cusr  0.85 csys =  5.52 CPU)
-Result: PASS
 
 check_pgactivity$ prove t/10-streaming_delta.t
 t/10-streaming_delta.t .. ok

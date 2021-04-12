@@ -58,23 +58,12 @@ $node->command_checks_all( [
 );
 
 # two sessions on two different db
+
 TestLib::system_or_bail('createdb',
     '--host' => $node->host,
     '--port' => $node->port,
     'testdb'
 );
-
-# $timer[0] = IPC::Run::timer(5);
-# $in[0]    = '';
-# $out[0]   = '';
-# $proc[0]  = $node->interactive_psql(
-#     'testdb', \$in[0], \$out[0], $timer[0]
-# );
-# 
-# $out[0] = '';
-# $in[0]  = "select pg_sleep(60);\n";
-# $timer[0]->start(60);
-# $proc[0]->pump while length $in[0];
 
 sub get_session {
     my $db = shift ;
