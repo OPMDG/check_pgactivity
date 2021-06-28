@@ -1895,9 +1895,10 @@ sub check_archiver {
         SELECT coalesce(pg_wal_lsn_diff(
                     current_pos,
                     /* compute LSN from last archived offset */
-                    (to_hex(last_archived_off/4294967296)
-                    ||'/'||to_hex(last_archived_off%4294967296))::pg_lsn
+                    (to_hex(COALESCE(last_archived_off, last_failed_off)/4294967296)
+                    ||'/'||to_hex(COALESCE(last_archived_off, last_failed_off)%4294967296))::pg_lsn
                 )::bigint / walsegsize, 0),
+		failing,
                 CASE WHEN failing
                 THEN extract('epoch' from (current_timestamp - last_archived_time))
                 ELSE 0
@@ -1919,6 +1920,11 @@ sub check_archiver {
                     + ('x'||substr(last_archived_wal, 17, 8))::bit(32)::bigint * walsegsize
                     -- offset to the end of the segment
                     + walsegsize AS last_archived_off,
+                ('x'||substr(last_failed_wal, 9, 8))::bit(32)::bigint*4294967296
+                    -- offset to the begining of the segment
+                    + ('x'||substr(last_failed_wal, 17, 8))::bit(32)::bigint * walsegsize
+                    -- offset to the end of the segment
+                    + walsegsize AS last_failed_off,
                 CASE WHEN pg_is_in_recovery()
                 THEN pg_last_wal_receive_lsn()
                 ELSE pg_current_wal_lsn()
@@ -1946,15 +1952,23 @@ sub check_archiver {
 
         push @perfdata => [ 'ready_archive', $nb_files, undef, $args{'warning'}, $args{'critical'}, 0 ];
 
-        if ( $rs[0][1] > 0 ) {
-            push @msg => sprintf 'archiver failing on %s', $rs[0][3];
-            push @longmsg => sprintf '%s could not be archived since %ds',
-                                $rs[0][3], $rs[0][1];
+        if ( $rs[0][1] eq 't' ) {
+            push @msg => sprintf 'archiver failing on %s', $rs[0][4];
+            if ( $rs[0][2] ne '' ) {
+                push @longmsg => sprintf '%s could not be archived since %ds',
+                                $rs[0][4], $rs[0][2];
+            }
+	    else {
+                push @longmsg => sprintf '%s could not be archived',
+                                $rs[0][4];
+            }
         }
 
         if ( $nb_files > 0 ) {
-            push @perfdata => [ 'oldest_ready_wal', int( $rs[0][4] ), 's',
+            if ( $rs[0][5] ne '' ) {
+                push @perfdata => [ 'oldest_ready_wal', int( $rs[0][5] ), 's',
                                 undef, undef, 0 ];
+            }
         }
         else {
             push @perfdata => [ 'oldest_ready_wal', 0, 's', undef, undef, 0 ];
