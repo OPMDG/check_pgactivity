@@ -8,10 +8,10 @@ use strict;
 use warnings;
 
 use lib 't/lib';
-use pgaTester;
+use pgNode;
 use Test::More tests => 35;
 
-my $node        = pgaTester->get_new_node('prod'); # declare instance named "prod"
+my $node        = pgNode->new('prod'); # declare instance named "prod"
 my $archive_dir = $node->archive_dir;
 my $wal;
 my $time;

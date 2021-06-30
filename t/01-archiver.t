@@ -9,11 +9,11 @@ use warnings;
 
 use lib 't/lib';
 use TestLib ();
-use pgaTester;
+use pgNode;
 use Test::More tests => 16;
 
-my $node      = pgaTester->get_new_node('prod');
-my $pga_datas = "$TestLib::tmp_check/pga.data";
+my $node      = pgNode->get_new_node('prod');
+my $pga_data = "$TestLib::tmp_check/pga.data";
 my $wal;
 my @stdout;
 
@@ -38,7 +38,7 @@ $node->wait_for_archive($wal);
 $node->command_checks_all( [
     './check_pgactivity', '--service'     => 'archiver',
                           '--username'    => getlogin,
-                          '--status-file' => $pga_datas,
+                          '--status-file' => $pga_data,
                           '--format'      => 'human'
     ],
     0,
@@ -72,7 +72,7 @@ TestLib::system_or_bail('./check_pgactivity',
     '--username'    => getlogin,
     '--host'        => $node->host,
     '--port'        => $node->port,
-    '--status-file' => $pga_datas,
+    '--status-file' => $pga_data,
     '--format'      => 'human'
 ) if $node->version <= 9.6;
 
@@ -89,7 +89,7 @@ TestLib::system_or_bail('./check_pgactivity',
 $node->command_checks_all( [
     './check_pgactivity', '--service'     => 'archiver',
                           '--username'    => getlogin,
-                          '--status-file' => $pga_datas,
+                          '--status-file' => $pga_data,
                           '--format'      => 'human'
     ],
     2,

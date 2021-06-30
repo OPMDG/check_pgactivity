@@ -8,12 +8,13 @@ use strict;
 use warnings;
 
 use lib 't/lib';
-use pgaTester;
+use pgNode;
+use pgSession;
 use TestLib ();
 use IPC::Run ();
 use Test::More tests => 34;
 
-my $node = pgaTester->get_new_node('prod');
+my $node = pgNode->get_new_node('prod');
 my @timer;
 my @in;
 my @out;
@@ -65,34 +66,9 @@ TestLib::system_or_bail('createdb',
     'testdb'
 );
 
-sub get_session {
-    my $db = shift ;
-    my %s  = ();
+push @procs, pgSession->new($node, 'testdb');
 
-    $db = 'template1' unless defined $db;
-
-    $s{'timer'} = IPC::Run::timer(5);
-    $s{'in'}    = '';
-    $s{'out'}   = '';
-    $s{'proc'}  = $node->interactive_psql(
-        $db, \$s{'in'}, \$s{'out'}, $s{'timer'}
-    );
-
-    return \%s;
-}
-
-sub exec_session {
-    my ($s, $q, $t) = @_;
-
-    $s->{'out'} = '';
-    $s->{'in'}  = "$q;\n";
-    $s->{'timer'}->start($t);
-    $s->{'proc'}->pump while length $s->{'in'};
-}
-
-push @procs, get_session('testdb');
-
-exec_session($procs[0], 'select pg_sleep(60)', 60);
+$procs[0]->query('select pg_sleep(60)', 60);
 
 # wait for backend to be connected and active
 $node->poll_query_until('template1', q{
@@ -123,7 +99,7 @@ $node->command_checks_all( [
 );
 
 # add two new backends and test warning
-push( @procs, get_session ) for (1..2);
+push( @procs, pgSession->new($node) ) for (1..2);
 
 $node->command_checks_all( [
     './check_pgactivity', '--service'  => 'backends',
@@ -146,7 +122,7 @@ $node->command_checks_all( [
 );
 
 # add a new backends and test critical
-push @procs, get_session;
+push @procs, pgSession->new($node);
 
 $node->command_checks_all( [
     './check_pgactivity', '--service'  => 'backends',
@@ -168,16 +144,7 @@ $node->command_checks_all( [
     'critical with five sessions'
 );
 
-# finish all sessions
-for (my $i = 0; $i < @procs; $i++ ) {
-    $procs[$i]{'proc'}->signal('INT');
-    $procs[$i]{'timer'}->start(2);
-    $procs[$i]{'in'} .= "\\q\n";
-    $procs[$i]{'proc'}->pump while length $procs[$i]{'in'};
-    $procs[$i]{'proc'}->finish or BAIL_OUT "psql $i returned $?";
-    $procs[$i]{'timer'}->reset;
-}
-
 ### End of tests ###
 
-$node->stop;
+# stop immediate to kill any remaining backends
+$node->stop('immediate');

@@ -96,6 +96,7 @@ use File::Spec;
 use File::stat qw(stat);
 use File::Temp ();
 use IPC::Run;
+use PostgresVersion;
 use RecursiveCopy;
 use Socket;
 use Test::More;
@@ -126,6 +127,20 @@ INIT
 	# Tracking of last port value assigned to accelerate free port lookup.
 	$last_port_assigned = int(rand() * 16384) + 49152;
 }
+
+# Current dev version, for which we have no subclass
+# When a new stable branch is made this and the subclass hierarchy below
+# need to be adjusted.
+my $devtip = 14;
+
+INIT
+{
+	# sanity check to make sure there is a subclass for the last stable branch
+	my $last_child = 'PostgresNodeV_' . ($devtip - 1);
+	eval "${last_child}->can('get_new_node') || die('not found');";
+	die "No child package $last_child found" if $@;
+}
+
 
 =pod
 
@@ -350,6 +365,8 @@ sub info
 	my $_info = '';
 	open my $fh, '>', \$_info or die;
 	print $fh "Name: " . $self->name . "\n";
+	print $fh "Version: " . $self->{_pg_version} . "\n"
+	  if $self->{_pg_version};
 	print $fh "Data directory: " . $self->data_dir . "\n";
 	print $fh "Backup directory: " . $self->backup_dir . "\n";
 	print $fh "Archive directory: " . $self->archive_dir . "\n";
@@ -438,7 +455,9 @@ sub init
 	mkdir $self->backup_dir;
 	mkdir $self->archive_dir;
 
-	TestLib::system_or_bail('initdb', '-D', $pgdata, '-A', 'trust', '-N',
+	TestLib::system_or_bail(
+		'initdb', '-D', $pgdata,
+		($self->_initdb_flags),
 		@{ $params{extra} });
 	TestLib::system_or_bail($ENV{PG_REGRESS}, '--config-auth', $pgdata,
 		@{ $params{auth_extra} });
@@ -465,31 +484,36 @@ sub init
 
 	if ($params{allows_streaming})
 	{
-		if ($params{allows_streaming} eq "logical")
-		{
-			print $conf "wal_level = logical\n";
-		}
-		else
-		{
-			print $conf "wal_level = replica\n";
-		}
-		print $conf "max_wal_senders = 10\n";
-		print $conf "max_replication_slots = 10\n";
-		print $conf "wal_log_hints = on\n";
-		print $conf "hot_standby = on\n";
-		# conservative settings to ensure we can run multiple postmasters:
-		print $conf "shared_buffers = 1MB\n";
-		print $conf "max_connections = 10\n";
-		# limit disk space consumption, too:
-		print $conf "max_wal_size = 128MB\n";
+		$self->_init_streaming($conf, $params{allows_streaming});
 	}
 	else
 	{
-		print $conf "wal_level = minimal\n";
-		print $conf "max_wal_senders = 0\n";
+		$self->_init_wal_level_minimal($conf);
 	}
 
 	print $conf "port = $port\n";
+
+	$self->_init_network($conf, $use_tcp, $host);
+
+	close $conf;
+
+	chmod($self->group_access ? 0640 : 0600, "$pgdata/postgresql.conf")
+	  or die("unable to set permissions for $pgdata/postgresql.conf");
+
+	$self->set_replication_conf if $params{allows_streaming};
+	$self->enable_archiving     if $params{has_archiving};
+	return;
+}
+
+
+# methods use in init() which can be overridden in older versions
+
+sub _initdb_flags { return ('-A', 'trust', '-N'); }
+
+sub _init_network
+{
+	my ($self, $conf, $use_tcp, $host) = @_;
+
 	if ($use_tcp)
 	{
 		print $conf "unix_socket_directories = ''\n";
@@ -500,14 +524,36 @@ sub init
 		print $conf "unix_socket_directories = '$host'\n";
 		print $conf "listen_addresses = ''\n";
 	}
-	close $conf;
+}
 
-	chmod($self->group_access ? 0640 : 0600, "$pgdata/postgresql.conf")
-	  or die("unable to set permissions for $pgdata/postgresql.conf");
+sub _init_streaming
+{
+	my ($self, $conf, $allows_streaming) = @_;
 
-	$self->set_replication_conf if $params{allows_streaming};
-	$self->enable_archiving     if $params{has_archiving};
-	return;
+	if ($allows_streaming eq "logical")
+	{
+		print $conf "wal_level = logical\n";
+	}
+	else
+	{
+		print $conf "wal_level = 'replica'\n";
+	}
+	print $conf "max_wal_senders = 10\n";
+	print $conf "max_replication_slots = 10\n";
+	print $conf "wal_log_hints = on\n";
+	print $conf "hot_standby = on\n";
+	# conservative settings to ensure we can run multiple postmasters:
+	print $conf "shared_buffers = 1MB\n";
+	print $conf "max_connections = 10\n";
+	# limit disk space consumption, too:
+	print $conf "max_wal_size = 128MB\n";
+}
+
+sub _init_wal_level_minimal
+{
+	my ($self, $conf) = @_;
+	print $conf "wal_level = minimal\n";
+	print $conf "max_wal_senders = 0\n";
 }
 
 =pod
@@ -539,6 +585,52 @@ sub append_conf
 
 =pod
 
+=item $node->adjust_conf(filename, setting, value, skip_equals)
+
+Modify the named config file with the setting. If the value is undefined,
+instead delete the setting. If the setting is not present then no action
+is taken.
+
+This will write "$setting = $value\n" in place of the existsing line,
+unless skip_equals is true, in which case it will  write
+"$setting $value\n". If the value needs to be quoted it is up to the
+caller to do that.
+
+=cut
+
+sub adjust_conf
+{
+	my ($self, $filename, $setting, $value, $skip_equals) = @_;
+
+	my $conffile = $self->data_dir . '/' . $filename;
+
+	my $contents = TestLib::slurp_file($conffile);
+	my @lines    = split(/\n/, $contents);
+	my @result;
+	my $eq = $skip_equals ? '' : '= ';
+	foreach my $line (@lines)
+	{
+		if ($line !~ /^$setting\W/)
+		{
+			push(@result, $line);
+			next;
+		}
+		if (defined $value)
+		{
+			push(@result, "$setting $eq$value");
+		}
+	}
+	open my $fh, ">", $conffile
+	  or croak "could not write \"$conffile\": $!";
+	print $fh join("\n", @result), "\n";
+	close $fh;
+
+	chmod($self->group_access() ? 0640 : 0600, $conffile)
+	  or die("unable to set permissions for $conffile");
+}
+
+=pod
+
 =item $node->backup(backup_name)
 
 Create a hot backup with B<pg_basebackup> in subdirectory B<backup_name> of
@@ -563,13 +655,17 @@ sub backup
 
 	print "# Taking pg_basebackup $backup_name from node \"$name\"\n";
 	TestLib::system_or_bail(
-		'pg_basebackup', '-D', $backup_path, '-h',
-		$self->host,     '-p', $self->port,  '--checkpoint',
-		'fast',          '--no-sync',
+		'pg_basebackup', '-D',
+		$backup_path,    '-h',
+		$self->host,     '-p',
+		$self->port,     '--checkpoint',
+		'fast', ($self->_backup_sync),
 		@{ $params{backup_options} });
 	print "# Backup finished\n";
 	return;
 }
+
+sub _backup_sync { return ('--no-sync'); }
 
 =item $node->backup_fs_hot(backup_name)
 
@@ -708,9 +804,10 @@ sub init_from_backup
 		TestLib::system_or_bail($params{tar_program}, 'xf',
 			$backup_path . '/base.tar',
 			'-C', $data_path);
-		TestLib::system_or_bail($params{tar_program}, 'xf',
-			$backup_path . '/pg_wal.tar',
-			'-C', $data_path . '/pg_wal');
+		TestLib::system_or_bail(
+			$params{tar_program},         'xf',
+			$backup_path . '/pg_wal.tar', '-C',
+			$data_path . '/pg_wal');
 	}
 	else
 	{
@@ -725,6 +822,18 @@ sub init_from_backup
 		qq(
 port = $port
 ));
+	$self->_init_network_append($use_tcp, $host);
+
+	$self->enable_streaming($root_node) if $params{has_streaming};
+	$self->enable_restoring($root_node, $params{standby})
+	  if $params{has_restoring};
+	return;
+}
+
+sub _init_network_append
+{
+	my ($self, $use_tcp, $host) = @_;
+
 	if ($use_tcp)
 	{
 		$self->append_conf('postgresql.conf', "listen_addresses = '$host'");
@@ -734,10 +843,6 @@ port = $port
 		$self->append_conf('postgresql.conf',
 			"unix_socket_directories = '$host'");
 	}
-	$self->enable_streaming($root_node) if $params{has_streaming};
-	$self->enable_restoring($root_node, $params{standby})
-	  if $params{has_restoring};
-	return;
 }
 
 =pod
@@ -797,8 +902,8 @@ sub start
 
 	# Note: We set the cluster_name here, not in postgresql.conf (in
 	# sub init) so that it does not get copied to standbys.
-	$ret = TestLib::system_log('pg_ctl', '-D', $self->data_dir, '-l',
-		$self->logfile, '-o', "--cluster-name=$name", 'start');
+	$ret = TestLib::system_log('pg_ctl', '-w', '-D', $self->data_dir, '-l',
+		$self->logfile, ($self->_cluster_name_opt($name)), 'start');
 
 	if ($ret != 0)
 	{
@@ -810,6 +915,12 @@ sub start
 
 	$self->_update_pid(1);
 	return 1;
+}
+
+sub _cluster_name_opt
+{
+	my ($self, $name) = @_;
+	return ('-o', "--cluster-name=$name");
 }
 
 =pod
@@ -911,7 +1022,7 @@ sub restart
 
 	print "### Restarting node \"$name\"\n";
 
-	TestLib::system_or_bail('pg_ctl', '-D', $pgdata, '-l', $logfile,
+	TestLib::system_or_bail('pg_ctl', '-w', '-D', $pgdata, '-l', $logfile,
 		'restart');
 
 	$self->_update_pid(1);
@@ -975,12 +1086,14 @@ sub enable_streaming
 
 	print "### Enabling streaming replication for node \"$name\"\n";
 	$self->append_conf(
-		'postgresql.conf', qq(
-primary_conninfo='$root_connstr'
+		$self->_recovery_file, qq(
+primary_conninfo='$root_connstr application_name=$name'
 ));
 	$self->set_standby_mode();
 	return;
 }
+
+sub _recovery_file { return "postgresql.conf"; }
 
 # Internal routine to enable archive recovery command on a standby node
 sub enable_restoring
@@ -1004,7 +1117,7 @@ sub enable_restoring
 	  : qq{cp "$path/%f" "%p"};
 
 	$self->append_conf(
-		'postgresql.conf', qq(
+		$self->_recovery_file, qq(
 restore_command = '$copy_command'
 ));
 	if ($standby)
@@ -1196,7 +1309,64 @@ sub get_new_node
 	# Add node to list of nodes
 	push(@all_nodes, $node);
 
+	# Set the version of Postgres we're working with
+	$node->_set_pg_version;
+
+	# bless the object into the appropriate subclass,
+	# according to the found version
+	if (ref $node->{_pg_version} && $node->{_pg_version} < $devtip)
+	{
+		my $maj      = $node->{_pg_version}->major(separator => '_');
+		my $subclass = __PACKAGE__ . "V_$maj";
+		bless $node, $subclass;
+	}
+
 	return $node;
+}
+
+# Private routine to run the pg_config binary found in our environment (or in
+# our install_path, if we have one), and set the version from it
+#
+sub _set_pg_version
+{
+	my ($self)    = @_;
+	my $inst      = $self->{_install_path};
+	my $pg_config = "pg_config";
+
+	if (defined $inst)
+	{
+		# If the _install_path is invalid, our PATH variables might find an
+		# unrelated pg_config executable elsewhere.  Sanity check the
+		# directory.
+		BAIL_OUT("directory not found: $inst")
+		  unless -d $inst;
+
+		# If the directory exists but is not the root of a postgresql
+		# installation, or if the user configured using
+		# --bindir=$SOMEWHERE_ELSE, we're not going to find pg_config, so
+		# complain about that, too.
+		$pg_config = "$inst/bin/pg_config";
+		BAIL_OUT("pg_config not found: $pg_config")
+		  unless -e $pg_config;
+		BAIL_OUT("pg_config not executable: $pg_config")
+		  unless -x $pg_config;
+
+		# Leave $pg_config install_path qualified, to be sure we get the right
+		# version information, below, or die trying
+	}
+
+	local %ENV = $self->_get_env();
+
+	# We only want the version field
+	open my $fh, "-|", $pg_config, "--version"
+	  or BAIL_OUT("$pg_config failed: $!");
+	my $version_line = <$fh>;
+	close $fh or die;
+
+	$self->{_pg_version} = PostgresVersion->new($version_line);
+
+	BAIL_OUT("could not parse pg_config --version output: $version_line")
+	  unless defined $self->{_pg_version};
 }
 
 # Private routine to return a copy of the environment with the PATH and
@@ -1271,6 +1441,28 @@ sub _get_env
 	return (%inst_env);
 }
 
+# Private routine to get an installation path qualified command.
+#
+# IPC::Run maintains a cache, %cmd_cache, mapping commands to paths.  Tests
+# which use nodes spanning more than one postgres installation path need to
+# avoid confusing which installation's binaries get run.  Setting $ENV{PATH} is
+# insufficient, as IPC::Run does not check to see if the path has changed since
+# caching a command.
+sub installed_command
+{
+	my ($self, $cmd) = @_;
+
+	# Nodes using alternate installation locations use their installation's
+	# bin/ directory explicitly
+	return join('/', $self->{_install_path}, 'bin', $cmd)
+	  if defined $self->{_install_path};
+
+	# Nodes implicitly using the default installation location rely on IPC::Run
+	# to find the right binary, which should not cause %cmd_cache confusion,
+	# because no nodes with other installation paths do it that way.
+	return $cmd;
+}
+
 =pod
 
 =item get_free_port()
@@ -1310,19 +1502,21 @@ sub get_free_port
 		# Check to see if anything else is listening on this TCP port.
 		# Seek a port available for all possible listen_addresses values,
 		# so callers can harness this port for the widest range of purposes.
-		# The 0.0.0.0 test achieves that for post-2006 Cygwin, which
-		# automatically sets SO_EXCLUSIVEADDRUSE.  The same holds for MSYS (a
-		# Cygwin fork).  Testing 0.0.0.0 is insufficient for Windows native
-		# Perl (https://stackoverflow.com/a/14388707), so we also test
-		# individual addresses.
+		# The 0.0.0.0 test achieves that for MSYS, which automatically sets
+		# SO_EXCLUSIVEADDRUSE.  Testing 0.0.0.0 is insufficient for Windows
+		# native Perl (https://stackoverflow.com/a/14388707), so we also
+		# have to test individual addresses.  Doing that for 127.0.0/24
+		# addresses other than 127.0.0.1 might fail with EADDRNOTAVAIL on
+		# non-Linux, non-Windows kernels.
 		#
-		# On non-Linux, non-Windows kernels, binding to 127.0.0/24 addresses
-		# other than 127.0.0.1 might fail with EADDRNOTAVAIL.  Binding to
-		# 0.0.0.0 is unnecessary on non-Windows systems.
+		# Thus, 0.0.0.0 and individual 127.0.0/24 addresses are tested
+		# only on Windows and only when TCP usage is requested.
 		if ($found == 1)
 		{
 			foreach my $addr (qw(127.0.0.1),
-				$use_tcp ? qw(127.0.0.2 127.0.0.3 0.0.0.0) : ())
+				($use_tcp && $TestLib::windows_os)
+				  ? qw(127.0.0.2 127.0.0.3 0.0.0.0)
+				  : ())
 			{
 				if (!can_bind($addr, $port))
 				{
@@ -1516,6 +1710,14 @@ is set to true if the psql call times out.
 If set, use this as the connection string for the connection to the
 backend.
 
+=item host => B<value>
+
+If this parameter is set, this host is used for the connection attempt.
+
+=item port => B<port>
+
+If this parameter is set, this port is used for the connection attempt.
+
 =item replication => B<value>
 
 If set, add B<replication=value> to the conninfo string.
@@ -1568,7 +1770,16 @@ sub psql
 	}
 	$psql_connstr .= defined $replication ? " replication=$replication" : "";
 
-	my @psql_params = ('psql', '-XAtq', '-d', $psql_connstr, '-f', '-');
+	my @no_password = ('-w') if ($params{no_password});
+
+	my @host = ('-h', $params{host})
+	  if defined $params{host};
+	my @port = ('-p', $params{port})
+	  if defined $params{port};
+
+	my @psql_params = (
+		$self->installed_command('psql'),
+		'-XAtq', @no_password, @host, @port, '-d', $psql_connstr, '-f', '-');
 
 	# If the caller wants an array and hasn't passed stdout/stderr
 	# references, allocate temporary ones to capture them so we
@@ -1754,7 +1965,7 @@ sub background_psql
 	my $replication = $params{replication};
 
 	my @psql_params = (
-		'psql',
+		$self->installed_command('psql'),
 		'-XAtq',
 		'-d',
 		$self->connstr($dbname)
@@ -1831,7 +2042,9 @@ sub interactive_psql
 
 	local %ENV = $self->_get_env();
 
-	my @psql_params = ('psql', '-XAt', '-d', $self->connstr($dbname));
+	my @psql_params = (
+		$self->installed_command('psql'),
+		'-XAt', '-d', $self->connstr($dbname));
 
 	push @psql_params, @{ $params{extra_params} }
 	  if defined $params{extra_params};
@@ -1860,47 +2073,173 @@ sub interactive_psql
 
 =pod
 
-=item $node->connect_ok($connstr, $test_name)
+=item $node->connect_ok($connstr, $test_name, %params)
 
 Attempt a connection with a custom connection string.  This is expected
 to succeed.
+
+=over
+
+=item sql => B<value>
+
+If this parameter is set, this query is used for the connection attempt
+instead of the default.
+
+=item expected_stdout => B<value>
+
+If this regular expression is set, matches it with the output generated.
+
+=item log_like => [ qr/required message/ ]
+
+If given, it must be an array reference containing a list of regular
+expressions that must match against the server log, using
+C<Test::More::like()>.
+
+=item log_unlike => [ qr/prohibited message/ ]
+
+If given, it must be an array reference containing a list of regular
+expressions that must NOT match against the server log.  They will be
+passed to C<Test::More::unlike()>.
+
+=item host => B<value>
+
+If this parameter is set, this host is used for the connection attempt.
+
+=item port => B<port>
+
+If this parameter is set, this port is used for the connection attempt.
+
+=back
 
 =cut
 
 sub connect_ok
 {
 	local $Test::Builder::Level = $Test::Builder::Level + 1;
-	my ($self, $connstr, $test_name) = @_;
-	my ($ret,  $stdout,  $stderr)    = $self->psql(
+	my ($self, $connstr, $test_name, %params) = @_;
+
+	my $sql;
+	if (defined($params{sql}))
+	{
+		$sql = $params{sql};
+	}
+	else
+	{
+		$sql = "SELECT \$\$connected with $connstr\$\$";
+	}
+
+	my (@log_like, @log_unlike);
+	if (defined($params{log_like}))
+	{
+		@log_like = @{ $params{log_like} };
+	}
+	if (defined($params{log_unlike}))
+	{
+		@log_unlike = @{ $params{log_unlike} };
+	}
+
+	my $log_location = -s $self->logfile;
+
+	# Never prompt for a password, any callers of this routine should
+	# have set up things properly, and this should not block.
+	my ($ret, $stdout, $stderr) = $self->psql(
 		'postgres',
-		"SELECT \$\$connected with $connstr\$\$",
+		$sql,
+		no_password   => 1,
+		host          => $params{host},
+		port          => $params{port},
 		connstr       => "$connstr",
 		on_error_stop => 0);
 
-	ok($ret == 0, $test_name);
+	is($ret, 0, $test_name);
+
+	if (defined($params{expected_stdout}))
+	{
+		like($stdout, $params{expected_stdout}, "$test_name: matches");
+	}
+	if (@log_like or @log_unlike)
+	{
+		my $log_contents = TestLib::slurp_file($self->logfile, $log_location);
+
+		while (my $regex = shift @log_like)
+		{
+			like($log_contents, $regex, "$test_name: log matches");
+		}
+		while (my $regex = shift @log_unlike)
+		{
+			unlike($log_contents, $regex, "$test_name: log does not match");
+		}
+	}
 }
 
 =pod
 
-=item $node->connect_fails($connstr, $expected_stderr, $test_name)
+=item $node->connect_fails($connstr, $test_name, %params)
 
 Attempt a connection with a custom connection string.  This is expected
-to fail with a message that matches the regular expression
-$expected_stderr.
+to fail.
+
+=over
+
+=item expected_stderr => B<value>
+
+If this regular expression is set, matches it with the output generated.
+
+=item log_like => [ qr/required message/ ]
+
+=item log_unlike => [ qr/prohibited message/ ]
+
+See C<connect_ok(...)>, above.
+
+=back
 
 =cut
 
 sub connect_fails
 {
 	local $Test::Builder::Level = $Test::Builder::Level + 1;
-	my ($self, $connstr, $expected_stderr, $test_name) = @_;
+	my ($self, $connstr, $test_name, %params) = @_;
+
+	my (@log_like, @log_unlike);
+	if (defined($params{log_like}))
+	{
+		@log_like = @{ $params{log_like} };
+	}
+	if (defined($params{log_unlike}))
+	{
+		@log_unlike = @{ $params{log_unlike} };
+	}
+
+	my $log_location = -s $self->logfile;
+
+	# Never prompt for a password, any callers of this routine should
+	# have set up things properly, and this should not block.
 	my ($ret, $stdout, $stderr) = $self->psql(
 		'postgres',
-		"SELECT \$\$connected with $connstr\$\$",
-		connstr => "$connstr");
+		undef,
+		extra_params => ['-w'],
+		connstr      => "$connstr");
 
-	ok($ret != 0, $test_name);
-	like($stderr, $expected_stderr, "$test_name: matches");
+	isnt($ret, 0, $test_name);
+
+	if (defined($params{expected_stderr}))
+	{
+		like($stderr, $params{expected_stderr}, "$test_name: matches");
+	}
+
+	if (@log_like or @log_unlike)
+	{
+		my $log_contents = TestLib::slurp_file($self->logfile, $log_location);
+
+		while (my $regex = shift @log_like)
+		{
+			like($log_contents, $regex, "$test_name: log matches");
+		}
+		while (my $regex = shift @log_unlike)
+		{
+			unlike($log_contents, $regex, "$test_name: log does not match");
+		}
+	}
 }
 
 =pod
@@ -1923,7 +2262,10 @@ sub poll_query_until
 
 	$expected = 't' unless defined($expected);    # default value
 
-	my $cmd = [ 'psql', '-XAt', '-c', $query, '-d', $self->connstr($dbname) ];
+	my $cmd = [
+		$self->installed_command('psql'),
+		'-XAt', '-c', $query, '-d', $self->connstr($dbname)
+	];
 	my ($stdout, $stderr);
 	my $max_attempts = 180 * 10;
 	my $attempts     = 0;
@@ -2050,9 +2392,6 @@ sub command_checks_all
 Run a command on the node, then verify that $expected_sql appears in the
 server log file.
 
-Reads the whole log file so be careful when working with large log outputs.
-The log file is truncated prior to running the command, however.
-
 =cut
 
 sub issues_sql_like
@@ -2063,10 +2402,11 @@ sub issues_sql_like
 
 	local %ENV = $self->_get_env();
 
-	truncate $self->logfile, 0;
+	my $log_location = -s $self->logfile;
+
 	my $result = TestLib::run_log($cmd);
 	ok($result, "@$cmd exit code 0");
-	my $log = TestLib::slurp_file($self->logfile);
+	my $log = TestLib::slurp_file($self->logfile, $log_location);
 	like($log, $expected_sql, "$test_name: SQL found in server log");
 	return;
 }
@@ -2109,13 +2449,7 @@ mode must be specified.
 sub lsn
 {
 	my ($self, $mode) = @_;
-	my %modes = (
-		'insert'  => 'pg_current_wal_insert_lsn()',
-		'flush'   => 'pg_current_wal_flush_lsn()',
-		'write'   => 'pg_current_wal_lsn()',
-		'receive' => 'pg_last_wal_receive_lsn()',
-		'replay'  => 'pg_last_wal_replay_lsn()');
-
+	my %modes = $self->_lsn_mode_map;
 	$mode = '<undef>' if !defined($mode);
 	croak "unknown mode for 'lsn': '$mode', valid modes are "
 	  . join(', ', keys %modes)
@@ -2131,6 +2465,16 @@ sub lsn
 	{
 		return $result;
 	}
+}
+
+sub _lsn_mode_map
+{
+	return (
+		'insert'  => 'pg_current_wal_insert_lsn()',
+		'flush'   => 'pg_current_wal_flush_lsn()',
+		'write'   => 'pg_current_wal_lsn()',
+		'receive' => 'pg_last_wal_receive_lsn()',
+		'replay'  => 'pg_last_wal_replay_lsn()');
 }
 
 =pod
@@ -2179,8 +2523,10 @@ sub wait_for_catchup
 	}
 	else
 	{
-		$lsn_expr = 'pg_current_wal_lsn()';
+		my %funcmap = $self->_lsn_mode_map;
+		$lsn_expr = $funcmap{write};
 	}
+	my $suffix = $self->_replication_suffix;
 	print "Waiting for replication conn "
 	  . $standby_name . "'s "
 	  . $mode
@@ -2188,12 +2534,15 @@ sub wait_for_catchup
 	  . $lsn_expr . " on "
 	  . $self->name . "\n";
 	my $query =
-	  qq[SELECT $lsn_expr <= ${mode}_lsn AND state = 'streaming' FROM pg_catalog.pg_stat_replication WHERE application_name = '$standby_name';];
+	  qq[SELECT $lsn_expr <= ${mode}$suffix AND state = 'streaming' FROM pg_catalog.pg_stat_replication WHERE application_name in ('$standby_name', 'walreceiver');];
 	$self->poll_query_until('postgres', $query)
 	  or croak "timed out waiting for catchup";
 	print "done\n";
 	return;
 }
+
+sub _current_lsn_func   { return "pg_current_wal_lsn"; }
+sub _replication_suffix { return "_lsn"; }
 
 =pod
 
@@ -2345,8 +2694,8 @@ sub pg_recvlogical_upto
 	croak 'endpos must be specified'    unless defined($endpos);
 
 	my @cmd = (
-		'pg_recvlogical', '-S', $slot_name, '--dbname',
-		$self->connstr($dbname));
+		$self->installed_command('pg_recvlogical'),
+		'-S', $slot_name, '--dbname', $self->connstr($dbname));
 	push @cmd, '--endpos', $endpos;
 	push @cmd, '-f', '-', '--no-loop', '--start';
 
@@ -2411,5 +2760,457 @@ sub pg_recvlogical_upto
 =back
 
 =cut
+
+##########################################################################
+#
+# Subclasses.
+#
+# There should be a subclass for each old version supported. The newest
+# (i.e. the one for the latest stable release) should inherit from the
+# PostgresNode class. Each other subclass should inherit from the subclass
+# repesenting the immediately succeeding stable release.
+#
+# The name must be PostgresNodeV_nn{_nn} where V_nn_{_nn} corresonds to the
+# release number (e.g. V_12 for release 12 or V_9_6 fpr release 9.6.)
+# PostgresNode knows about this naming convention and blesses each node
+# into the appropriate subclass.
+#
+# Each time a new stable release branch is made a subclass should be added
+# that inherits from PostgresNode, and be made the parent of the previous
+# subclass that inherited from PostgresNode.
+#
+# An empty package means that there are no differences that need to be
+# handled between this release and the later release.
+#
+##########################################################################
+
+package PostgresNodeV_13;    ## no critic (ProhibitMultiplePackages)
+
+use parent -norequire, qw(PostgresNode);
+
+# https://www.postgresql.org/docs/10/release-13.html
+
+##########################################################################
+
+package PostgresNodeV_12;    ## no critic (ProhibitMultiplePackages)
+
+use parent -norequire, qw(PostgresNodeV_13);
+
+# https://www.postgresql.org/docs/12/release-12.html
+
+##########################################################################
+
+package PostgresNodeV_11;    ## no critic (ProhibitMultiplePackages)
+
+use parent -norequire, qw(PostgresNodeV_12);
+
+# https://www.postgresql.org/docs/11/release-11.html
+
+# max_wal_senders + superuser_reserved_connections must be < max_connections
+# uses recovery.conf
+
+sub _recovery_file { return "recovery.conf"; }
+
+sub set_standby_mode
+{
+	my $self = shift;
+	$self->append_conf("recovery.conf", "standby_mode = on\n");
+}
+
+
+sub init
+{
+	my ($self, %params) = @_;
+	$self->SUPER::init(%params);
+	$self->adjust_conf('postgresql.conf', 'max_wal_senders',
+					  $params{allows_streaming} ? 5 : 0);
+}
+
+##########################################################################
+
+package PostgresNodeV_10;    ## no critic (ProhibitMultiplePackages)
+
+use parent -norequire, qw(PostgresNodeV_11);
+
+# https://www.postgresql.org/docs/10/release-10.html
+
+##########################################################################
+
+package PostgresNodeV_9_6;    ## no critic (ProhibitMultiplePackages)
+
+use parent -norequire, qw(PostgresNodeV_10);
+
+# https://www.postgresql.org/docs/9.6/release-9-6.html
+
+# no -no-sync option for pg_basebackup
+# replication conf is a bit different too
+# lsn function names are different
+
+sub _backup_sync { return (); }
+
+sub set_replication_conf
+{
+	my ($self) = @_;
+	my $pgdata = $self->data_dir;
+
+	$self->host eq $test_pghost
+	  or die "set_replication_conf only works with the default host";
+
+	open my $hba, ">>$pgdata/pg_hba.conf";
+	print $hba "\n# Allow replication (set up by PostgresNode.pm)\n";
+	if (!$TestLib::windows_os)
+	{
+		print $hba "local replication all trust\n";
+	}
+	else
+	{
+		print $hba
+		  "host replication all $test_localhost/32 sspi include_realm=1 map=regress\n";
+	}
+	close $hba;
+}
+
+sub _lsn_mode_map
+{
+	return (
+		'insert'  => 'pg_current_xlog_insert_location()',
+		'flush'   => 'pg_current_xlog_flush_location()',
+		'write'   => 'pg_current_xlog_location()',
+		'receive' => 'pg_last_xlog_receive_location()',
+		'replay'  => 'pg_last_xlog_replay_location()');
+}
+
+sub _replication_suffix { return "_location"; }
+
+##########################################################################
+
+package PostgresNodeV_9_5;    ## no critic (ProhibitMultiplePackages)
+
+use parent -norequire, qw(PostgresNodeV_9_6);
+
+# https://www.postgresql.org/docs/9.5/release-9-5.html
+
+# no wal_level = replica
+
+sub init
+{
+	my ($self, %params) = @_;
+	$self->SUPER::init(%params);
+	$self->adjust_conf('postgresql.conf', 'wal_level', 'hot_standby')
+	  if $params{allows_streaming};
+}
+
+##########################################################################
+
+package PostgresNodeV_9_4;    ## no critic (ProhibitMultiplePackages)
+
+use Test::More;
+use parent -norequire, qw(PostgresNodeV_9_5);
+
+# https://www.postgresql.org/docs/9.4/release-9-4.html
+
+# no log_replication_commands
+# no wal_retrieve_retry_interval
+# no cluster_name
+
+sub init
+{
+	my ($self, %params) = @_;
+	$self->SUPER::init(%params);
+	$self->adjust_conf('postgresql.conf', 'log_replication_commands', undef);
+	$self->adjust_conf('postgresql.conf', 'wal_retrieve_retry_interval',
+		undef);
+	$self->adjust_conf('postgresql.conf', 'max_wal_size', undef);
+}
+
+sub _cluster_name_opt { return (); }
+
+##########################################################################
+
+package PostgresNodeV_9_3;    ## no critic (ProhibitMultiplePackages)
+
+use Test::More;
+use parent -norequire, qw(PostgresNodeV_9_4);
+
+# https://www.postgresql.org/docs/9.3/release-9-3.html
+
+# no logical replication, so no logical streaming
+
+sub init
+{
+	my ($self, %params) = @_;
+	$self->SUPER::init(%params);
+	$self->adjust_conf('postgresql.conf', 'max_replication_slots', undef);
+	$self->adjust_conf('postgresql.conf', 'wal_log_hints',         undef);
+}
+
+sub _init_streaming
+{
+	my ($self, $conf, $allows_streaming) = @_;
+
+	BAIL_OUT("Server Version too old for logical replication")
+	  if ($allows_streaming eq "logical");
+	$self->SUPER::_init_streaming($conf, $allows_streaming);
+}
+
+
+##########################################################################
+
+package PostgresNodeV_9_2;    ## no critic (ProhibitMultiplePackages)
+
+use parent -norequire, qw(PostgresNodeV_9_3);
+
+# https://www.postgresql.org/docs/9.3/release-9-2.html
+
+# no -N flag to initdb
+# socket location is in unix_socket_directory
+
+sub _initdb_flags { return ('-A', 'trust'); }
+
+sub _init_network
+{
+	my ($self, $conf, $use_tcp, $host) = @_;
+
+	if ($use_tcp)
+	{
+		print $conf "unix_socket_directory = ''\n";
+		print $conf "listen_addresses = '$host'\n";
+	}
+	else
+	{
+		print $conf "unix_socket_directory = '$host'\n";
+		print $conf "listen_addresses = ''\n";
+	}
+}
+
+sub _init_network_append
+{
+	my ($self, $use_tcp, $host) = @_;
+
+	if ($use_tcp)
+	{
+		$self->append_conf('postgresql.conf', "listen_addresses = '$host'");
+	}
+	else
+	{
+		$self->append_conf('postgresql.conf',
+			"unix_socket_directory = '$host'");
+	}
+}
+
+
+##########################################################################
+
+package PostgresNodeV_9_1;    ## no critic (ProhibitMultiplePackages)
+
+use parent -norequire, qw(PostgresNodeV_9_2);
+
+# https://www.postgresql.org/docs/9.3/release-9-1.html
+
+##########################################################################
+
+package PostgresNodeV_9_0;    ## no critic (ProhibitMultiplePackages)
+
+use Test::More;
+use parent -norequire, qw(PostgresNodeV_9_1);
+
+# https://www.postgresql.org/docs/9.3/release-9-0.html
+
+# no wal_senders setting
+# no pg_basebackup
+# can't turn off restart after crash
+
+sub init
+{
+	my ($self, @args) = @_;
+	$self->SUPER::init(@args);
+	$self->adjust_conf('postgresql.conf', 'restart_after_crash', undef);
+	$self->adjust_conf('postgresql.conf', 'wal_senders',         undef);
+}
+
+sub _init_restart_after_crash { return ""; }
+
+sub backup
+{
+	BAIL_OUT("Server version too old for backup function");
+}
+
+sub init_from_backup
+{
+	BAIL_OUT("Server version too old for init_from_backup function");
+}
+
+##########################################################################
+
+package PostgresNodeV_8_4;    ## no critic (ProhibitMultiplePackages)
+
+use parent -norequire, qw(PostgresNodeV_9_0);
+
+# https://www.postgresql.org/docs/9.3/release-8-4.html
+
+# no wal_level setting
+# no streaming
+
+sub _init_wal_level_minimal
+{
+	# do nothing
+}
+
+sub _init_streaming
+{
+	my ($self, $conf, $allows_streaming) = @_;
+
+	BAIL_OUT("Server Version too old for streaming replication");
+}
+
+##########################################################################
+
+package PostgresNodeV_8_3;    ## no critic (ProhibitMultiplePackages)
+
+use parent -norequire, qw(PostgresNodeV_8_4);
+
+# https://www.postgresql.org/docs/9.3/release-8-3.html
+
+# no stats_temp_directory setting
+# no -w flag for psql
+
+sub init
+{
+	my ($self, @args) = @_;
+	$self->SUPER::init(@args);
+	$self->adjust_conf('postgresql.conf', 'stats_temp_directory', undef);
+}
+
+sub psql
+{
+	my ($self, $dbname, $sql, %params) = @_;
+
+	local $ENV{PGPASSWORD};
+
+	if ($params{no_password})
+	{
+		# since there is no -w flag for psql here, we try to
+		# inhibit a password prompt by setting PGPASSWORD instead
+		$ENV{PGPASSWORD} = 'no_such_password_12345';
+		delete $params{no_password};
+	}
+
+	$self->SUPER::psql($dbname, $sql, %params);
+}
+
+##########################################################################
+
+package PostgresNodeV_8_2;    ## no critic (ProhibitMultiplePackages)
+
+use Test::More;
+use parent -norequire, qw(PostgresNodeV_8_3);
+
+
+# https://www.postgresql.org/docs/9.3/release-8-2.html
+
+# no support for connstr with =
+
+sub psql
+{
+	my ($self, $dbname, $sql, %params) = @_;
+
+	my $connstr = $params{connstr};
+
+	BAIL_OUT("Server version too old: complex connstr with = not supported")
+	  if (defined($connstr) && $connstr =~ /=/);
+
+	# Handle the simple common case where there's no explicit connstr
+	$params{host} ||= $self->host;
+	$params{port} ||= $self->port;
+	# Supply this so the superclass doesn't try to construct a connstr
+	$params{connstr} ||= $dbname;
+
+	$self->SUPER::psql($dbname, $sql, %params);
+}
+
+##########################################################################
+
+package PostgresNodeV_8_1;    ## no critic (ProhibitMultiplePackages)
+
+use parent -norequire, qw(PostgresNodeV_8_2);
+
+# https://www.postgresql.org/docs/9.3/release-8-1.html
+
+##########################################################################
+
+package PostgresNodeV_8_0;    ## no critic (ProhibitMultiplePackages)
+
+use parent -norequire, qw(PostgresNodeV_8_1);
+
+# https://www.postgresql.org/docs/9.3/release-8-0.html
+
+##########################################################################
+
+package PostgresNodeV_7_4;    ## no critic (ProhibitMultiplePackages)
+
+use parent -norequire, qw(PostgresNodeV_8_0);
+
+# https://www.postgresql.org/docs/9.3/release-7-4.html
+
+# no '-A trust' for initdb
+# no log_line_prefix
+# no 'log_statement = all' (only 'on')
+# no listen_addresses - use tcpip_socket and virtual_host instead
+# no archiving
+
+sub _initdb_flags { return (); }
+
+sub init
+{
+	my ($self, @args) = @_;
+	$self->SUPER::init(@args);
+	$self->adjust_conf('postgresql.conf', 'log_line_prefix', undef);
+	$self->adjust_conf('postgresql.conf', 'log_statement',   'on');
+}
+
+sub _init_network
+{
+	my ($self, $conf, $use_tcp, $host) = @_;
+
+	if ($use_tcp)
+	{
+		print $conf "unix_socket_directory = ''\n";
+		print $conf "virtual_host = '$host'\n";
+		print $conf "tcpip_socket = true\n";
+	}
+	else
+	{
+		print $conf "unix_socket_directory = '$host'\n";
+	}
+}
+
+
+##########################################################################
+
+package PostgresNodeV_7_3;    ## no critic (ProhibitMultiplePackages)
+
+use parent -norequire, qw(PostgresNodeV_7_4);
+
+# https://www.postgresql.org/docs/9.3/release-7-3.html
+
+##########################################################################
+
+package PostgresNodeV_7_2;    ## no critic (ProhibitMultiplePackages)
+
+use parent -norequire, qw(PostgresNodeV_7_3);
+
+# https://www.postgresql.org/docs/9.3/release-7-2.html
+
+# no log_statement
+
+sub init
+{
+	my ($self, @args) = @_;
+	$self->SUPER::init(@args);
+	$self->adjust_conf('postgresql.conf', 'log_statement', undef);
+}
+
+##########################################################################
+# traditional module 'value'
 
 1;

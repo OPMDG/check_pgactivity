@@ -29,16 +29,11 @@ Debian 9 & 10:
 The tests must be run from the root folder of the project using `perl` or
 `prove`.
 
-Because they rely on some perl other modules imported from PostgreSQL, we have
-to "fake" PG_REGRESS used in these module, but useless for our tests. you'll
-need to set `PG_REGRESS=true` in your environment.
-
 The tests are run against the PostgreSQL version available in your `PATH` and
 reported by `pg_config --version`.
 
 ~~~console
 check_pgactivity$ export PATH="/usr/pgsql-13/bin:$PATH"
-check_pgactivity$ export PG_REGRESS=true
 check_pgactivity$ perl t/01-connection.t
 1..8
 ok 1 - connection successful status (got 0 vs expected 0)
@@ -63,7 +58,7 @@ Result: PASS
 
 # Logs
 
-If tests are failing, log files are kept under `tmp_check/` folder.
+If tests are failing, log files are kept under `tmp_check/log` folder.
 
 ~~~
 # regression tests log
@@ -81,10 +76,10 @@ The typical boilerplate to create a new test file is:
 
 ~~~perl
 use lib 't/lib';
-use pgaTester;
+use pgNode;
 
 # declare instance named "prod"
-my $node = pgaTester->get_new_node('prod');
+my $node = pgNode->get_new_node('prod');
 
 # create the instance and start it
 $node->init;
@@ -109,22 +104,20 @@ $node->command_checks_all( [
 $node->stop;
 ~~~
 
-Class `pgaTester` is factory class creating and returning the appropriate
+Class `pgNode` is facet class creating and returning the appropriate
 PostgresNode object depending on the PostgreSQL backend version returned by
-`pg_config --version`. Each backend version has its own `PostgresNodeXX` class
-indirectly inheriting from the PostgresNode class and overriding some methods
-for compatibility purpose.
-
-The inheritance chain is:
-`PostgresNodeXX -> PostgresNodeYY -> ... -> PostgresNodeFacet -> PostgresNode`
+`pg_config --version`. It helps extending the PostgresNode classes with
+new methods needed in our tests.
 
 Class PostgresNode comes straight from latest PostgreSQL source code and
-should not be patched. Any changes or methods addition must be done in
-PostgresNodeFacet.
+should not be patched, or just for bug fix, as long as the bug fix is declared
+upstream. Any changes or methods addition must be done in pgNode. Note that
+current source code of PostgresNode comes from its own repository:
+https://gitlab.com/adunstan/postgresnodeng/
 
 The PostgresNode class and methods are described in its embedded documentation.
 See: `perldoc t/lib/PostgresNode.pm`. Any method addition and other changes are
-documented in PostgresNodeFacet class. See: `perldoc t/lib/PostgresNodeFacet.pm`
+documented in pgNode class. See: `perldoc t/lib/pgNode.pm`
 
 Some of the methods in these classes are just wrappers around functions coming
 from TestLib, but adding some environment context of the instance (eg. setting

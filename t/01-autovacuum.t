@@ -8,10 +8,10 @@ use strict;
 use warnings;
 
 use lib 't/lib';
-use pgaTester;
+use pgNode;
 use Test::More;
 
-my $node      = pgaTester->get_new_node('prod');
+my $node      = pgNode->get_new_node('prod');
 my $num_tests = 12;
 my $wal;
 

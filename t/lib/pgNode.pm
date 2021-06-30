@@ -8,7 +8,7 @@
 
 =head1 NAME
 
-PostgresNodeFacet - facet class extending PostgresNode for check_pgactivity tests
+pgNode - facet class extending PostgresNode for check_pgactivity tests
 
 =head1 DESCRIPTION
 
@@ -20,28 +20,54 @@ See PostgresNode documentation for original methods.
 
 =cut
 
-package PostgresNodeFacet;
+package pgNode;
 
 use strict;
 use warnings;
 
 use Test::More;
 use Time::HiRes qw(usleep);
-use parent 'PostgresNode';
+use Cwd 'cwd';
+
+use PostgresNode;
+
+BEGIN {
+    # set environment vars
+    $ENV{'PG_REGRESS'} = "/bin/true";
+    $ENV{'TESTDIR'}    = cwd;
+    delete $ENV{'PAGER'};
+}
 
 sub new {
     my $class = shift;
-    my $self;
+    my $self = {};
 
-    $self = $class->SUPER::new(@_);
+    $self->{'node'} = PostgresNode->get_new_node(@_);
 
-    $self->{test_pghost}    = $PostgresNode::test_pghost;
-    $self->{test_localhost} = $PostgresNode::test_localhost;
-    $self->{use_tcp}        = $PostgresNode::use_tcp;
+    bless $self, $class;
+
+    note('Node "', $self->{'node'}->name, '" uses version: ', $self->version);
 
     return $self;
 }
 
+sub AUTOLOAD {
+    our $AUTOLOAD;
+    my $subname = $AUTOLOAD;
+    my $self    = shift;
+
+    $subname =~ s/^pgNode:://;
+
+    return $self->{'node'}->$subname(@_);
+}
+
+# Overload wait_for_catchup to pass the PostgresNode object as param
+sub wait_for_catchup {
+    my $self = shift;
+    my $stb = shift;
+
+    $self->{'node'}->wait_for_catchup($stb->{'node'}, @_);
+}
 
 =pod
 
@@ -51,48 +77,6 @@ Bellow the changes and new methods implemented in this facet.
 
 =over
 
-=item $node->is_default_host()
-
-Return true if the instance host is the default class one.
-
-By default, the class create and access the instance through a unix socket with
-a pseudo-randomly chosen port.
-
-This methode return false if the instance has been created with specific
-host and port.
-
-=cut
-
-sub is_default_host { return $_[0]->host eq $_[0]->{test_pghost} }
-
-=pod
-
-=item $node->test_localhost()
-
-Getter method returning the C<test_localhost> attribute of the PostgresNode
-class.
-
-This attribute is just the localhost address used for tests when sensible.
-
-=cut
-
-sub test_localhost { return $_[0]->{test_localhost} }
-
-=pod
-
-=item $node->use_tcp()
-
-Getter method returning the C<use_tcp> attribute of the PostgresNode class.
-
-Return true if the node is listening on TCP, false if listening on unix
-sockets.
-
-=cut
-
-sub use_tcp { return $_[0]->{use_tcp} }
-
-=pod
-
 =item $node->version()
 
 Return the PostgreSQL backend version.
@@ -100,7 +84,8 @@ Return the PostgreSQL backend version.
 =cut
 
 sub version {
-    die "PostgresNodeFacet must not be used directly to create an object"
+    return $_[0]->{'node'}->{_pg_version};
+    #die "pgNode must not be used directly to create an object"
 }
 
 =item $node->switch_wal()
@@ -113,9 +98,16 @@ Return the old segment filename.
 
 sub switch_wal {
     my $self = shift;
+    my $result;
 
-    my $result = $self->safe_psql('postgres',
-        'SELECT pg_walfile_name(pg_switch_wal())');
+    if ($self->version > '9.6') {
+        $result = $self->safe_psql('postgres',
+            'SELECT pg_walfile_name(pg_switch_wal())');
+    }
+    else {
+        $result = $self->safe_psql('postgres',
+            'SELECT pg_xlogfile_name(pg_switch_xlog())');
+    }
 
     chomp $result;
 
@@ -123,7 +115,7 @@ sub switch_wal {
     return $result;
 }
 
-=item $node->switch_wal($wal)
+=item $node->wait_for_archive($wal)
 
 Wait for given C<$wal> to be archived.
 

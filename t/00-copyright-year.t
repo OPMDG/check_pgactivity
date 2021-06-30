@@ -8,7 +8,7 @@ use strict;
 use warnings;
 
 use File::Find;
-use Test::More tests => 28;
+use Test::More;
 
 # Try to catch all copyright mentions in source code and
 # fail if the second part of the year is bad.
@@ -21,7 +21,7 @@ find(
     sub {
         # ignore root
         return if m/^\.+$/;
-        # ignore whole hidden folders
+        # ignore hidden folders
         $File::Find::prune = 1 if -d $File::Find::name and m/^\./;
         push @filelist, $File::Find::name unless m/^\./;
     },
@@ -44,3 +44,5 @@ foreach my $f (@filelist) {
 }
 
 ### End of tests ###
+
+done_testing;

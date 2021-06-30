@@ -8,7 +8,7 @@ use strict;
 use warnings;
 
 use lib 't/lib';
-use pgaTester;
+use pgNode;
 use Test::More;
 
 my $num_tests = 118;
@@ -16,11 +16,12 @@ my $num_tests = 118;
 # we have $num_tests normal tests + three tests for incompatible pg versions
 plan tests => $num_tests + 3;
 
+
 # declare instance named "prim"
-my $prim   = pgaTester->get_new_node('prim');
+my $prim   = pgNode->get_new_node('prim');
 # declare standby instances "sec1" and "sec2" 
-my $stb1   = pgaTester->get_new_node('sec1');
-my $stb2   = pgaTester->get_new_node('sec2');
+my $stb1   = pgNode->get_new_node('sec1');
+my $stb2   = pgNode->get_new_node('sec2');
 my $backup = 'backup'; # backup name
 my $pgversion;
 
@@ -36,7 +37,7 @@ note("primary started");
 SKIP: {
     # "skip" allows to ignore the whole bloc based on the given a condition
     skip "skip non-compatible test on PostgreSQL 9.0 and before", 3
-        unless $prim->version <= 9.0;
+        unless $prim->version <= '9.0';
 
     $prim->command_checks_all( [
         './check_pgactivity', '--service'  => 'streaming_delta',
@@ -53,7 +54,7 @@ SKIP: {
 # Tests for PostreSQL 9.1 and after
 SKIP: {
     skip "these tests requires PostgreSQL 9.1 and after", $num_tests
-        unless $prim->version >= 9.1;
+        unless $prim->version >= '9.1';
 
     # create backup
     $prim->backup($backup);

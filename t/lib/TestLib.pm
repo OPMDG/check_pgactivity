@@ -1,5 +1,5 @@
-# This file comes straight from the PostgreSQL source code.
-# See file t/lib/COPYRIGHT.pgsql for license and copyright details.
+
+# Copyright (c) 2021, PostgreSQL Global Development Group
 
 =pod
 
@@ -45,10 +45,11 @@ package TestLib;
 use strict;
 use warnings;
 
+use Carp;
 use Config;
 use Cwd;
 use Exporter 'import';
-use Fcntl qw(:mode);
+use Fcntl qw(:mode :seek);
 use File::Basename;
 use File::Find;
 use File::Spec;
@@ -69,6 +70,7 @@ our @EXPORT = qw(
   check_mode_recursive
   chmod_recursive
   check_pg_config
+  dir_symlink
   system_or_bail
   system_log
   run_log
@@ -86,10 +88,12 @@ our @EXPORT = qw(
   command_checks_all
 
   $windows_os
+  $is_msys2
   $use_unix_sockets
 );
 
-our ($windows_os, $use_unix_sockets, $tmp_check, $log_path, $test_logfile);
+our ($windows_os, $is_msys2, $use_unix_sockets, $tmp_check, $log_path,
+	$test_logfile);
 
 BEGIN
 {
@@ -100,26 +104,52 @@ BEGIN
 	delete $ENV{LC_ALL};
 	$ENV{LC_MESSAGES} = 'C';
 
-	delete $ENV{PGCONNECT_TIMEOUT};
-	delete $ENV{PGDATA};
-	delete $ENV{PGDATABASE};
-	delete $ENV{PGHOSTADDR};
-	delete $ENV{PGREQUIRESSL};
-	delete $ENV{PGSERVICE};
-	delete $ENV{PGSSLMODE};
-	delete $ENV{PGUSER};
-	delete $ENV{PGPORT};
-	delete $ENV{PGHOST};
-	delete $ENV{PG_COLOR};
+	# This list should be kept in sync with pg_regress.c.
+	my @envkeys = qw (
+	  PGCHANNELBINDING
+	  PGCLIENTENCODING
+	  PGCONNECT_TIMEOUT
+	  PGDATA
+	  PGDATABASE
+	  PGGSSENCMODE
+	  PGGSSLIB
+	  PGHOSTADDR
+	  PGKRBSRVNAME
+	  PGPASSFILE
+	  PGPASSWORD
+	  PGREQUIREPEER
+	  PGREQUIRESSL
+	  PGSERVICE
+	  PGSERVICEFILE
+	  PGSSLCERT
+	  PGSSLCRL
+	  PGSSLCRLDIR
+	  PGSSLKEY
+	  PGSSLMAXPROTOCOLVERSION
+	  PGSSLMINPROTOCOLVERSION
+	  PGSSLMODE
+	  PGSSLROOTCERT
+	  PGSSLSNI
+	  PGTARGETSESSIONATTRS
+	  PGUSER
+	  PGPORT
+	  PGHOST
+	  PG_COLOR
+	);
+	delete @ENV{@envkeys};
 
 	$ENV{PGAPPNAME} = basename($0);
 
 	# Must be set early
 	$windows_os = $Config{osname} eq 'MSWin32' || $Config{osname} eq 'msys';
+	# Check if this environment is MSYS2.
+	$is_msys2 = $^O eq 'msys' && `uname -or` =~ /^[2-9].*Msys/;
+
 	if ($windows_os)
 	{
 		require Win32API::File;
-		Win32API::File->import(qw(createFile OsFHandleOpen CloseHandle));
+		Win32API::File->import(
+			qw(createFile OsFHandleOpen CloseHandle setFilePointer));
 	}
 
 	# Specifies whether to use Unix sockets for test setups.  On
@@ -138,6 +168,10 @@ BEGIN
 =item C<$windows_os>
 
 Set to true when running under Windows, except on Cygwin.
+
+=item C<$is_msys2>
+
+Set to true when running under MSYS2.
 
 =back
 
@@ -265,9 +299,10 @@ sub tempdir_short
 
 =item perl2host()
 
-Translate a Perl file name to a host file name.  Currently, this is a no-op
+Translate a virtual file name to a host file name.  Currently, this is a no-op
 except for the case of Perl=msys and host=mingw32.  The subject need not
-exist, but its parent directory must exist.
+exist, but its parent or grandparent directory must exist unless cygpath is
+available.
 
 =cut
 
@@ -275,6 +310,17 @@ sub perl2host
 {
 	my ($subject) = @_;
 	return $subject unless $Config{osname} eq 'msys';
+	if ($is_msys2)
+	{
+		# get absolute, windows type path
+		my $path = qx{cygpath -a -w "$subject"};
+		if (!$?)
+		{
+			chomp $path;
+			return $path if $path;
+		}
+		# fall through if this didn't work.
+	}
 	my $here = cwd;
 	my $leaf;
 	if (chdir $subject)
@@ -285,7 +331,12 @@ sub perl2host
 	{
 		$leaf = '/' . basename $subject;
 		my $parent = dirname $subject;
-		chdir $parent or die "could not chdir \"$parent\": $!";
+		if (!chdir $parent)
+		{
+			$leaf   = '/' . basename($parent) . $leaf;
+			$parent = dirname $parent;
+			chdir $parent or die "could not chdir \"$parent\": $!";
+		}
 	}
 
 	# this odd way of calling 'pwd -W' is the only way that seems to work.
@@ -396,7 +447,7 @@ sub slurp_dir
 {
 	my ($dir) = @_;
 	opendir(my $dh, $dir)
-	  or die "could not opendir \"$dir\": $!";
+	  or croak "could not opendir \"$dir\": $!";
 	my @direntries = readdir $dh;
 	closedir $dh;
 	return @direntries;
@@ -404,33 +455,44 @@ sub slurp_dir
 
 =pod
 
-=item slurp_file(filename)
+=item slurp_file(filename [, $offset])
 
-Return the full contents of the specified file.
+Return the full contents of the specified file, beginning from an
+offset position if specified.
 
 =cut
 
 sub slurp_file
 {
-	my ($filename) = @_;
+	my ($filename, $offset) = @_;
 	local $/;
 	my $contents;
 	if ($Config{osname} ne 'MSWin32')
 	{
 		open(my $in, '<', $filename)
-		  or die "could not read \"$filename\": $!";
+		  or croak "could not read \"$filename\": $!";
+		if (defined($offset))
+		{
+			seek($in, $offset, SEEK_SET)
+			  or croak "could not seek \"$filename\": $!";
+		}
 		$contents = <$in>;
 		close $in;
 	}
 	else
 	{
 		my $fHandle = createFile($filename, "r", "rwd")
-		  or die "could not open \"$filename\": $^E";
+		  or croak "could not open \"$filename\": $^E";
 		OsFHandleOpen(my $fh = IO::Handle->new(), $fHandle, 'r')
-		  or die "could not read \"$filename\": $^E\n";
+		  or croak "could not read \"$filename\": $^E\n";
+		if (defined($offset))
+		{
+			setFilePointer($fh, $offset, qw(FILE_BEGIN))
+			  or croak "could not seek \"$filename\": $^E\n";
+		}
 		$contents = <$fh>;
 		CloseHandle($fHandle)
-		  or die "could not close \"$filename\": $^E\n";
+		  or croak "could not close \"$filename\": $^E\n";
 	}
 	$contents =~ s/\r\n/\n/g if $Config{osname} eq 'msys';
 	return $contents;
@@ -449,7 +511,7 @@ sub append_to_file
 {
 	my ($filename, $str) = @_;
 	open my $fh, ">>", $filename
-	  or die "could not write \"$filename\": $!";
+	  or croak "could not write \"$filename\": $!";
 	print $fh $str;
 	close $fh;
 	return;
@@ -600,6 +662,40 @@ sub check_pg_config
 	my $match = (grep { /^$regexp/ } <$pg_config_h>);
 	close $pg_config_h;
 	return $match;
+}
+
+=pod
+
+=item dir_symlink(oldname, newname)
+
+Portably create a symlink for a directory. On Windows this creates a junction
+point. Elsewhere it just calls perl's builtin symlink.
+
+=cut
+
+sub dir_symlink
+{
+	my $oldname = shift;
+	my $newname = shift;
+	if ($windows_os)
+	{
+		$oldname = perl2host($oldname);
+		$newname = perl2host($newname);
+		$oldname =~ s,/,\\,g;
+		$newname =~ s,/,\\,g;
+		my $cmd = qq{mklink /j "$newname" "$oldname"};
+		if ($Config{osname} eq 'msys')
+		{
+			# need some indirection on msys
+			$cmd = qq{echo '$cmd' | \$COMSPEC /Q};
+		}
+		system($cmd);
+	}
+	else
+	{
+		symlink $oldname, $newname;
+	}
+	die "No $newname" unless -e $newname;
 }
 
 =pod

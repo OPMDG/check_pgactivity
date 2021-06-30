@@ -1,5 +1,5 @@
-# This file comes straight from the PostgreSQL source code.
-# See file t/lib/COPYRIGHT.pgsql for license and copyright details.
+
+# Copyright (c) 2021, PostgreSQL Global Development Group
 
 # A simple 'tee' implementation, using perl tie.
 #
