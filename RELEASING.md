@@ -13,6 +13,12 @@ In `check_pgactivity.spec`:
   * edit the changelog
     * date format: `LC_TIME=C date +"%a %b %d %Y"`
 
+## Run tests
+
+Run the tests against all possible PostgreSQL releases. At least the one
+officially supported. Fix code or tests before releasing.
+
+
 ## Documentation
 
 Generate updated documentation:
