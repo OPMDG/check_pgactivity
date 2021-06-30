@@ -7188,7 +7188,7 @@ WHERE seq.relkind='S'};
         }
         else
         {
-            # Version 10.0 and bigger: we now have pg_sequence and functions to
+            # Version 10.0 and higher we now have pg_sequence and functions to
             # get the info directly
             my $query = q{
 SET search_path TO 'pg_catalog';
@@ -7265,7 +7265,7 @@ SELECT
             # The real maximum value is the smallest of both
 	    my $real_max_value;
 	    if ( defined $max_value ) {
-                $real_max_value=$max_val_seq <= $max_value ? $max_val_seq:$max_value;
+                $real_max_value = $max_val_seq <= $max_value ? $max_val_seq : $max_value;
             } else {
                 $real_max_value=$max_val_seq;
             }
@@ -7280,8 +7280,15 @@ SELECT
             my $lim_warning=$usable_amount-get_size($args{'warning'},$usable_amount);
             my $lim_critical=$usable_amount-get_size($args{'critical'},$usable_amount);
             my $how_much_left=$real_max_value-$sequences{$seq}->{ABSVALSEQ};
-            my $seq_desc="$db." . $sequences{$seq}->{COLNAME};
-            my $long_seq_desc="$db.$seq(owned by " . $sequences{$seq}->{COLNAME} . ')';
+	    my $seq_desc;
+	    my $long_seq_desc;
+	    if ( $sequences{$seq}->{COLNAME} ne '' ) {
+                $seq_desc="$db." . $sequences{$seq}->{COLNAME};
+                $long_seq_desc="$db.$seq(owned by " . $sequences{$seq}->{COLNAME} . ')';
+            } else {
+                $seq_desc="$db.$seq";
+                $long_seq_desc="$db.$seq";
+            }
             my $seq_criticity=0;
             if ($how_much_left<=$lim_critical) {
                 $seq_criticity=2;
@@ -7293,7 +7300,7 @@ SELECT
                 push @perfdata => [ $seq_desc, $how_much_left, undef,
                                     $lim_warning, $lim_critical, 0, $sequences{$seq}->{REALMAXVALUE} ];
                 push @longmsg, "$long_seq_desc $how_much_left values left";
-                $criticity=$criticity>$seq_criticity?$criticity:$seq_criticity; # Take biggest of the criticities
+                $criticity=$criticity>$seq_criticity?$criticity:$seq_criticity; # Take highest of the criticities
             }
         }
     }
