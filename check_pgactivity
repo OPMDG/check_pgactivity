@@ -7065,9 +7065,10 @@ PARAM_LOOP: foreach my $row (@rs) {
 
 =item B<sequences_exhausted> (7.4+)
 
-Check all sequences assigned to a column (the smallserial, serial and bigserial
-types), and raise an alarm if the column or sequences gets too close to the
-maximum value.
+Check all sequences and raise an alarm if the column or sequences gets too
+close to the maximum value. The maximum value is calculated from the maxvalue
+of the sequence or from the column type when the sequence is owned by a
+column (the smallserial, serial and bigserial types).
 
 Perfdata returns the sequences that trigger the alert.
 
@@ -7138,21 +7139,21 @@ sub check_sequences_exhausted {
             # Search path is emptied so that ::regclass gives us full paths
             my $query  = q{
 SET search_path TO 'pg_catalog';
-SELECT t.typname,
+SELECT d.typname,
        seq.oid::regclass as name,
-       pg_catalog.quote_ident(n.nspname) || '.' || pg_catalog.quote_ident(c.relname) || '.' || pg_catalog.quote_ident(a.attname)
+       pg_catalog.quote_ident(d.nspname) || '.' || pg_catalog.quote_ident(d.relname) || '.' || pg_catalog.quote_ident(d.attname)
 FROM pg_class seq
-INNER JOIN pg_catalog.pg_depend d ON d.objid=seq.oid
-INNER JOIN pg_catalog.pg_class c  ON c.oid=d.refobjid
-INNER JOIN pg_catalog.pg_namespace n ON n.oid=c.relnamespace
-INNER JOIN pg_catalog.pg_attribute a ON (
-         a.attrelid=c.oid AND
-         a.attnum=d.refobjsubid)
-INNER JOIN pg_catalog.pg_type t ON a.atttypid=t.oid
-WHERE seq.relkind='S'
- AND d.classid='pg_catalog.pg_class'::pg_catalog.regclass
- AND d.refclassid='pg_catalog.pg_class'::pg_catalog.regclass
- AND d.deptype='a'};
+LEFT JOIN (SELECT d.objid, t.typname, n.nspname, c.relname, a.attname
+             FROM pg_catalog.pg_depend d
+            INNER JOIN pg_catalog.pg_class c  ON c.oid=d.refobjid
+            INNER JOIN pg_catalog.pg_namespace n ON n.oid=c.relnamespace
+            INNER JOIN pg_catalog.pg_attribute a ON (a.attrelid=c.oid
+	                                     AND a.attnum=d.refobjsubid)
+            INNER JOIN pg_catalog.pg_type t ON a.atttypid=t.oid
+            WHERE d.classid='pg_catalog.pg_class'::pg_catalog.regclass
+              AND d.refclassid='pg_catalog.pg_class'::pg_catalog.regclass
+              AND d.deptype='a') d ON d.objid=seq.oid
+WHERE seq.relkind='S'};
             # We got an array: for each record, type (int2, int4, int8), sequence name, and the column name
             @rs = @{ query ( $hosts[0], $query, $db ) };
             dprint ("DB  $db : found ".(scalar @rs )." sequences \n" );
@@ -7175,26 +7176,26 @@ WHERE seq.relkind='S'
 
             # To make things easier, we store all of this in a hash table with all sequences, merging these two queries
             foreach my $record(@rs) {
-                $sequences{$record->[1]}->{TYPE}=$record->[0];
-                $sequences{$record->[1]}->{COLNAME}=$record->[2];
+                $sequences{$record->[1]}->{TYPE}    = $record->[0];
+                $sequences{$record->[1]}->{COLNAME} = $record->[2];
             }
             foreach my $record(@rs2) {
-                $sequences{$record->[0]}->{LASTVALSEQ}=$record->[1];
-                $sequences{$record->[0]}->{MINVALSEQ}=$record->[2];
-                $sequences{$record->[0]}->{MAXVALSEQ}=$record->[3];
-                $sequences{$record->[0]}->{INCREMENTBY}=$record->[4];
+                $sequences{$record->[0]}->{LASTVALSEQ}  = $record->[1];
+                $sequences{$record->[0]}->{MINVALSEQ}   = $record->[2];
+                $sequences{$record->[0]}->{MAXVALSEQ}   = $record->[3];
+                $sequences{$record->[0]}->{INCREMENTBY} = $record->[4];
             }
         }
         else
         {
-            # Version 10.0 and bigger: we now have pg_sequence and functions to
+            # Version 10.0 and higher we now have pg_sequence and functions to
             # get the info directly
             my $query = q{
 SET search_path TO 'pg_catalog';
 SELECT
-    t.typname,
+    typname,
     seq.seqrelid::regclass AS sequencename,
-    pg_catalog.quote_ident(n.nspname) || '.' || pg_catalog.quote_ident(c.relname) || '.' || pg_catalog.quote_ident(a.attname),
+    pg_catalog.quote_ident(nspname) || '.' || pg_catalog.quote_ident(relname) || '.' || pg_catalog.quote_ident(attname),
     CASE
         WHEN has_sequence_privilege(seq.seqrelid, 'SELECT,USAGE'::text) THEN pg_sequence_last_value(seq.seqrelid::regclass)
         ELSE NULL::bigint
@@ -7203,28 +7204,31 @@ SELECT
     seq.seqmax AS max_value,
     seq.seqincrement AS increment_by
    FROM pg_sequence seq
-   INNER JOIN pg_catalog.pg_depend d ON d.objid=seq.seqrelid
-   INNER JOIN pg_catalog.pg_class c  ON c.oid=d.refobjid
-   INNER JOIN pg_catalog.pg_namespace n ON n.oid=c.relnamespace
-   INNER JOIN pg_catalog.pg_attribute a ON ( a.attrelid=c.oid
+   LEFT JOIN (SELECT d.objid, nspname, relname, attname, typname
+                FROM pg_catalog.pg_depend d
+               INNER JOIN pg_catalog.pg_class c  ON c.oid=d.refobjid
+               INNER JOIN pg_catalog.pg_namespace n ON n.oid=c.relnamespace
+               INNER JOIN pg_catalog.pg_attribute a ON ( a.attrelid=c.oid
                                              AND a.attnum=d.refobjsubid)
-   INNER JOIN pg_catalog.pg_type t ON a.atttypid=t.oid
-   WHERE d.classid='pg_catalog.pg_class'::pg_catalog.regclass
-     AND d.refclassid='pg_catalog.pg_class'::pg_catalog.regclass
-     AND d.deptype='a'};
+               INNER JOIN pg_catalog.pg_type t ON a.atttypid=t.oid
+               WHERE d.classid='pg_catalog.pg_class'::pg_catalog.regclass
+                 AND d.refclassid='pg_catalog.pg_class'::pg_catalog.regclass
+                 AND d.deptype='a') class
+     ON class.objid=seq.seqrelid;};
             # We get an array: for each record, type (int2, int4, int8),
             # sequence name, column name, last, min, max, increment
             @rs = @{ query ( $hosts[0], $query, $db ) };
             foreach my $record (@rs)
             {
-                $sequences{$record->[1]}->{TYPE}=$record->[0];
-                $sequences{$record->[1]}->{COLNAME}=$record->[2];
-                $sequences{$record->[1]}->{LASTVALSEQ}=$record->[3];
-                $sequences{$record->[1]}->{MINVALSEQ}=$record->[4];
-                $sequences{$record->[1]}->{MAXVALSEQ}=$record->[5];
-                $sequences{$record->[1]}->{INCREMENTBY}=$record->[6];
+                $sequences{$record->[1]}->{TYPE}        = $record->[0];
+                $sequences{$record->[1]}->{COLNAME}     = $record->[2];
+                $sequences{$record->[1]}->{LASTVALSEQ}  = $record->[3];
+                $sequences{$record->[1]}->{MINVALSEQ}   = $record->[4];
+                $sequences{$record->[1]}->{MAXVALSEQ}   = $record->[5];
+                $sequences{$record->[1]}->{INCREMENTBY} = $record->[6];
             }
         }
+
         # Calculate real max value:
         # We take into accound negative incrementby. If incrementby <0, use minvalseq
         foreach my $seq (keys %sequences)
@@ -7233,43 +7237,42 @@ SELECT
             # We don't make the difference between positive and negative limits
             # It's only 1 of difference, so there is no point…
             if ($sequences{$seq}->{TYPE} eq 'int2') {
-                $max_value=32767;
+                $max_value = 32767;
             }
             elsif ($sequences{$seq}->{TYPE} eq 'int4') {
-                $max_value=2147483647;
+                $max_value = 2147483647;
             }
             elsif ($sequences{$seq}->{TYPE} eq 'int8') {
-                $max_value=9223372036854775807;
+                $max_value = 9223372036854775807;
             }
-            else
-            {
-                # We're not going to try to guess. This is not a serial, trust
-                # the dba/developer
-                delete $sequences{$seq};
-                next;
-            }
+	    # When we can't link the sequence to a column, we trust the dba/developer
+	    # and we're not going to try to guess.
 
-        if ($sequences{$seq}->{LASTVALSEQ} eq '') {
+            if ($sequences{$seq}->{LASTVALSEQ} eq '') {
                 # Skip sequences having lastvalue not initialized
                 delete $sequences{$seq};
                 next;
             }
 
             my $max_val_seq;
-            if ($sequences{$seq}->{INCREMENTBY}>=0) {
+            if ($sequences{$seq}->{INCREMENTBY} >= 0) {
                 $max_val_seq=$sequences{$seq}->{MAXVALSEQ};
-                $sequences{$seq}->{ABSVALSEQ}=$sequences{$seq}->{LASTVALSEQ};
+                $sequences{$seq}->{ABSVALSEQ} = $sequences{$seq}->{LASTVALSEQ};
             } else {
-                $max_val_seq=-$sequences{$seq}->{MINVALSEQ};# Reverse the sign
-                $sequences{$seq}->{ABSVALSEQ}=-$sequences{$seq}->{LASTVALSEQ};
+                $max_val_seq =-$sequences{$seq}->{MINVALSEQ};# Reverse the sign
+                $sequences{$seq}->{ABSVALSEQ} =-$sequences{$seq}->{LASTVALSEQ};
             }
             # The real maximum value is the smallest of both
-            my $real_max_value=$max_val_seq<=$max_value?$max_val_seq:$max_value;
-            $sequences{$seq}->{REALMAXVALUE}=$real_max_value;
+	    my $real_max_value;
+	    if ( defined $max_value ) {
+                $real_max_value = ($max_val_seq <= $max_value) ? $max_val_seq : $max_value;
+            } else {
+                $real_max_value = $max_val_seq;
+            }
+            $sequences{$seq}->{REALMAXVALUE} = $real_max_value;
         }
         # We have inverted values for the reverse-order sequences. We don't
         # have to think about it anymore.
-
         foreach my $seq(keys %sequences) {
             # First, get all info
             my $real_max_value=$sequences{$seq}->{REALMAXVALUE};
@@ -7277,20 +7280,27 @@ SELECT
             my $lim_warning=$usable_amount-get_size($args{'warning'},$usable_amount);
             my $lim_critical=$usable_amount-get_size($args{'critical'},$usable_amount);
             my $how_much_left=$real_max_value-$sequences{$seq}->{ABSVALSEQ};
-            my $seq_desc="$db." . $sequences{$seq}->{COLNAME};
-            my $long_seq_desc="$db.$seq(owned by " . $sequences{$seq}->{COLNAME} . ')';
+	    my $seq_desc;
+	    my $long_seq_desc;
+	    if ( $sequences{$seq}->{COLNAME} ne '' ) {
+                $seq_desc="$db.$seq(" . $sequences{$seq}->{COLNAME} . ')';
+                $long_seq_desc="$db.$seq(owned by " . $sequences{$seq}->{COLNAME} . ')';
+            } else {
+                $seq_desc="$db.$seq";
+                $long_seq_desc="$db.$seq";
+            }
             my $seq_criticity=0;
             if ($how_much_left<=$lim_critical) {
-                $seq_criticity=2;
+                $seq_criticity = 2;
             }
             elsif ($how_much_left<=$lim_warning) {
-                $seq_criticity=1;
+                $seq_criticity = 1;
             }
             if ($seq_criticity>=1) {
                 push @perfdata => [ $seq_desc, $how_much_left, undef,
                                     $lim_warning, $lim_critical, 0, $sequences{$seq}->{REALMAXVALUE} ];
                 push @longmsg, "$long_seq_desc $how_much_left values left";
-                $criticity=$criticity>$seq_criticity?$criticity:$seq_criticity; # Take biggest of the criticities
+                $criticity = ($criticity>$seq_criticity) ? $criticity : $seq_criticity; # Take highest of the criticities
             }
         }
     }
