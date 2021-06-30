@@ -7176,14 +7176,14 @@ WHERE seq.relkind='S'};
 
             # To make things easier, we store all of this in a hash table with all sequences, merging these two queries
             foreach my $record(@rs) {
-                $sequences{$record->[1]}->{TYPE}=$record->[0];
-                $sequences{$record->[1]}->{COLNAME}=$record->[2];
+                $sequences{$record->[1]}->{TYPE}    = $record->[0];
+                $sequences{$record->[1]}->{COLNAME} = $record->[2];
             }
             foreach my $record(@rs2) {
-                $sequences{$record->[0]}->{LASTVALSEQ}=$record->[1];
-                $sequences{$record->[0]}->{MINVALSEQ}=$record->[2];
-                $sequences{$record->[0]}->{MAXVALSEQ}=$record->[3];
-                $sequences{$record->[0]}->{INCREMENTBY}=$record->[4];
+                $sequences{$record->[0]}->{LASTVALSEQ}  = $record->[1];
+                $sequences{$record->[0]}->{MINVALSEQ}   = $record->[2];
+                $sequences{$record->[0]}->{MAXVALSEQ}   = $record->[3];
+                $sequences{$record->[0]}->{INCREMENTBY} = $record->[4];
             }
         }
         else
@@ -7220,12 +7220,12 @@ SELECT
             @rs = @{ query ( $hosts[0], $query, $db ) };
             foreach my $record (@rs)
             {
-                $sequences{$record->[1]}->{TYPE}=$record->[0];
-                $sequences{$record->[1]}->{COLNAME}=$record->[2];
-                $sequences{$record->[1]}->{LASTVALSEQ}=$record->[3];
-                $sequences{$record->[1]}->{MINVALSEQ}=$record->[4];
-                $sequences{$record->[1]}->{MAXVALSEQ}=$record->[5];
-                $sequences{$record->[1]}->{INCREMENTBY}=$record->[6];
+                $sequences{$record->[1]}->{TYPE}        = $record->[0];
+                $sequences{$record->[1]}->{COLNAME}     = $record->[2];
+                $sequences{$record->[1]}->{LASTVALSEQ}  = $record->[3];
+                $sequences{$record->[1]}->{MINVALSEQ}   = $record->[4];
+                $sequences{$record->[1]}->{MAXVALSEQ}   = $record->[5];
+                $sequences{$record->[1]}->{INCREMENTBY} = $record->[6];
             }
         }
 
@@ -7237,13 +7237,13 @@ SELECT
             # We don't make the difference between positive and negative limits
             # It's only 1 of difference, so there is no point…
             if ($sequences{$seq}->{TYPE} eq 'int2') {
-                $max_value=32767;
+                $max_value = 32767;
             }
             elsif ($sequences{$seq}->{TYPE} eq 'int4') {
-                $max_value=2147483647;
+                $max_value = 2147483647;
             }
             elsif ($sequences{$seq}->{TYPE} eq 'int8') {
-                $max_value=9223372036854775807;
+                $max_value = 9223372036854775807;
             }
 	    # When we can't link the sequence to a column, we trust the dba/developer
 	    # and we're not going to try to guess.
@@ -7255,21 +7255,21 @@ SELECT
             }
 
             my $max_val_seq;
-            if ($sequences{$seq}->{INCREMENTBY}>=0) {
+            if ($sequences{$seq}->{INCREMENTBY} >= 0) {
                 $max_val_seq=$sequences{$seq}->{MAXVALSEQ};
-                $sequences{$seq}->{ABSVALSEQ}=$sequences{$seq}->{LASTVALSEQ};
+                $sequences{$seq}->{ABSVALSEQ} = $sequences{$seq}->{LASTVALSEQ};
             } else {
-                $max_val_seq=-$sequences{$seq}->{MINVALSEQ};# Reverse the sign
-                $sequences{$seq}->{ABSVALSEQ}=-$sequences{$seq}->{LASTVALSEQ};
+                $max_val_seq =-$sequences{$seq}->{MINVALSEQ};# Reverse the sign
+                $sequences{$seq}->{ABSVALSEQ} =-$sequences{$seq}->{LASTVALSEQ};
             }
             # The real maximum value is the smallest of both
 	    my $real_max_value;
 	    if ( defined $max_value ) {
-                $real_max_value = $max_val_seq <= $max_value ? $max_val_seq : $max_value;
+                $real_max_value = ($max_val_seq <= $max_value) ? $max_val_seq : $max_value;
             } else {
-                $real_max_value=$max_val_seq;
+                $real_max_value = $max_val_seq;
             }
-            $sequences{$seq}->{REALMAXVALUE}=$real_max_value;
+            $sequences{$seq}->{REALMAXVALUE} = $real_max_value;
         }
         # We have inverted values for the reverse-order sequences. We don't
         # have to think about it anymore.
@@ -7283,7 +7283,7 @@ SELECT
 	    my $seq_desc;
 	    my $long_seq_desc;
 	    if ( $sequences{$seq}->{COLNAME} ne '' ) {
-                $seq_desc="$db." . $sequences{$seq}->{COLNAME};
+                $seq_desc="$db.$seq(" . $sequences{$seq}->{COLNAME} . ')';
                 $long_seq_desc="$db.$seq(owned by " . $sequences{$seq}->{COLNAME} . ')';
             } else {
                 $seq_desc="$db.$seq";
@@ -7291,16 +7291,16 @@ SELECT
             }
             my $seq_criticity=0;
             if ($how_much_left<=$lim_critical) {
-                $seq_criticity=2;
+                $seq_criticity = 2;
             }
             elsif ($how_much_left<=$lim_warning) {
-                $seq_criticity=1;
+                $seq_criticity = 1;
             }
             if ($seq_criticity>=1) {
                 push @perfdata => [ $seq_desc, $how_much_left, undef,
                                     $lim_warning, $lim_critical, 0, $sequences{$seq}->{REALMAXVALUE} ];
                 push @longmsg, "$long_seq_desc $how_much_left values left";
-                $criticity=$criticity>$seq_criticity?$criticity:$seq_criticity; # Take highest of the criticities
+                $criticity = ($criticity>$seq_criticity) ? $criticity : $seq_criticity; # Take highest of the criticities
             }
         }
     }
