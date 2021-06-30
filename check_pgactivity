@@ -7067,7 +7067,7 @@ PARAM_LOOP: foreach my $row (@rs) {
 
 Check all sequences and raise an alarm if the column or sequences gets too
 close to the maximum value. The maximum value is calculated from the maxvalue
-of the sequence or from the column type when the sequence is assigned to a
+of the sequence or from the column type when the sequence is owned by a
 column (the smallserial, serial and bigserial types).
 
 Perfdata returns the sequences that trigger the alert.
@@ -7145,16 +7145,14 @@ SELECT d.typname,
 FROM pg_class seq
 LEFT JOIN (SELECT d.objid, t.typname, n.nspname, c.relname, a.attname
              FROM pg_catalog.pg_depend d
-INNER JOIN pg_catalog.pg_class c  ON c.oid=d.refobjid
-INNER JOIN pg_catalog.pg_namespace n ON n.oid=c.relnamespace
-INNER JOIN pg_catalog.pg_attribute a ON (
-         a.attrelid=c.oid AND
-         a.attnum=d.refobjsubid)
-INNER JOIN pg_catalog.pg_type t ON a.atttypid=t.oid
-WHERE d.classid='pg_catalog.pg_class'::pg_catalog.regclass
- AND d.refclassid='pg_catalog.pg_class'::pg_catalog.regclass
- AND d.deptype='a'
-) d ON d.objid=seq.oid
+            INNER JOIN pg_catalog.pg_class c  ON c.oid=d.refobjid
+            INNER JOIN pg_catalog.pg_namespace n ON n.oid=c.relnamespace
+            INNER JOIN pg_catalog.pg_attribute a ON (a.attrelid=c.oid
+	                                     AND a.attnum=d.refobjsubid)
+            INNER JOIN pg_catalog.pg_type t ON a.atttypid=t.oid
+            WHERE d.classid='pg_catalog.pg_class'::pg_catalog.regclass
+              AND d.refclassid='pg_catalog.pg_class'::pg_catalog.regclass
+              AND d.deptype='a') d ON d.objid=seq.oid
 WHERE seq.relkind='S'};
             # We got an array: for each record, type (int2, int4, int8), sequence name, and the column name
             @rs = @{ query ( $hosts[0], $query, $db ) };
@@ -7206,18 +7204,17 @@ SELECT
     seq.seqmax AS max_value,
     seq.seqincrement AS increment_by
    FROM pg_sequence seq
-   LEFT JOIN (SELECT d.objid, nspname, relname, attname, typname FROM
-   pg_catalog.pg_depend d
-   INNER JOIN pg_catalog.pg_class c  ON c.oid=d.refobjid
-   INNER JOIN pg_catalog.pg_namespace n ON n.oid=c.relnamespace
-   INNER JOIN pg_catalog.pg_attribute a ON ( a.attrelid=c.oid
+   LEFT JOIN (SELECT d.objid, nspname, relname, attname, typname
+                FROM pg_catalog.pg_depend d
+               INNER JOIN pg_catalog.pg_class c  ON c.oid=d.refobjid
+               INNER JOIN pg_catalog.pg_namespace n ON n.oid=c.relnamespace
+               INNER JOIN pg_catalog.pg_attribute a ON ( a.attrelid=c.oid
                                              AND a.attnum=d.refobjsubid)
-   INNER JOIN pg_catalog.pg_type t ON a.atttypid=t.oid
-   WHERE d.classid='pg_catalog.pg_class'::pg_catalog.regclass
-     AND d.refclassid='pg_catalog.pg_class'::pg_catalog.regclass
-     AND d.deptype='a'
-   ) class
- ON class.objid=seq.seqrelid;};
+               INNER JOIN pg_catalog.pg_type t ON a.atttypid=t.oid
+               WHERE d.classid='pg_catalog.pg_class'::pg_catalog.regclass
+                 AND d.refclassid='pg_catalog.pg_class'::pg_catalog.regclass
+                 AND d.deptype='a') class
+     ON class.objid=seq.seqrelid;};
             # We get an array: for each record, type (int2, int4, int8),
             # sequence name, column name, last, min, max, increment
             @rs = @{ query ( $hosts[0], $query, $db ) };
@@ -7248,7 +7245,7 @@ SELECT
             elsif ($sequences{$seq}->{TYPE} eq 'int8') {
                 $max_value=9223372036854775807;
             }
-	    # When we can't link the sequence to a column, we true the dba/developer
+	    # When we can't link the sequence to a column, we trust the dba/developer
 	    # and we're not going to try to guess.
 
             if ($sequences{$seq}->{LASTVALSEQ} eq '') {
@@ -7268,7 +7265,7 @@ SELECT
             # The real maximum value is the smallest of both
 	    my $real_max_value;
 	    if ( defined $max_value ) {
-                $real_max_value=$max_val_seq<=$max_value?$max_val_seq:$max_value;
+                $real_max_value=$max_val_seq <= $max_value ? $max_val_seq:$max_value;
             } else {
                 $real_max_value=$max_val_seq;
             }
