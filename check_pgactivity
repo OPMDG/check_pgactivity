@@ -1871,8 +1871,8 @@ sub check_archiver {
                 save $hosts[0], 'archiver', $rs[0][0], $args{'status-file'};
             }
             else {
-                push @msg => sprintf 'archiver stalling', substr($rs[0][0], 0, 24);
-                push @longmsg => sprintf '"%s" not archived since last check',
+                push @msg => sprintf 'archiver failing on %s', substr($rs[0][0], 0, 24);
+                push @longmsg => sprintf '%s not archived since last check',
                                     substr($rs[0][0], 0, -6);
             }
         }
@@ -1891,6 +1891,11 @@ sub check_archiver {
         #  1) fails while parsing an .history file
         #  2) pg_last_wal_receive_lsn always returns zero if the slave is fed
         #     with pure log shipping (streaming is ok)
+        # field 1: number of WAL segment to archive
+        # field 2: how long archiving is failing in second
+        # field 3: last segment archived
+        # field 4: last failing segment
+        # field 5: mod time of the next wal to archive
         my $query = q{
         SELECT coalesce(pg_wal_lsn_diff(
                     current_pos,
@@ -1955,11 +1960,11 @@ sub check_archiver {
         if ( $rs[0][1] eq 't' ) {
             push @msg => sprintf 'archiver failing on %s', $rs[0][4];
             if ( $rs[0][2] ne '' ) {
-                push @longmsg => sprintf '%s could not be archived since %ds',
+                push @longmsg => sprintf '%s not archived since %ds',
                                 $rs[0][4], $rs[0][2];
             }
-	    else {
-                push @longmsg => sprintf '%s could not be archived',
+        else {
+                push @longmsg => sprintf '%s not archived',
                                 $rs[0][4];
             }
         }
@@ -6401,7 +6406,7 @@ sub check_pga_version {
     my @hosts;
     my %args = %{ $_[0] };
     my $me   = 'PGACTIVITY_VERSION';
-    my $msg  = "check_pgactivity $VERSION %s, Perl %vd";
+    my $msg  = "check_pgactivity $VERSION%s, Perl %vd";
 
     pod2usage(
         -message => 'FATAL: you must provide a warning or a critical threshold for service pga_version!',
@@ -6416,11 +6421,11 @@ sub check_pga_version {
         or (defined $args{'warning'} and $args{'warning'} !~ m/^\d\.\d+(?:_?(?:dev|beta|rc)\d*)?$/ );
 
     return status_critical( $me,
-        [ sprintf($msg, "(should be $args{'critical'}!)", $^V) ]
+        [ sprintf($msg, " (should be $args{'critical'}!)", $^V) ]
     ) if defined $args{'critical'} and $VERSION ne $args{'critical'};
 
     return status_warning( $me,
-        [ sprintf($msg, "(should be $args{'warning'}!)", $^V) ]
+        [ sprintf($msg, " (should be $args{'warning'}!)", $^V) ]
     ) if defined $args{'warning'} and $VERSION ne $args{'warning'};
 
     return status_ok( $me, [ sprintf($msg, "", $^V) ] );
@@ -7429,6 +7434,14 @@ sub check_streaming_delta {
     my $master_location = '';
     my $num_clusters    = 0;
     my %queries         = (
+        # 1st field: slot application_name
+        # 2nd field: client_addr
+        # 3rd field: pid
+        # 4th field: sent_lsn
+        # 5th field: write_lsn
+        # 6th field: flush_lsn
+        # 7th field: replay_lsn
+        # 8th field: current lsn
         $PG_VERSION_100 => q{SELECT application_name, client_addr, pid,
             sent_lsn, write_lsn, flush_lsn, replay_lsn,
             CASE pg_is_in_recovery() WHEN true THEN pg_last_wal_receive_lsn() ELSE pg_current_wal_lsn() END
