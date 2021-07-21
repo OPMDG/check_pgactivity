@@ -1920,12 +1920,12 @@ sub check_archiver {
                 walsegsize,
                 /* compute last archive offset */
                 -- WAL offset
-                ('x'||substr(last_archived_wal, 9, 8))::bit(32)::bigint*4294967296
+                ('x'||substr(last_archived_wal_hex, 9, 8))::bit(32)::bigint*4294967296
                     -- offset to the begining of the segment
                     + ('x'||substr(last_archived_wal, 17, 8))::bit(32)::bigint * walsegsize
                     -- offset to the end of the segment
                     + walsegsize AS last_archived_off,
-                ('x'||substr(last_failed_wal, 9, 8))::bit(32)::bigint*4294967296
+                ('x'||substr(last_failed_wal_hex, 9, 8))::bit(32)::bigint*4294967296
                     -- offset to the begining of the segment
                     + ('x'||substr(last_failed_wal, 17, 8))::bit(32)::bigint * walsegsize
                     -- offset to the end of the segment
@@ -1937,7 +1937,20 @@ sub check_archiver {
                 (last_failed_time >= last_archived_time)
                     OR (last_archived_time IS NULL AND last_failed_time IS NOT NULL)
                     AS failing
-              FROM pg_stat_archiver, (
+              FROM (SELECT last_archived_wal,
+	                   last_archived_time,
+			   CASE WHEN (last_archived_wal NOT LIKE '%.history' AND last_archived_wal NOT LIKE '%.backup')
+	                        THEN last_archived_wal
+				ELSE NULL -- return NULL if last successfully archived file is a .history or .backup file
+			    END AS last_archived_wal_hex,
+                           CASE WHEN (last_failed_wal NOT LIKE '%.history' AND last_archived_wal NOT LIKE '%.backup')
+			        THEN last_failed_wal
+				ELSE NULL -- return NULL if last failed archive is a .history or .backup file
+			    END AS last_failed_wal_hex,
+			   last_failed_wal,
+			   last_failed_time
+	      FROM pg_stat_archiver) AS a
+	      CROSS JOIN (
                 SELECT setting::bigint *
                     CASE unit
                     WHEN '8kB' THEN 8192
