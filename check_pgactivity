@@ -4703,7 +4703,7 @@ sub check_last_maintenance {
         # 8.2 does not have per-database activity stats. We must aggregate
         # from pg_stat_user_tables
         $PG_VERSION_82 => qq{
-            SELECT coalesce(min(
+            SELECT coalesce(max(
                 extract(epoch FROM current_timestamp -
                     greatest(last_${type}, last_auto${type})
                 )), 'NaN'::float),
@@ -4717,7 +4717,7 @@ sub check_last_maintenance {
         # Starting with 8.3, we can check database activity from
         # pg_stat_database
         $PG_VERSION_83 => qq{
-            SELECT coalesce(min(
+            SELECT coalesce(max(
                 extract(epoch FROM current_timestamp -
                     greatest(last_${type}, last_auto${type})
                 )), 'NaN'::float),
@@ -4732,7 +4732,7 @@ sub check_last_maintenance {
               AND schemaname NOT LIKE 'pg_toast_temp_%'
         },
         $PG_VERSION_91 => qq{
-            SELECT coalesce(min(
+            SELECT coalesce(max(
                        coalesce(extract(epoch FROM
                          current_timestamp -
                                  greatest(last_${type}, last_auto${type})),
