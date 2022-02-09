@@ -44,7 +44,7 @@ use List::Util qw(max);
 use Pod::Usage;
 use Scalar::Util qw(looks_like_number);
 use Fcntl qw(:flock);
-use Storable qw(lock_store lock_retrieve);
+use Storable qw(retrieve store);
 
 use Config;
 use FindBin;
@@ -378,9 +378,16 @@ It should be version 8.3 at least, but the server can be older.
 
 =item B<--status-file> PATH
 
-Path to the file where service status information is kept between
-successive calls. Default is to save check_pgactivity.data in the same
+Path to the file where service status information is kept between successive
+calls. Default is to save a file called C<check_pgactivity.data> in the same
 directory as the script.
+
+Note that this file is protected from concurrent writes using a lock file
+located in the same directory, having the same name than the status file, but
+with the extension C<.lock>.
+
+On some plateform, network filesystems may not be supported correctly by the
+locking mechanism. See C<perldoc -f flock> for more information.
 
 =item B<--dump-status-file>
 
@@ -500,20 +507,17 @@ sub list_services() {
 
 # Check wrapper around Storable::file_magic to fallback on
 # Storable::read_magic under perl 5.8 and below
+# WARNINGS:
+# * you must hold a lock on the lockfile **BEFORE** calling this sub
+# * the given arg must be an existing and readable file
 sub is_storable($) {
     my $storage = shift;
     my $head;
 
+    return defined Storable::file_magic( $storage )
+        if defined *Storable::file_magic{CODE};
+
     open my $fh, '<', $storage;
-    flock($fh, LOCK_SH) or die "can't get shared lock on $storage: $!";
-
-    if ( defined *Storable::file_magic{CODE}
-         and Storable::file_magic( $storage )
-    ) {
-        close $fh; # release the shared lock
-        return 1;
-    }
-
     read $fh, $head, 64;
     close $fh;
 
@@ -538,38 +542,54 @@ sub find_hostkey($) {
 #
 #  dirname(__FILE__) . '/check_pgactivity.data'
 #
-# Format of data in this file is:
+# The status file is a data structure saving for each host ($host) the status
+# of each service ($name). Format of data in this file is:
 #   {
 #     "${host}${port}" => {
-#       "$name" => ref
+#       "$name" => $ref
 #     }
 #   }
-# data can be retrieved later using the "load" sub.
+#
+# Each call of save($host, $name, $ref, $storage) only overwrite the data for
+# given $host for the given $name service. To avoid data loss, the sub first
+# require an exclusive lock on the lock file, then load the existing data,
+# write its values, then close the file and release the lock.
+#
+# Data can be retrieved later using the "load" sub.
 #
 # Parameters are :
-#  * the host structure ref that holds the "host" and "port" parameters
-#  * the name of the structure to save
-#  * the ref of the structure to save
-#  * the path to the file storage
+#  * the $host structure ref that holds the "host" and "port" parameters
+#  * the $name of the structure to save
+#  * the $ref of the structure to save
+#  * the $path to the file storage
 sub save($$$$) {
-    my $host    = shift;
-    my $name    = shift;
-    my $ref     = shift;
-    my $storage = shift;
-    my $all     = {};
-    my $hostkey = find_hostkey($host);
+    my $host     = shift;
+    my $name     = shift;
+    my $ref      = shift;
+    my $storage  = shift;
+    my $all      = {};
+    my $lockfile = "${storage}.lock";
+    my $hostkey  = find_hostkey($host);
 
+    open my $fh, '>', $lockfile or die "can't open «${lockfile}»: $!";
+    flock($fh, LOCK_EX) or die "can't get exclusive lock on «${lockfile}»: $!";
 
-    die "File «${storage}» not recognized as a check_pgactivity status file.\n\n"
-        ."Please, check its path or move away this wrong file"
-        if -r $storage and not is_storable $storage;
+    if ( -e $storage ) {
 
-    $all = lock_retrieve($storage) if -r $storage;
+        die "can not write to status file «${storage}»" unless -w ${storage};
+        exit 1 unless is_storable $storage;
+
+        eval { $all = retrieve($storage) };
+        die "could not retrieve data from «${storage}»:\n  $@" if $@;
+    }
 
     $all->{$hostkey}{$name} = $ref;
 
-    eval { lock_store( $all, $storage ) };
-    die "Can't store data in '$storage':\n  $@" if $@;
+    eval { store( $all, $storage ); };
+    die "could not update data in «${storage}»:\n  $@" if $@;
+
+    # closing the fh removes the lock
+    close $fh or die "could not release «${lockfile}»: $!";
 }
 
 # Load the given ref content for the given host from the file on disk.
@@ -580,22 +600,27 @@ sub save($$$$) {
 #  * the name of the structure to load
 #  * the path to the file storage
 sub load($$$) {
-    my $host    = shift;
-    my $name    = shift;
-    my $storage = shift;
-    my $hostkey = find_hostkey($host);
+    my $host     = shift;
+    my $name     = shift;
+    my $storage  = shift;
+    my $hostkey  = find_hostkey($host);
+    my $lockfile = "${storage}.lock";
     my $all;
 
     return undef unless -e $storage;
 
-    die "No permission to read status file «${storage}»" unless -r $storage;
+    die "can not read status file «${storage}»" unless -r $storage;
 
-    die "File «${storage}» not recognized as a check_pgactivity status file.\n\n"
-        ."Please, check its path or move away this wrong file"
-        unless is_storable $storage;
+    open my $fh, '<', $lockfile or die "can't open «${lockfile}»: $!";
+    flock($fh, LOCK_SH) or die "can't get shared lock on «${lockfile}»: $!";
 
-    eval { $all = lock_retrieve($storage) };
-    die "Could not read status file «${storage}»:\n  $@" if $@;
+    exit 1 unless is_storable $storage;
+
+    eval { $all = retrieve($storage) };
+    die "could not read status file «${storage}»:\n  $@" if $@;
+
+    # closing the fh removes the lock
+    close $fh or die "could not release «${lockfile}»: $!";
 
     return $all->{$hostkey}{$name};
 }
@@ -8992,6 +9017,13 @@ pod2usage(
         . "    Use --list to show the available services.",
     -exitval => 127
 ) unless exists $services{ $args{'service'} };
+
+
+# Make sure the path given as status file is a file, not a folder.
+pod2usage(
+    -message => "FATAL: --status-file must be a path to a file not a directory.\n"
+    -exitval => 127
+) if -d $args{'status-file'};
 
 
 # Check we have write permission to the tempdir
