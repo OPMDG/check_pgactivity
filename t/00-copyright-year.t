@@ -2,7 +2,7 @@
 # This program is open source, licensed under the PostgreSQL License.
 # For license terms, see the LICENSE file.
 #
-# Copyright (C) 2012-2021: Open PostgreSQL Monitoring Development Group
+# Copyright (C) 2012-2022: Open PostgreSQL Monitoring Development Group
 
 use strict;
 use warnings;
@@ -34,7 +34,7 @@ foreach my $f (@filelist) {
     open my $fh, '<', $f;
 
     while (<$fh>) {
-        if ( m/(copyright.*?\d+\s*-\s*(\d+).*)$/i ) {
+        if ( m/(copyright.*?\d+\s*-\s*(\d+).*Open PostgreSQL Monitoring Development Group.*)$/i ) {
             is($2, $year, "up to date copyright year in $f:$.")
                 or diag("The copyright mention is: $1");
         }
