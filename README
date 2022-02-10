@@ -1021,9 +1021,11 @@ COMPATIBILITY
         Required privileges: unprivileged role.
 
     sequences_exhausted (7.4+)
-        Check all sequences assigned to a column (the smallserial, serial
-        and bigserial types), and raise an alarm if the column or sequences
-        gets too close to the maximum value.
+        Check all sequences and raise an alarm if the column or sequences
+        gets too close to the maximum value. The maximum value is calculated
+        from the maxvalue of the sequence or from the column type when the
+        sequence is owned by a column (the smallserial, serial and bigserial
+        types).
 
         Perfdata returns the sequences that trigger the alert.
 
