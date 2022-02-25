@@ -46,7 +46,7 @@ $node->command_checks_all( [
     [
         qr/^CHECK_PGACTIVITY CRITICAL: Query failed !$/m,
         # v12 and after adds " error:" in output
-        qr/^psql:(?: error:)? could not connect to server:/m,
+        qr/^psql:(?: error:)? (connection to server .* failed|could not connect to server):/m,
         qr/^\s*Is the server running locally and accepting/m
     ],
     [ qr/^$/ ],
