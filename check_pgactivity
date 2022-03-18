@@ -7335,7 +7335,7 @@ This probe helps to detect a frozen stats collector process.
 
 Perfdata returns the statistics snapshot age.
 
-Critical and Warning thresholds accept a raw number of seconds.
+Critical and Warning thresholds only accept an interval (eg. 1h30m25s).
 
 Required privileges: unprivileged role.
 
@@ -7351,19 +7351,17 @@ sub check_stat_snapshot_age {
 
     my $query  = q{ SELECT extract(epoch from (now() - pg_stat_get_snapshot_timestamp())) AS age };
 
-    if ( defined $args{'warning'} ) {
-        # warning and critical are mandatory.
+    if ( defined $args{'warning'} or defined $args{'critical'} ) {
+        # if a threshold is specified, both must be set
         pod2usage(
             -message => "FATAL: you must specify critical and warning thresholds.",
             -exitval => 127
         ) unless defined $args{'warning'} and defined $args{'critical'} ;
 
-        # warning and critical must be raw or %.
         pod2usage(
-            -message => "FATAL: critical and warning thresholds only accept raw numbers.",
+            -message => "FATAL: critical and warning thresholds only acccepts interval.",
             -exitval => 127
-        ) unless $args{'warning'}  =~ m/^([0-9.]+)/
-            and  $args{'critical'} =~ m/^([0-9.]+)/;
+        ) unless is_time( $args{'warning'} ) and is_time( $args{'critical'} );
     }
 
     @hosts = @{ parse_hosts %args };
@@ -7383,8 +7381,8 @@ sub check_stat_snapshot_age {
     push @perfdata => [ "statistics_age", $stats_age, undef ];
 
     if ( defined $args{'warning'} ) {
-        my $w_limit = $args{'warning'};
-        my $c_limit = $args{'critical'};
+        my $w_limit = get_time $args{'warning'};
+        my $c_limit = get_time $args{'critical'};
 
         push @{ $perfdata[0] } => ( $w_limit, $c_limit );
 
