@@ -120,6 +120,10 @@ my %services = (
         'sub'  => \&check_checksum_errors,
         'desc' => 'Check data checksums errors.'
     },
+    'session_stats' => {
+        'sub'  => \&check_session_stats,
+        'desc' => 'Miscellaneous session statistics, including session rate.'
+    },
     'commit_ratio' => {
         'sub'  => \&check_commit_ratio,
         'desc' => 'Commit and rollback rate per second and commit ratio since last execution.'
@@ -3348,6 +3352,100 @@ sub check_btree_bloat {
             if $w_count > 0;
 
     return status_ok( $me, [ "Btree bloat ok" ], \@perfdata );
+}
+
+
+=item B<session_stats> (14+)
+
+Gather miscellaneous session statistics.
+
+This service uses the status file (see --status-file parameter).
+
+Perfdata contains the session / active / idle-in-transaction times
+for each database since last call, as well as the number of sessions per second,
+and the number of sessions killed / abandoned / terminated by fatal errors.
+
+Required privileges: unprivileged role.
+
+=cut
+
+sub check_session_stats {
+    my @rs;
+    my @perfdata;
+    my @hosts;
+    my %sstats;
+    my %new_sstats;
+    my $instance_session_rate;
+    my %args  = %{ $_[0] };
+    my $me    = 'POSTGRES_SESSION_STATS';
+    my $sql   = q{
+        SELECT extract(EPOCH from now()), s.datname, s.sessions,
+            s.session_time, s.active_time, s.idle_in_transaction_time,
+	    s.sessions_killed, s.sessions_abandoned, s.sessions_fatal
+        FROM pg_stat_database s
+          JOIN pg_database d ON s.datid = d.oid
+        WHERE d.datallowconn
+    };
+
+    @hosts = @{ parse_hosts %args };
+
+    pod2usage(
+        -message => 'FATAL: you must give only one host with service "session_stats".',
+        -exitval => 127
+    ) if @hosts != 1;
+
+    is_compat $hosts[0], 'session_stats', $PG_VERSION_140 or exit 1;
+
+    %sstats = %{ load( $hosts[0], 'session_stats', $args{'status-file'} ) || {} };
+
+    @rs = @{ query( $hosts[0], $sql ) };
+
+    $new_sstats{$_->[1]} = {
+        'ts'                => $_->[0],
+        'sessions'          => $_->[2],
+        'session_time'      => $_->[3],
+        'active_time'       => $_->[4],
+        'idle_in_xact_time' => $_->[5],
+        'killd'             => $_->[6],
+        'aband'             => $_->[7],
+        'fatal'             => $_->[8]
+    } foreach @rs;
+
+    save $hosts[0], 'session_stats', \%new_sstats, $args{'status-file'};
+
+    return status_ok( $me, ['First call'] ) unless keys %sstats;
+
+    foreach my $db ( keys %new_sstats ) {
+
+        my $sessions = $new_sstats{$db}{'sessions'} - $sstats{$db}{'sessions'};
+        my $session_time = $new_sstats{$db}{'session_time'} - $sstats{$db}{'session_time'};
+        my $active_time  = $new_sstats{$db}{'active_time'}  - $sstats{$db}{'active_time'};
+        my $idle_in_xact_time  = $new_sstats{$db}{'idle_in_xact_time'}  - $sstats{$db}{'idle_in_xact_time'};
+
+        my $sessions_killd  = $new_sstats{$db}{'killd'}  - $sstats{$db}{'killd'};
+        my $sessions_aband  = $new_sstats{$db}{'aband'}  - $sstats{$db}{'aband'};
+        my $sessions_fatal  = $new_sstats{$db}{'fatal'}  - $sstats{$db}{'fatal'};
+
+        my $session_rate = $sessions / ( $new_sstats{$db}{'ts'} - $sstats{$db}{'ts'} );
+        $instance_session_rate += $session_rate;
+
+        push @perfdata => (
+            [ "${db}_session_rate", $session_rate, ' sessions/s' ],
+
+            [ "${db}_session_time", $session_time, 'ms' ],
+            [ "${db}_active_time",  $active_time,  'ms' ],
+            [ "${db}_idle_in_transaction_time", $idle_in_xact_time, 'ms' ],
+
+            [ "${db}_sessions_killed",    $sessions_killd ],
+            [ "${db}_sessions_abandoned", $sessions_aband ],
+            [ "${db}_sessions_fatal",     $sessions_fatal ]
+        );
+    }
+
+    return status_ok(
+	$me,
+	["Number of sessions per second for all databases: " . sprintf( "%.2f", $instance_session_rate )],
+	\@perfdata );
 }
 
 
