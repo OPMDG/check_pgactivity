@@ -7791,7 +7791,7 @@ sub check_table_bloat {
         $PG_VERSION_74 =>  q{
           SELECT current_database(), ns.nspname AS schemaname, tblname, bs*tblpages AS real_size,
             NULL, NULL, NULL, (tblpages-est_num_pages)*bs AS bloat_size,
-            CASE WHEN tblpages - est_num_pages > 0
+            CASE WHEN tblpages > 0 AND tblpages - est_num_pages > 0
               THEN 100 * (tblpages - est_num_pages)/tblpages::float
               ELSE 0
             END AS bloat_ratio, is_na
@@ -7842,11 +7842,11 @@ sub check_table_bloat {
         $PG_VERSION_82 =>  q{
           SELECT current_database(), ns.nspname AS schemaname, tblname, bs*tblpages AS real_size,
             (tblpages-est_tblpages)*bs AS extra_size,
-            CASE WHEN tblpages - est_tblpages > 0
+            CASE WHEN tblpages > 0 AND tblpages - est_tblpages > 0
               THEN 100 * (tblpages - est_tblpages)/tblpages::float
               ELSE 0
             END AS extra_ratio, fillfactor, (tblpages-est_tblpages_ff)*bs AS bloat_size,
-            CASE WHEN tblpages - est_tblpages_ff > 0
+            CASE WHEN tblpages > 0 AND tblpages - est_tblpages_ff > 0
               THEN 100 * (tblpages - est_tblpages_ff)/tblpages::float
               ELSE 0
             END AS bloat_ratio, is_na
@@ -7896,11 +7896,11 @@ sub check_table_bloat {
         $PG_VERSION_90 =>  q{
           SELECT current_database(), nspname AS schemaname, tblname, bs*tblpages AS real_size,
             (tblpages-est_tblpages)*bs AS extra_size,
-            CASE WHEN tblpages - est_tblpages > 0
+            CASE WHEN tblpages > 0 AND tblpages - est_tblpages > 0
               THEN 100 * (tblpages - est_tblpages)/tblpages::float
               ELSE 0
             END AS extra_ratio, fillfactor, (tblpages-est_tblpages_ff)*bs AS bloat_size,
-            CASE WHEN tblpages - est_tblpages_ff > 0
+            CASE WHEN tblpages > 0 AND tblpages - est_tblpages_ff > 0
               THEN 100 * (tblpages - est_tblpages_ff)/tblpages::float
               ELSE 0
             END AS bloat_ratio, is_na
@@ -7946,7 +7946,7 @@ sub check_table_bloat {
         $PG_VERSION_120 => q{
         SELECT current_database(), ns.nspname, tblname, bs*tblpages AS real_size,
           (tblpages-est_tblpages)*bs AS extra_size,
-          CASE WHEN tblpages - est_tblpages > 0
+          CASE WHEN tblpages > 0 AND tblpages - est_tblpages > 0
             THEN 100 * (tblpages - est_tblpages)/tblpages::float
             ELSE 0
           END AS extra_ratio, fillfactor,
@@ -7954,7 +7954,7 @@ sub check_table_bloat {
             THEN (tblpages-est_tblpages_ff)*bs
             ELSE 0
           END AS bloat_size,
-          CASE WHEN tblpages - est_tblpages_ff > 0
+          CASE WHEN tblpages > 0 AND tblpages - est_tblpages_ff > 0
             THEN 100 * (tblpages - est_tblpages_ff)/tblpages::float
             ELSE 0
           END AS bloat_ratio, is_na
