@@ -5722,7 +5722,7 @@ Above 9.2, it supports C<--exclude> to filter out connections. Eg., to
 filter out pg_dump and pg_dumpall, set this to 'pg_dump,pg_dumpall'.
 
 Before 9.2, this services checks for idle transaction with their start time.
-Thus, the service can mistakenly take account of transaction transciently in
+Thus, the service can mistakenly take account of transaction transiently in
 idle state.
 From 9.2 and up, the service checks for transaction that really had no activity
 since the given thresholds.
