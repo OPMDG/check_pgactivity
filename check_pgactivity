@@ -2490,7 +2490,7 @@ sub check_backends_status {
 
 
     if ( defined $args{'warning'} ) {
-        my $threshods_re
+        my $thresholds_re
             = qr/(idle|idle_xact|aborted_xact|fastpath|active|waiting)\s*=\s*(\d+\s*[smhd]?)/i;
 
         # Warning and critical must be raw
@@ -2498,15 +2498,15 @@ sub check_backends_status {
             -message => "FATAL: critical and warning thresholds only accept a list of 'label=value' separated by comma.\n"
                 . "See documentation for more information.",
             -exitval => 127
-        ) unless $args{'warning'} =~ m/^$threshods_re(\s*,\s*$threshods_re)*$/
-            and $args{'critical'} =~ m/^$threshods_re(\s*,\s*$threshods_re)*$/ ;
+        ) unless $args{'warning'} =~ m/^$thresholds_re(\s*,\s*$thresholds_re)*$/
+            and $args{'critical'} =~ m/^$thresholds_re(\s*,\s*$thresholds_re)*$/ ;
 
-        while ( $args{'warning'} =~ /$threshods_re/g ) {
+        while ( $args{'warning'} =~ /$thresholds_re/g ) {
             my ($threshold, $value) = ($1, $2);
             $warn{$translate{$threshold}} = $value if $1 and defined $2;
         }
 
-        while ( $args{'critical'} =~ /$threshods_re/g ) {
+        while ( $args{'critical'} =~ /$thresholds_re/g ) {
             my ($threshold, $value) = ($1, $2);
             $crit{$translate{$threshold}} = $value if $1 and defined $2;
         }
@@ -3839,7 +3839,7 @@ sub check_database_size {
     is_compat $hosts[0], 'database_size', $PG_VERSION_81 or exit 1;
 
     if ( defined $args{'warning'} ) {
-        my $threshods_re = qr/(size|delta)\s*=\s*([^,]+)/i;
+        my $thresholds_re = qr/(size|delta)\s*=\s*([^,]+)/i;
 
         # backward compatibility
         $args{'warning'} = "delta=$args{'warning'}"
@@ -3852,15 +3852,15 @@ sub check_database_size {
             -message => "FATAL: wrong format for critical and/or warning thresholds.\n"
                 . "See documentation for more information.",
             -exitval => 127
-        ) unless $args{'warning'} =~ m/^$threshods_re(\s*,\s*$threshods_re)*$/
-            and $args{'critical'} =~ m/^$threshods_re(\s*,\s*$threshods_re)*$/ ;
+        ) unless $args{'warning'} =~ m/^$thresholds_re(\s*,\s*$thresholds_re)*$/
+            and $args{'critical'} =~ m/^$thresholds_re(\s*,\s*$thresholds_re)*$/ ;
 
-        while ( $args{'warning'} =~ /$threshods_re/g ) {
+        while ( $args{'warning'} =~ /$thresholds_re/g ) {
             my ($threshold, $value) = ($1, $2);
             $warn{$threshold} = $value if $1 and defined $2;
         }
 
-        while ( $args{'critical'} =~ /$threshods_re/g ) {
+        while ( $args{'critical'} =~ /$thresholds_re/g ) {
             my ($threshold, $value) = ($1, $2);
             $crit{$threshold} = $value if $1 and defined $2;
         }
@@ -6830,12 +6830,12 @@ sub check_replication_slots {
 
     # build warn/crit thresholds
     if ( defined $args{'warning'} ) {
-        my $threshods_re = qr/(wal|spilled|remaining)\s*=\s*(?:([^,]+))/i;
+        my $thresholds_re = qr/(wal|spilled|remaining)\s*=\s*(?:([^,]+))/i;
 
-        if ($args{'warning'} =~ m/^$threshods_re(\s*,\s*$threshods_re)*$/
-            and $args{'critical'} =~ m/^$threshods_re(\s*,\s*$threshods_re)*$/
+        if ($args{'warning'} =~ m/^$thresholds_re(\s*,\s*$thresholds_re)*$/
+            and $args{'critical'} =~ m/^$thresholds_re(\s*,\s*$thresholds_re)*$/
         ) {
-            while ( $args{'warning'} =~ /$threshods_re/g ) {
+            while ( $args{'warning'} =~ /$thresholds_re/g ) {
                 my ($threshold, $value) = ($1, $2);
 
                 if ($threshold eq 'remaining') {
@@ -6851,7 +6851,7 @@ sub check_replication_slots {
                 }
             }
 
-            while ( $args{'critical'} =~ /$threshods_re/g ) {
+            while ( $args{'critical'} =~ /$thresholds_re/g ) {
                 my ($threshold, $value) = ($1, $2);
 
                 if ($threshold eq 'remaining') {
