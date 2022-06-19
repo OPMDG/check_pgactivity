@@ -144,7 +144,7 @@ $node->command_checks_all( [
                           '--username' => getlogin,
                           '--format'   => 'human',
                           '--dbname'   => 'template1',
-                          '--warning'  => '3s',
+                          '--warning'  => '2s',
                           '--critical' => '1h'
     ],
     0,
