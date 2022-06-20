@@ -12,16 +12,15 @@ use pgNode;
 use pgSession;
 use TestLib ();
 use IPC::Run ();
-use Test::More tests => 33;
+use Test::More tests => 37;
 
 my $node = pgNode->get_new_node('prod');
 my @timer;
 my @in;
 my @out;
-my @procs;
+my $proc;
 
 $node->init;
-$node->append_conf('postgresql.conf', 'max_connections=8');
 $node->start;
 
 ### Begin of tests ###
@@ -57,24 +56,34 @@ $node->command_checks_all( [
     'basic check'
 );
 
-# Add a new session and start a idle transaction
-TestLib::system_or_bail('createdb',
-    '--host' => $node->host,
-    '--port' => $node->port,
-    'testdb'
+# unit check
+$node->command_checks_all( [
+    './check_pgactivity', '--service'  => 'oldest_idlexact',
+                          '--username' => getlogin,
+                          '--format'   => 'human',
+                          '--dbname'   => 'template1',
+                          '--warning'  => '30m',
+                          '--critical' => '1h'
+    ],
+    0,
+    [ qr/^Service  *: POSTGRES_OLDEST_IDLEXACT$/m,
+      qr/^Perfdata       : template1 avg=NaNs warn=1800 crit=3600$/m,
+    ],
+    [ qr/^$/ ],
+    'unit check'
 );
 
-push @procs, pgSession->new($node, 'testdb');
+$proc = pgSession->new($node, 'postgres');
 
-$procs[0]->query('BEGIN');
-$procs[0]->query('SELECT txid_current()');
+$proc->query('BEGIN',1);
+$proc->query('SELECT txid_current()',1);
 
 # OK check
 $node->command_checks_all( [
     './check_pgactivity', '--service'  => 'oldest_idlexact',
                           '--username' => getlogin,
                           '--format'   => 'human',
-                          '--dbname'   => 'template1',
+                          '--dbname'   => 'postgres',
                           '--warning'  => '3s',
                           '--critical' => '1h'
     ],
@@ -82,7 +91,7 @@ $node->command_checks_all( [
     [ qr/^Service  *: POSTGRES_OLDEST_IDLEXACT$/m,
       qr/^Returns  *: 0 \(OK\)$/m,
       qr/^Message  *: 1 idle transaction\(s\)$/m,
-      qr/^Perfdata *: testdb # idle xact=1$/m
+      qr/^Perfdata *: postgres # idle xact=1$/m
     ],
     [ qr/^$/ ],
     'OK check'
@@ -92,7 +101,7 @@ $node->command_checks_all( [
 $node->poll_query_until('template1', q{
     SELECT current_timestamp - xact_start > interval '3s'
     FROM pg_catalog.pg_stat_activity
-    WHERE datname = 'testdb' 
+    WHERE datname = 'postgres' 
       AND xact_start IS NOT NULL
     LIMIT 1
 });
@@ -102,7 +111,7 @@ $node->command_checks_all( [
     './check_pgactivity', '--service'  => 'oldest_idlexact',
                           '--username' => getlogin,
                           '--format'   => 'human',
-                          '--dbname'   => 'template1',
+                          '--dbname'   => 'postgres',
                           '--warning'  => '2s',
                           '--critical' => '1h'
     ],
@@ -110,7 +119,7 @@ $node->command_checks_all( [
     [ qr/^Service  *: POSTGRES_OLDEST_IDLEXACT$/m,
       qr/^Returns  *: 1 \(WARNING\)$/m,
       qr/^Message  *: 1 idle transaction\(s\)$/m,
-      qr/^Perfdata *: testdb # idle xact=1$/m
+      qr/^Perfdata *: postgres # idle xact=1$/m
     ],
     [ qr/^$/ ],
     'warning check'
@@ -129,14 +138,14 @@ $node->command_checks_all( [
     [ qr/^Service  *: POSTGRES_OLDEST_IDLEXACT$/m,
       qr/^Returns  *: 2 \(CRITICAL\)$/m,
       qr/^Message  *: 1 idle transaction\(s\)$/m,
-      qr/^Perfdata *: testdb # idle xact=1$/m
+      qr/^Perfdata *: postgres # idle xact=1$/m
     ],
     [ qr/^$/ ],
     'critical check'
 );
 
 # Emit one query and check that check_pga does not emit a warning or critical
-$procs[0]->query('SELECT 1');
+$proc->query('SELECT count(*) FROM pg_class', 1);
 
 # active transaction check
 $node->command_checks_all( [
@@ -151,11 +160,13 @@ $node->command_checks_all( [
     [ qr/^Service  *: POSTGRES_OLDEST_IDLEXACT$/m,
       qr/^Returns  *: 0 \(OK\)$/m,
       qr/^Message  *: 1 idle transaction\(s\)$/m,
-      qr/^Perfdata *: testdb # idle xact=1$/m
+      qr/^Perfdata *: postgres # idle xact=1$/m
     ],
     [ qr/^$/ ],
     'active transaction check'
 );
+
+$proc->query('COMMIT', 1);
 
 ### End of tests ###
 
