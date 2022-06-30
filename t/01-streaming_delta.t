@@ -28,16 +28,14 @@ my $pgversion;
 $pgversion = $prim->version;
 note "testing on version $pgversion";
 
-# create primary and start it
-$prim->init(allows_streaming => 1);
-$prim->start;
-note("primary started");
-
 # Tests for PostreSQL 9.0 and before
 SKIP: {
     # "skip" allows to ignore the whole bloc based on the given a condition
     skip "skip non-compatible test on PostgreSQL 9.0 and before", 3
-        unless $prim->version <= '9.0';
+        unless $pgversion <= '9.0';
+
+    $prim->init;
+    $prim->start;
 
     $prim->command_checks_all( [
         './check_pgactivity', '--service'  => 'streaming_delta',
@@ -54,7 +52,12 @@ SKIP: {
 # Tests for PostreSQL 9.1 and after
 SKIP: {
     skip "these tests requires PostgreSQL 9.1 and after", $num_tests
-        unless $prim->version >= '9.1';
+        unless $pgversion >= '9.1';
+
+    # create primary and start it
+    $prim->init(allows_streaming => 1);
+    $prim->start;
+    note("primary started");
 
     # create backup
     $prim->backup($backup);

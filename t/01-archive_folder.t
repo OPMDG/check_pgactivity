@@ -17,18 +17,37 @@ my $wal;
 my $time;
 
 # create the instance and start it
-$node->init(has_archiving => 1, allows_streaming => 1);
+$node->init(has_archiving => 1);
+
+if ( $node->version >= 9.6 ) {
+    $node->append_conf('postgresql.conf', "wal_level = replica");
+}
+elsif ( $node->version >= 9.0 ) {
+    $node->append_conf('postgresql.conf', "wal_level = archive");
+}
+
 $node->start;
 
 # generate three archives
 # split create table and insert to produce more data in WAL
 $node->psql('template1', 'create table t (i int primary key)');
-$node->psql('template1', 'insert into t select generate_series(1,10000) i');
+$node->psql('template1', 'insert into t select generate_series(1,10000) as i');
 $node->switch_wal;
-$node->psql('template1', 'insert into t select generate_series(10001,20000) i');
+$node->psql('template1', 'insert into t select generate_series(10001,20000) as i');
 $node->switch_wal;
-$node->psql('template1', 'insert into t select generate_series(20001,30000) i');
+$node->psql('template1', 'insert into t select generate_series(20001,30000) as i');
 $wal = $node->switch_wal;
+
+# The WAL sequence starts at 000000010000000000000000 up to v8.4, then
+# 000000010000000000000001 starting from v9.0.
+# Make sure we have the exact same archive sequence whatever the version so
+# following tests apply no matter the version.
+if ($node->version < 9.0) {
+    $node->psql('template1', 'insert into t select generate_series(30001,40000) as i');
+    $wal = $node->switch_wal;
+    unlink "$archive_dir/000000010000000000000000";
+}
+
 $node->wait_for_archive($wal);
 
 ### Begin of tests ###

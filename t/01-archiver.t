@@ -17,7 +17,15 @@ my $pga_data = "$TestLib::tmp_check/pga.data";
 my $wal;
 my @stdout;
 
-$node->init(has_archiving => 1, allows_streaming => 1);
+$node->init(has_archiving => 1);
+
+if ( $node->version >= 9.6 ) {
+    $node->append_conf('postgresql.conf', "wal_level = replica");
+}
+elsif ( $node->version >= 9.0 ) {
+    $node->append_conf('postgresql.conf', "wal_level = archive");
+}
+
 $node->start;
 
 ### Begin of tests ###
@@ -25,8 +33,18 @@ $node->start;
 # generate one archive
 # split create table and insert to produce more data in WAL
 $node->psql('template1', 'create table t (i int primary key)');
-$node->psql('template1', 'insert into t select generate_series(1,10000) i');
+$node->psql('template1', 'insert into t select generate_series(1,10000) as i');
 $wal = $node->switch_wal;
+
+
+# The WAL sequence starts at 000000010000000000000000 up to v8.4, then
+# 000000010000000000000001 starting from v9.0.
+# Make sure we have the exact same archive sequence whatever the version so
+# following tests apply no matter the version.
+if ($node->version < 9.0) {
+    $node->psql('template1', 'insert into t select generate_series(-1000,0) as i');
+    $wal = $node->switch_wal;
+}
 
 # FIXME: there's a race condition in archiver check when it get the mtime
 # of the next WAL to archive while it hasn't been created yet.
@@ -58,7 +76,7 @@ $node->command_checks_all( [
 $node->append_conf('postgresql.conf', "archive_command = 'false'");
 $node->reload;
 
-$node->psql('template1', 'insert into t select generate_series(10001,20000) i');
+$node->psql('template1', 'insert into t select generate_series(10001,20000) as i');
 $wal = $node->switch_wal;
 # avoid same race condition
 $node->psql('template1', 'checkpoint');
@@ -74,7 +92,7 @@ TestLib::system_or_bail('./check_pgactivity',
     '--port'        => $node->port,
     '--status-file' => $pga_data,
     '--format'      => 'human'
-) if $node->version <= 9.6;
+) if $node->version < 10;
 
 @stdout = (
     qr/^Service      *: POSTGRES_ARCHIVER$/m,

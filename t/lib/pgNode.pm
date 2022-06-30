@@ -29,6 +29,8 @@ use Test::More;
 use Time::HiRes qw(usleep);
 use Cwd 'cwd';
 
+use Config;
+
 use PostgresNode;
 
 BEGIN {
@@ -53,6 +55,9 @@ sub new {
     $self->{'node'} = PostgresNode->get_new_node(@_);
 
     bless $self, $class;
+
+    BAIL_OUT( "TAP tests does not support versions older than 8.2" )
+        if $self->version < 8.2;
 
     note('Node "', $self->{'node'}->name, '" uses version: ', $self->version);
 
@@ -108,7 +113,7 @@ sub switch_wal {
     my $self = shift;
     my $result;
 
-    if ($self->version > '9.6') {
+    if ($self->version >= '10') {
         $result = $self->safe_psql('postgres',
             'SELECT pg_walfile_name(pg_switch_wal())');
     }

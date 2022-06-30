@@ -96,6 +96,8 @@ sub new
 	# the first released version of that branch.
 	push @numbers, -1 if ($devel);
 
+	$numbers[$_] += 0 for 0..3;
+
 	$devel ||= "";
 
 	return bless { str => "$arg$devel", num => \@numbers }, $class;

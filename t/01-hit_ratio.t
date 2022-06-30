@@ -16,6 +16,10 @@ my $node = pgNode->get_new_node('prod');
 my $pga_data = "$TestLib::tmp_check/pga.data";
 
 $node->init;
+
+$node->append_conf('postgresql.conf', 'stats_block_level = on')
+    if $node->version < 8.3;
+
 $node->start;
 
 ### Begin of tests ###

@@ -99,7 +99,7 @@ $node->command_checks_all( [
 );
 
 # add two new backends and test warning
-push( @procs, pgSession->new($node) ) for (1..2);
+push( @procs, pgSession->new($node) ) for 1..2;
 
 $node->command_checks_all( [
     './check_pgactivity', '--service'  => 'backends',

@@ -109,20 +109,17 @@ PostgresNode object depending on the PostgreSQL backend version returned by
 `pg_config --version`. It helps extending the PostgresNode classes with
 new methods needed in our tests.
 
-Class PostgresNode comes straight from latest PostgreSQL source code and
-should not be patched, or just for bug fix, as long as the bug fix is declared
-upstream. Any changes or methods addition must be done in pgNode. Note that
-current source code of PostgresNode comes from its own repository:
-https://gitlab.com/adunstan/postgresnodeng/
+Class PostgresNode comes from https://gitlab.com/adunstan/postgresnodeng/
+which is currently a dead project. The class has been patched to fix some
+various incompatibilities with older PostgreSQL releases. As TAP test modules
+has moved a lot in PostgreSQL code during v14, we would need to check if it is
+possible to resync with upstream or just keep it that way.
 
 The PostgresNode class and methods are described in its embedded documentation.
 See: `perldoc t/lib/PostgresNode.pm`. Any method addition and other changes are
-documented in pgNode class. See: `perldoc t/lib/pgNode.pm`
+documented in pgNode class. See: `perldoc t/lib/pgNode.pm`.
 
 Some of the methods in these classes are just wrappers around functions coming
 from TestLib, but adding some environment context of the instance (eg. setting
 `PGHOST`). See embeded documentation of TestLib for more details about these
 functions: `perldoc t/lib/TestLib.pm`.
-
-To update PostgresNode and related classes from upstream, just copy/paste them
-in `t/lib`, then fix pgNode and tests if needed.

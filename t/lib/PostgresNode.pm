@@ -3098,13 +3098,50 @@ sub psql
 	$self->SUPER::psql($dbname, $sql, %params);
 }
 
+sub interactive_psql
+{
+	my ($self, $dbname, $stdin, $stdout, $timer, %params) = @_;
+
+	local %ENV = $self->_get_env();
+
+	my @psql_params = (
+		$self->installed_command('psql'), '-XAt',
+		'-p', $self->port, '-h', $self->host, '-d', $dbname
+	);
+
+	push @psql_params, @{ $params{extra_params} }
+	  if defined $params{extra_params};
+
+	# Ensure there is no data waiting to be sent:
+	$$stdin = "" if ref($stdin);
+	# IPC::Run would otherwise append to existing contents:
+	$$stdout = "" if ref($stdout);
+
+	my $harness = IPC::Run::start \@psql_params,
+	  '<pty<', $stdin, '>pty>', $stdout, $timer;
+
+	# Pump until we see psql's help banner.  This ensures that callers
+	# won't write anything to the pty before it's ready, avoiding an
+	# implementation issue in IPC::Run.  Also, it means that psql
+	# connection failures are caught here, relieving callers of
+	# the need to handle those.  (Right now, we have no particularly
+	# good handling for errors anyway, but that might be added later.)
+	pump $harness
+	  until $$stdout =~ /\\q to quit/ || $timer->is_expired;
+
+	die "psql startup timed out" if $timer->is_expired;
+
+	return $harness;
+}
+
 ##########################################################################
 
 package PostgresNodeV_8_2;    ## no critic (ProhibitMultiplePackages)
 
 use Test::More;
 use parent -norequire, qw(PostgresNodeV_8_3);
-
+use Time::HiRes qw(usleep);
+use Config;
 
 # https://www.postgresql.org/docs/9.3/release-8-2.html
 
@@ -3126,6 +3163,68 @@ sub psql
 	$params{connstr} ||= $dbname;
 
 	$self->SUPER::psql($dbname, $sql, %params);
+}
+
+sub poll_query_until
+{
+	my ($self, $dbname, $query, $expected) = @_;
+
+	local %ENV = $self->_get_env();
+
+	$expected = 't' unless defined($expected);    # default value
+
+	# my $cmd = [
+	# 	$self->installed_command('psql'),
+	# 	'-XAt', '-c', $query, '-d', $self->connstr($dbname)
+	# ];
+	my ($stdout, $stderr);
+	my $max_attempts = 180 * 10;
+	my $attempts     = 0;
+
+	while ($attempts < $max_attempts)
+	{
+		my $result = $self->psql($dbname, $query,
+			stdout => \$stdout, stderr => \$stderr
+		);
+
+		$stdout =~ s/\r\n/\n/g if $Config{osname} eq 'msys';
+		chomp($stdout);
+
+		if ($stdout eq $expected)
+		{
+			return 1;
+		}
+
+		# Wait 0.1 second before retrying.
+		usleep(100_000);
+
+		$attempts++;
+	}
+
+	# The query result didn't change in 180 seconds. Give up. Print the
+	# output from the last attempt, hopefully that's useful for debugging.
+	$stderr =~ s/\r\n/\n/g if $Config{osname} eq 'msys';
+	chomp($stderr);
+	diag qq(poll_query_until timed out executing this query:
+$query
+expecting this output:
+$expected
+last actual query output:
+$stdout
+with stderr:
+$stderr);
+	return 0;
+}
+
+# Internal routine to enable archiving
+sub enable_archiving
+{
+	my ($self) = @_;
+	$self->SUPER::enable_archiving;
+
+	# Remove non existing archive_mode
+	$self->adjust_conf( 'postgresql.conf', 'archive_mode', undef );
+	return;
 }
 
 ##########################################################################
