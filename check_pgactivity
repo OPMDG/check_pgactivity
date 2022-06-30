@@ -4874,7 +4874,7 @@ sub check_last_maintenance {
                        coalesce(extract(epoch FROM
                          current_timestamp -
                                  greatest(last_${type}, last_auto${type})),
-                        '-infinity'::float)),
+                        'infinity'::float)),
                    'NaN'::float),
                 coalesce(sum(${type}_count), 0) AS ${type}_count,
                 coalesce(sum(auto${type}_count), 0) AS auto${type}_count,
@@ -4961,7 +4961,7 @@ LOOP_DB: foreach my $db (@all_db) {
             }
         }
 
-        if ( $rs->[0] =~ /^-inf/i or $rs->[0] >= $c_limit ) {
+        if ( $rs->[0] >= $c_limit ) {
             push @msg_crit => "$db: " . to_interval($rs->[0]);
             next LOOP_DB;
         }
