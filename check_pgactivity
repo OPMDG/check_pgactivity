@@ -4842,9 +4842,11 @@ sub check_last_maintenance {
         # from pg_stat_user_tables
         $PG_VERSION_82 => qq{
             SELECT coalesce(max(
-                extract(epoch FROM current_timestamp -
-                    greatest(last_${type}, last_auto${type})
-                )), 'NaN'::float),
+                       coalesce(extract(epoch FROM
+                         current_timestamp -
+                                 greatest(last_${type}, last_auto${type})),
+                         'infinity'::float)),
+                    'NaN'::float),
                 NULL, NULL,
                 sum(hashtext(n_tup_ins::text
                     ||n_tup_upd::text
@@ -4856,9 +4858,11 @@ sub check_last_maintenance {
         # pg_stat_database
         $PG_VERSION_83 => qq{
             SELECT coalesce(max(
-                extract(epoch FROM current_timestamp -
-                    greatest(last_${type}, last_auto${type})
-                )), 'NaN'::float),
+                       coalesce(extract(epoch FROM
+                         current_timestamp -
+                                 greatest(last_${type}, last_auto${type})),
+                         'infinity'::float)),
+                    'NaN'::float),
                 NULL, NULL,
                 (
                   SELECT md5(tup_inserted::text||tup_updated::text||tup_deleted::text)
@@ -4869,6 +4873,7 @@ sub check_last_maintenance {
             WHERE schemaname NOT LIKE 'pg_temp_%'
               AND schemaname NOT LIKE 'pg_toast_temp_%'
         },
+        # Starting with 9.1, we can add the analyze/vacuum counts
         $PG_VERSION_91 => qq{
             SELECT coalesce(max(
                        coalesce(extract(epoch FROM
