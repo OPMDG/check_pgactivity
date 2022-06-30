@@ -2153,7 +2153,9 @@ sub check_autovacuum {
 
     @perfdata = map { [ $_, $activity{$_}  ] } keys %activity;
     push @perfdata, [ 'oldest_autovacuum', $oldest, 's' ];
-    push @perfdata, [ 'max_workers', $max_workers ];
+    push @perfdata, [ 'max_workers', $max_workers ]
+        if $hosts[0]->{'version_num'} >= $PG_VERSION_83;
+
     push @msg, "Number of autovacuum: $numautovac";
     push @msg, "Oldest autovacuum: " . to_interval($oldest) if $oldest ne "NaN";
 
