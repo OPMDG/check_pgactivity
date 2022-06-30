@@ -2,16 +2,18 @@
 
 ## Source code
 
-Edit variable `$VERSION` in `check_pgactivity`
-
-Update the version field at
-the end of the inline documentation in this script.
+In `check_pgactivity`:
+  * edit variable `$VERSION`
+  * update the version and release date at the end of the inline documentation
 
 In `check_pgactivity.spec`:
   * update the tag in the `_tag` variable (first line)
   * update the version in `Version:`
   * edit the changelog
     * date format: `LC_TIME=C date +"%a %b %d %Y"`
+
+In `t/01-pga_version.t`:
+  * edit variable `$good_version`
 
 ## Run tests
 
