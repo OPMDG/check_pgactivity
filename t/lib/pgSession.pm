@@ -23,7 +23,8 @@ sub new {
     $self->{'in'}    = '';
     $self->{'out'}   = '';
     $self->{'proc'}  = $node->interactive_psql(
-        $db, \$self->{'in'}, \$self->{'out'}, $self->{'timer'}
+        $db, \$self->{'in'}, \$self->{'out'}, $self->{'timer'},
+        extra_params=>[ '--pset=pager' ]
     );
 
     return bless $self, $class;
