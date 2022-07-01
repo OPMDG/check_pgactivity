@@ -59,6 +59,8 @@ sub new {
     BAIL_OUT( "TAP tests does not support versions older than 8.2" )
         if $self->version < 8.2;
 
+    $ENV{'CHECK_PGA_OLD_PSQL'} = 1 if $self->version < 8.4;
+
     note('Node "', $self->{'node'}->name, '" uses version: ', $self->version);
 
     return $self;
