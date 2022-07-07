@@ -14,7 +14,7 @@ Changelog
   - fix: possible division by 0 in `table_bloat` service  
   - fix: threshold check and support interval for service `check_stat_snapshot_age`
   - fix: service `check_archiver` when a .history or .backup file is staled
-  - fix: service `sequences_exhausted` now check sequences not owned by a table column
+  - fix: service `sequences_exhausted` now checks that sequences are not owned by a table column
   - fix: service `check_archiver` when no WAL was ever archived
 
 2020-11-24 v2.5:
