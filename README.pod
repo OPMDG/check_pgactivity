@@ -1334,7 +1334,7 @@ pg_ls_waldir
 
 =head1 VERSION
 
-check_pgactivity version 2.6, released on Fri Jul 1 2022
+check_pgactivity version 2.6, released on Fri Jul 08 2022.
 
 =head1 LICENSING
 

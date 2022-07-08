@@ -1,7 +1,7 @@
 Changelog
 =========
 
-2022-07-04 v2.6:
+2022-07-08 v2.6:
 
   - add: new `session_stats` service to gather miscellaneous session statistics
   - add: compatibility with PostgreSQL 14
