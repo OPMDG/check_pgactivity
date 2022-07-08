@@ -3,7 +3,7 @@ Changelog
 
 2022-07-04 v2.6:
 
-  - add: new `session_stats` service
+  - add: new `session_stats` service to gather miscellaneous session statistics
   - add: compatibility with PostgreSQL 14
   - change: service `autovacuum` does not show `max_workers` anymore for 8.2 and below
   - change: various messages cleanup
@@ -14,7 +14,7 @@ Changelog
   - fix: possible division by 0 in `table_bloat` service  
   - fix: threshold check and support interval for service `check_stat_snapshot_age`
   - fix: service `check_archiver` when a .history or .backup file is staled
-  - fix: service `sequences_exhausted` now checks that sequences are not owned by a table column
+  - fix: service `sequences_exhausted` now checks also sequences that are not owned by a table column
   - fix: service `check_archiver` when no WAL was ever archived
 
 2020-11-24 v2.5:
