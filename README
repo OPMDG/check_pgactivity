@@ -102,8 +102,16 @@ COMPATIBILITY
 
     --status-file PATH
         Path to the file where service status information is kept between
-        successive calls. Default is to save check_pgactivity.data in the
-        same directory as the script.
+        successive calls. Default is to save a file called
+        "check_pgactivity.data" in the same directory as the script.
+
+        Note that this file is protected from concurrent writes using a lock
+        file located in the same directory, having the same name than the
+        status file, but with the extension ".lock".
+
+        On some plateform, network filesystems may not be supported
+        correctly by the locking mechanism. See "perldoc -f flock" for more
+        information.
 
     --dump-status-file
         Dump the content of the status file and exit. This is useful for
@@ -429,6 +437,18 @@ COMPATIBILITY
         grant SELECT on the system table pg_statistic to the pg_monitor
         role, in each database of the cluster: "GRANT SELECT ON pg_statistic
         TO pg_monitor;"
+
+    session_stats (14+)
+        Gather miscellaneous session statistics.
+
+        This service uses the status file (see --status-file parameter).
+
+        Perfdata contains the session / active / idle-in-transaction times
+        for each database since last call, as well as the number of sessions
+        per second, and the number of sessions killed / abandoned /
+        terminated by fatal errors.
+
+        Required privileges: unprivileged role.
 
     commit_ratio (all)
         Check the commit and rollback rate per second since last call.
@@ -840,6 +860,12 @@ COMPATIBILITY
         to filter out pg_dump and pg_dumpall, set this to
         'pg_dump,pg_dumpall'.
 
+        Before 9.2, this services checks for idle transaction with their
+        start time. Thus, the service can mistakenly take account of
+        transaction transiently in idle state. From 9.2 and up, the service
+        checks for transaction that really had no activity since the given
+        thresholds.
+
         Required privileges: an unprivileged role checks only its own
         queries; a pg_monitor (10+) or superuser (<10) role is required to
         check all queries.
@@ -1045,7 +1071,8 @@ COMPATIBILITY
 
         Perfdata returns the statistics snapshot age.
 
-        Critical and Warning thresholds accept a raw number of seconds.
+        Critical and Warning thresholds only accept an interval (eg.
+        1h30m25s).
 
         Required privileges: unprivileged role.
 
@@ -1268,7 +1295,7 @@ COMPATIBILITY
           check_pgactivity -p 5433 -h slave --service hit_ratio --dbinclude importantone -w 90% -c 80%
 
 VERSION
-    check_pgactivity version 2.5, released on Tue Nov 24 2020
+    check_pgactivity version 2.6, released on Fri Jul 08 2022.
 
 LICENSING
     This program is open source, licensed under the PostgreSQL license. For

@@ -1,6 +1,22 @@
 Changelog
 =========
 
+2022-07-08 v2.6:
+
+  - add: new `session_stats` service to gather miscellaneous session statistics
+  - add: compatibility with PostgreSQL 14
+  - change: service `autovacuum` does not show `max_workers` anymore for 8.2 and below
+  - change: various messages cleanup
+  - fix: `last_vacuum` and `last_analyse` to reports the correct oldest maintenance
+  - fix: service `check_oldest_idlexact` now use `state_change` instead of
+         `xact_start` to calculate the idle time
+  - fix: improve locking around the status file to avoid dead locks and status file truncation
+  - fix: possible division by 0 in `table_bloat` service  
+  - fix: threshold check and support interval for service `check_stat_snapshot_age`
+  - fix: service `check_archiver` when a .history or .backup file is staled
+  - fix: service `sequences_exhausted` now checks also sequences that are not owned by a table column
+  - fix: service `check_archiver` when no WAL was ever archived
+
 2020-11-24 v2.5:
 
   - add: new `oldest_xmin` service

@@ -118,9 +118,16 @@ It should be version 8.3 at least, but the server can be older.
 
 =item B<--status-file> PATH
 
-Path to the file where service status information is kept between
-successive calls. Default is to save check_pgactivity.data in the same
+Path to the file where service status information is kept between successive
+calls. Default is to save a file called C<check_pgactivity.data> in the same
 directory as the script.
+
+Note that this file is protected from concurrent writes using a lock file
+located in the same directory, having the same name than the status file, but
+with the extension C<.lock>.
+
+On some plateform, network filesystems may not be supported correctly by the
+locking mechanism. See C<perldoc -f flock> for more information.
 
 =item B<--dump-status-file>
 
@@ -466,6 +473,18 @@ on PostgreSQL 10+, a user with the role pg_monitor suffices,
 provided that you grant SELECT on the system table pg_statistic
 to the pg_monitor role, in each database of the cluster:
 C<GRANT SELECT ON pg_statistic TO pg_monitor;>
+
+=item B<session_stats> (14+)
+
+Gather miscellaneous session statistics.
+
+This service uses the status file (see --status-file parameter).
+
+Perfdata contains the session / active / idle-in-transaction times
+for each database since last call, as well as the number of sessions per second,
+and the number of sessions killed / abandoned / terminated by fatal errors.
+
+Required privileges: unprivileged role.
 
 =item B<commit_ratio> (all)
 
@@ -877,6 +896,12 @@ This service supports both C<--dbexclude> and C<--dbinclude> parameters.
 Above 9.2, it supports C<--exclude> to filter out connections. Eg., to
 filter out pg_dump and pg_dumpall, set this to 'pg_dump,pg_dumpall'.
 
+Before 9.2, this services checks for idle transaction with their start time.
+Thus, the service can mistakenly take account of transaction transiently in
+idle state.
+From 9.2 and up, the service checks for transaction that really had no activity
+since the given thresholds.
+
 Required privileges: an unprivileged role checks only its own queries;
 a pg_monitor (10+) or superuser (<10) role is required to check all queries.
 
@@ -1078,7 +1103,7 @@ This probe helps to detect a frozen stats collector process.
 
 Perfdata returns the statistics snapshot age.
 
-Critical and Warning thresholds accept a raw number of seconds.
+Critical and Warning thresholds only accept an interval (eg. 1h30m25s).
 
 Required privileges: unprivileged role.
 
@@ -1309,7 +1334,7 @@ pg_ls_waldir
 
 =head1 VERSION
 
-check_pgactivity version 2.5, released on Tue Nov 24 2020
+check_pgactivity version 2.6, released on Fri Jul 08 2022.
 
 =head1 LICENSING
 
