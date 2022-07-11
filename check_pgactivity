@@ -1538,7 +1538,11 @@ Descriptions and parameters of available services.
 =item B<archive_folder>
 
 Check if all archived WALs exist between the oldest and the latest WAL in the
-archive folder and make sure they are 16MB. The given folder must have archived
+archive folder and make sure they are 16MB.
+If you use a dedicated PITR tool like pgBackrest/barman/pitery,
+please prefer its dedicated service over of this one.
+
+The given folder must have archived
 files from ONE cluster. The version of PostgreSQL that created the archives is
 only checked on the last one, for performance consideration.
 
@@ -1580,6 +1584,8 @@ one.
 
 Critical and Warning define the max age of the latest archived WAL as an
 interval (eg. 5m or 300s ).
+
+Suggested periodicity: 1 day
 
 Required privileges: unprivileged role; the system user needs read access
 to archived WAL files.
@@ -1842,6 +1848,8 @@ waiting to be archived. They only accept a raw number of files.
 Whatever the given threshold, a critical alert is raised if the archiver
 process did not archive the oldest waiting WAL to be archived since last call.
 
+Suggested periodicity: 5 min
+
 Required privileges: superuser (<v11), grant execute on function pg_stat_file(text) for v11+.
 
 =cut
@@ -2048,6 +2056,8 @@ workers by type (VACUUM, VACUUM ANALYZE, ANALYZE, VACUUM FREEZE).
 
 Thresholds, if any, are ignored.
 
+Suggested periodicity: 5 min
+
 Required privileges: unprivileged role.
 
 =cut
@@ -2173,6 +2183,8 @@ Critical and Warning thresholds accept either a raw number or a percentage (eg.
 80%). When a threshold is a percentage, it is compared to the difference
 between the cluster parameters C<max_connections> and
 C<superuser_reserved_connections>.
+
+Suggested periodicity: 5 min
 
 Required privileges: an unprivileged user only sees its own queries;
 a pg_monitor (10+) or superuser (<10) role is required to see all queries.
@@ -2338,6 +2350,8 @@ each of them, for 8.2+.
 
 Note that the number of backends reported in Nagios message B<includes>
 excluded backends.
+
+Suggested periodicity: 5 min
 
 Required privileges: an unprivileged user only sees its own queries;
 a pg_monitor (10+) or superuser (<10) role is required to see all queries.
@@ -2642,6 +2656,8 @@ problem arises.
 
 Perfdata contains the number of error per database.
 
+Suggested periodicity: 1h
+
 Required privileges: unprivileged user.
 
 =cut
@@ -2724,6 +2740,11 @@ Check the age of the backup label file.
 Perfdata returns the age of the backup_label file, -1 if not present.
 
 Critical and Warning thresholds only accept an interval (eg. 1h30m25s).
+Adjust according to the duration of physical backups.
+Thresholds must be very low on 9.6+ with concurrent backups, as the presence of
+a backup_label is suspicious in this case.
+
+Suggested periodicity: 15 min
 
 Required privileges: unprivileged role (9.3+); superuser (<9.3)
 
@@ -2799,6 +2820,8 @@ are the number of "events" per second.
 
 Critical and Warning thresholds are optional. If set, they I<only> accept a
 percentage.
+
+Suggested periodicity: 5 min
 
 Required privileges: unprivileged role.
 
@@ -2986,6 +3009,8 @@ threshold per database.
 A list of the bloated indexes will be returned after the
 perfdata. This list contains the fully qualified bloated index name, the
 estimated bloat size, the index size and the bloat percentage.
+
+Suggested periodicity: 6 hours
 
 Required privileges: superuser (<10) able to log in all databases, or at least
 those in C<--dbinclude>; superuser (<10);
@@ -3392,6 +3417,8 @@ Perfdata contains the session / active / idle-in-transaction times
 for each database since last call, as well as the number of sessions per second,
 and the number of sessions killed / abandoned / terminated by fatal errors.
 
+Suggested periodicity: 5 min
+
 Required privileges: unprivileged role.
 
 =cut
@@ -3491,6 +3518,8 @@ and B<rollback_ratio>, which will be compared to the number of rollbacks, the
 rollback rate and the rollback ratio of each database. Warning or critical will
 be raised if the reported value is greater than B<rollbacks>, B<rollback_rate>
 or B<rollback_ratio>.
+
+Suggested periodicity: 5 min
 
 Required privileges: unprivileged role.
 
@@ -3644,6 +3673,8 @@ C<--work_mem>, C<--maintenance_work_mem>, C<--shared_buffers>,C<--wal_buffers>,
 C<--checkpoint_segments>, C<--effective_cache_size>, C<--no_check_autovacuum>,
 C<--no_check_fsync>, C<--no_check_enable>, C<--no_check_track_counts>.
 
+Suggested periodicity: 1 hour
+
 Required privileges: unprivileged role.
 
 =cut
@@ -3718,6 +3749,8 @@ No perfdata is returned.
 
 This service ignores critical and warning arguments.
 
+Suggested periodicity: 5 min or less
+
 Required privileges: unprivileged role.
 
 =cut
@@ -3760,6 +3793,8 @@ value and its unit appended to it. You can add as many fields as needed. Eg.:
 
   SELECT pg_database_size('postgres'),
          pg_database_size('postgres')||'B' AS db_size
+
+Suggested periodicity: depends on the query
 
 Required privileges: unprivileged role (depends on the query).
 
@@ -3925,6 +3960,8 @@ Both threshold bellow are equivalent:
     -w '1%' -c '10%'
 
 This service supports both C<--dbexclude> and C<--dbinclude> parameters.
+
+Suggested periodicity: 1 hour
 
 Required privileges: unprivileged role.
 
@@ -4129,6 +4166,8 @@ Examples:
     --dbexclude 'devdb' --exclude 'testdb/postgis' --exclude 'testdb/postgis_topology'
     --dbinclude 'proddb' --dbinclude 'testdb'  --exclude 'powa'
 
+Suggested periodicity: 1 day
+
 Required privileges: unprivileged role able to log in all databases
 
 =cut
@@ -4206,6 +4245,8 @@ databases which have never been accessed.
 Critical and Warning thresholds are optional. They only accept a percentage.
 
 This service supports both C<--dbexclude> and C<--dbinclude> parameters.
+
+Suggested periodicity: 5 min
 
 Required privileges: unprivileged role.
 
@@ -4343,6 +4384,8 @@ to replayed ones. These thresholds only accept a size (eg. 2.5G).
 
 This service raises a Critical if it doesn't find exactly ONE valid master
 cluster (ie. critical when 0 or 2 and more masters).
+
+Suggested periodicity: 5 min
 
 Required privileges: unprivileged role.
 
@@ -4520,6 +4563,8 @@ This service ignores critical and warning arguments.
 
 No perfdata is returned.
 
+Suggested periodicity: 5 min
+
 Required privileges: unprivileged role.
 
 =cut
@@ -4556,6 +4601,8 @@ as "in production" by pg_controldata.
 This service ignores critical and warning arguments.
 
 No perfdata is returned.
+
+Suggested periodicity: 5 min
 
 Required privileges: unprivileged role.
 
@@ -4609,6 +4656,8 @@ Perfdata will return the number of invalid indexes per database.
 A list of invalid indexes will be returned after the
 perfdata. This list contains the fully qualified index name. If
 excluded index is set, the number of exclude indexes is returned.
+
+Suggested periodicity: 6 hours
 
 Required privileges: unprivileged role able to log in all databases.
 
@@ -4710,6 +4759,8 @@ Perfdata returned:
   * paused status (0 no, 1 yes, NaN if master)
   * lag time (in second)
   * data delta with master (0 no, 1 yes)
+
+Suggested periodicity: 5 min
 
 Required privileges: unprivileged role.
 
@@ -5019,6 +5070,8 @@ raise any alerts.
 This service supports both C<--dbexclude> and C<--dbinclude> parameters.
 The 'postgres' database and templates are always excluded.
 
+Suggested periodicity: 6 hours
+
 Required privileges: unprivileged role able to log in all databases.
 
 =cut
@@ -5054,6 +5107,8 @@ raise any alerts.
 This service supports both C<--dbexclude> and C<--dbinclude> parameters.
 The 'postgres' database and templates are always excluded.
 
+Suggested periodicity: 6 hours
+
 Required privileges: unprivileged role able to log in all databases.
 
 =cut
@@ -5083,6 +5138,8 @@ for 9.1+, regarding lockmode :
 
   max_locks_per_transaction * (max_connections + max_prepared_transactions)
 or max_pred_locks_per_transaction * (max_connections + max_prepared_transactions)
+
+Suggested periodicity: 5 min
 
 Required privileges: unprivileged role.
 
@@ -5271,6 +5328,8 @@ Above 9.0, it also supports C<--exclude REGEX> to filter out application_name.
 
 You can use multiple C<--exclude REGEX> parameters.
 
+Suggested periodicity: 5 min
+
 Required privileges: an unprivileged role only checks its own queries;
 a pg_monitor (10+) or superuser (<10) role is required to check all queries.
 
@@ -5445,6 +5504,8 @@ Perfdata returns the age of each database.
 
 This service supports both C<--dbexclude> and C<--dbinclude> parameters.
 
+Suggested periodicity: 1 hour
+
 Required privileges: unprivileged role.
 
 =cut
@@ -5592,6 +5653,8 @@ unknown status.
 
 Perfdata returns the numerical version of PostgreSQL.
 
+Suggested periodicity: 1 day
+
 Required privileges: unprivileged role; access to http://www.postgresql.org
 required to download version numbers.
 
@@ -5729,6 +5792,8 @@ transactions per databases.
 
 Critical and Warning thresholds only accept an interval.
 
+Suggested periodicity: 5 min
+
 Required privileges: unprivileged role.
 
 =cut
@@ -5857,6 +5922,8 @@ Thus, the service can mistakenly take account of transaction transiently in
 idle state.
 From 9.2 and up, the service checks for transaction that really had no activity
 since the given thresholds.
+
+Suggested periodicity: 5 min
 
 Required privileges: an unprivileged role checks only its own queries;
 a pg_monitor (10+) or superuser (<10) role is required to check all queries.
@@ -6007,6 +6074,8 @@ Critical and Warning thresholds are optional. They only accept a raw number of
 transaction.
 
 This service supports both C<--dbexclude>" and C<--dbinclude>" parameters.
+
+Suggested periodicity: 5 min
 
 Required privileges: a pg_read_all_stats (10+) or superuser (<10) role is
 required to check pg_stat_replication.  2PC, pg_stat_activity, and replication
@@ -6286,6 +6355,8 @@ your backup process takes 2h, set this to '125m'.
 Perfdata returns the age of the oldest and newest backups, as well as the size
 of the newest backups.
 
+Suggested periodicity: 6 hours
+
 Required privileges: unprivileged role; the system user needs read access
 on the directory containing the dumps (but not on the dumps themselves).
 
@@ -6548,6 +6619,8 @@ C<--critical>.
 
 No perfdata is returned.
 
+Suggested periodicity: 1 day
+
 Required privileges: none.
 
 =cut
@@ -6592,6 +6665,8 @@ The check on rights works on all Unix systems.
 Checking the user only works on Linux systems (it uses /proc to avoid
 dependencies). Before 9.3, you need to provide the expected owner using the
 C<--uid> argument, or the owner will not be checked.
+
+Suggested periodicity: 6 hours
 
 Required privileges:
  <11:superuser
@@ -6729,14 +6804,16 @@ and remaining bytes before a slot becomes C<unreserved> or C<lost>.
 Moreover, with v13 and after, the service raises a warning alert if a slot
 becomes C<unreserved>. It raises a critical alert if the slot becomes C<lost>.
 
-Required privileges:
- v9.4: unprivileged role, or superuser to monitor spilled files for logical replication
- v11+: unprivileged user with GRANT EXECUTE on function pg_ls_dir(text)
-
 Here is somes examples:
 
     -w 'wal=50,spilled=20' -c 'wal=100,spilled=40'
     -w 'spilled=20,remaining=160MB' -c 'spilled=40,remaining=48MB'
+
+Suggested periodicity: 5 min
+
+Required privileges:
+ v9.4: unprivileged role, or superuser to monitor spilled files for logical replication
+ v11+: unprivileged user with GRANT EXECUTE on function pg_ls_dir(text)
 
 =cut
 
@@ -7123,6 +7200,8 @@ Critical and Warning thresholds are ignored.
 
 A Critical is raised if at least one parameter changed.
 
+Suggested periodicity: 6 hours
+
 Required privileges: unprivileged role.
 
 =cut
@@ -7232,6 +7311,8 @@ This service supports both C<--dbexclude> and C<--dbinclude> parameters.
 The 'postgres' database and templates are always excluded.
 
 Critical and Warning thresholds accept a percentage of the sequence filled.
+
+Suggested periodicity: 6 hours
 
 Required privileges: unprivileged role able to log in all databases
 
@@ -7474,6 +7555,8 @@ Perfdata returns the statistics snapshot age.
 
 Critical and Warning thresholds only accept an interval (eg. 1h30m25s).
 
+Suggested periodicity: 1 hour
+
 Required privileges: unprivileged role.
 
 =cut
@@ -7558,6 +7641,8 @@ separated by a comma. If only one value is supplied, it applies to both flushed
 and replayed data. If two values are supplied, the first one applies to flushed
 data, the second one to replayed data. These thresholds only accept a size
 (eg. 2.5G).
+
+Suggested periodicity: 5 min
 
 Required privileges: unprivileged role.
 
@@ -7770,6 +7855,8 @@ A list of the unlogged tables will be returned after the
 perfdata. This list contains the fully qualified table name. If
 C<--exclude REGEX> is set, the number of excluded tables is returned.
 
+Suggested periodicity: 1 day
+
 Required privileges: unprivileged role able to log in all databases,
 or at least those in C<--dbinclude>.
 
@@ -7892,6 +7979,8 @@ thresholds, per database.
 A list of the bloated tables will be returned after the
 perfdata. This list contains the fully qualified bloated table name, the
 estimated bloat size, the table size and the bloat percentage.
+
+Suggested periodicity: 6 hours
 
 Required privileges: superuser (<10) able to log in all databases, or at least
 those in C<--dbinclude>; superuser (<10);
@@ -8240,6 +8329,8 @@ values separated by a comma.
 Thresholds are applied on current temp files being created AND the number/size
 of temp files created since last execution.
 
+Suggested periodicity: 5 min
+
 Required privileges:
  <10: superuser
  v10: an unprivileged role is possible but it will not monitor databases
@@ -8299,7 +8390,7 @@ sub check_temp_files {
           ) AS agg
           GROUP BY 1,2
         },
-        # Temp folders are per tablespace
+        # Temp folders are per tablespace
         $PG_VERSION_83 => q{
           SELECT 'live', agg.spcname, sum(CASE WHEN agg.tmpfile <> '' THEN 1 ELSE 0 END),
             sum(CASE
@@ -8323,7 +8414,7 @@ sub check_temp_files {
           ) agg
           GROUP BY 1,2
         },
-        # Add sub folder PG_9.x_* to pg_tblspc
+        # Add sub folder PG_9.x_* to pg_tblspc
         $PG_VERSION_90 => q{
           SELECT 'live', agg.spcname, sum(CASE WHEN agg.tmpfile <> '' THEN 1 ELSE 0 END),
             sum(CASE
@@ -8623,6 +8714,8 @@ once enough time has passed.
 
 Perfdata contain the three values (when available).
 
+Suggested periodicity: 5 min
+
 Required privileges: pg_monitor on PG10+; otherwise unprivileged role.
 
 =cut
@@ -8780,6 +8873,8 @@ For 9.5 to 12, the limit is:
 For 13 and above:
 
   100% =  max_wal_size + wal_keep_size (as numbers of WAL)
+
+Suggested periodicity: 5 min
 
 Required privileges:
  <10:superuser (<10)
