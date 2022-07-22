@@ -128,7 +128,7 @@ Ask Thomas (frost242) Reiss or Jehan-Guillaume (ioguix) de Rorthais for credenti
 * login: https://www.postgresql.org/account/login/?next=/account/
 * go https://www.postgresql.org/account/edit/news/
 * click "Submit News Article"
-* organisation: Dalibo
+* organisation: check_pgactivity project
 * Title: "Release: check_pgactivity 2.4"
 * Content:
   
@@ -157,7 +157,7 @@ Ask Thomas (frost242) Reiss or Jehan-Guillaume (ioguix) de Rorthais for credenti
   Thanks to all the contributors!
   ~~~
   
-* check "Third Party Open Source" and "Related Open Source"
+* check "Related Open Source"
 * click on submit
 * wait for moderators...
 
@@ -166,7 +166,7 @@ Ask Thomas (frost242) Reiss or Jehan-Guillaume (ioguix) de Rorthais for credenti
 Send a mail to the pgsql-announce mailing list. Eg.:
 
 ~~~
-check_pgactivity v2.4 has been released on January 30th 2019 under BSD 
+check_pgactivity v2.4 has been released on January 30th 2019 under PostgreSQL
 licence.
 
 check_pgactivity is a PostgreSQL plugin for Nagios. This plugin is written
