@@ -616,6 +616,13 @@ sub load($$$) {
 
     die "can not read status file «${storage}»" unless -r $storage;
 
+    # Make sure that the lockfile exist.  It could have been removed, or just
+    # not have been created if upgrading from older versions.
+    if (not -f $lockfile) {
+        open my $fh, '>', $lockfile or die "can't open «${lockfile}»: $!";
+        close $fh or die "could not release «${lockfile}»: $!";
+    }
+
     open my $fh, '<', $lockfile or die "can't open «${lockfile}»: $!";
     flock($fh, LOCK_SH) or die "can't get shared lock on «${lockfile}»: $!";
 
