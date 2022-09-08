@@ -542,6 +542,50 @@ sub find_hostkey($) {
     return "binary defaults";
 }
 
+# Record on disk some given data to a given file.
+#
+# To avoid data loss, the sub:
+# * first require an exclusive lock on the lock file,
+# * load the existing data
+# * call the closure to record its data in there
+# * write back the edited data to disk
+# * close the file and release the lock.
+#
+# The closure is reponsible to define how and where in the structure it wants to
+# record its data.
+#
+# Parameters are :
+#  * $fn_record: a closure responsible to record its data in the given
+#                structure ref.
+#  * $storage: file to write to.
+sub save_internal($$) {
+    my $fn_record = shift;
+    my $storage   = shift;
+    my $all       = {};
+    my $lockfile  = "${storage}.lock";
+
+    open my $fh, '>', $lockfile or die "can't open «${lockfile}»: $!";
+    flock($fh, LOCK_EX) or die "can't get exclusive lock on «${lockfile}»: $!";
+
+    if ( -e $storage ) {
+
+        die "can not write to binary file «${storage}»" unless -w ${storage};
+        die "file «${storage}» not recognized as a check_pgactivity binary file"
+            unless is_storable $storage;
+
+        eval { $all = retrieve($storage) };
+        die "could not retrieve data from «${storage}»:\n  $@" if $@;
+    }
+
+    $fn_record->($all);
+
+    eval { store( $all, $storage ); };
+    die "could not update data in «${storage}»:\n  $@" if $@;
+
+    # closing the fh releases the lock
+    close $fh or die "could not release «${lockfile}»: $!";
+}
+
 # Record the given ref content for the given host in a file on disk.
 # The file is defined by argument "--status-file" on command line. By default:
 #
@@ -566,49 +610,25 @@ sub find_hostkey($) {
 #  * the $host structure ref that holds the "host" and "port" parameters
 #  * the $name of the structure to save
 #  * the $ref of the structure to save
-#  * the $path to the file storage
+#  * the $storage to write to
 sub save($$$$) {
     my $host     = shift;
     my $name     = shift;
     my $ref      = shift;
     my $storage  = shift;
-    my $all      = {};
-    my $lockfile = "${storage}.lock";
     my $hostkey  = find_hostkey($host);
 
-    open my $fh, '>', $lockfile or die "can't open «${lockfile}»: $!";
-    flock($fh, LOCK_EX) or die "can't get exclusive lock on «${lockfile}»: $!";
+    my $fn_record = sub {
+        my $s = shift;
+        $s->{$hostkey}{$name} = $ref;
+    };
 
-    if ( -e $storage ) {
-
-        die "can not write to status file «${storage}»" unless -w ${storage};
-        exit 1 unless is_storable $storage;
-
-        eval { $all = retrieve($storage) };
-        die "could not retrieve data from «${storage}»:\n  $@" if $@;
-    }
-
-    $all->{$hostkey}{$name} = $ref;
-
-    eval { store( $all, $storage ); };
-    die "could not update data in «${storage}»:\n  $@" if $@;
-
-    # closing the fh removes the lock
-    close $fh or die "could not release «${lockfile}»: $!";
+    save_internal($fn_record, $storage);
 }
 
-# Load the given ref content for the given host from the file on disk.
-#
-# See "save" sub comments for more info.
-# Parameters are :
-#  * the host structure ref that holds the "host" and "port" parameters
-#  * the name of the structure to load
-#  * the path to the file storage
-sub load($$$) {
-    my $host     = shift;
-    my $name     = shift;
+# Lock, load, unlock and return the whole content of the status file on disk.
+sub load_all($) {
     my $storage  = shift;
-    my $hostkey  = find_hostkey($host);
     my $lockfile = "${storage}.lock";
     my $all;
 
@@ -626,13 +646,33 @@ sub load($$$) {
     open my $fh, '<', $lockfile or die "can't open «${lockfile}»: $!";
     flock($fh, LOCK_SH) or die "can't get shared lock on «${lockfile}»: $!";
 
-    exit 1 unless is_storable $storage;
+    die "file «${storage}» not recognized as a check_pgactivity status-file"
+        unless is_storable $storage;
 
     eval { $all = retrieve($storage) };
     die "could not read status file «${storage}»:\n  $@" if $@;
 
-    # closing the fh removes the lock
+    # closing the fh releases the lock
     close $fh or die "could not release «${lockfile}»: $!";
+
+    return $all;
+}
+
+# Load the given ref content for the given host from the file on disk.
+#
+# See "save" sub comments for more info.
+# Parameters are :
+#  * the host structure ref that holds the "host" and "port" parameters
+#  * the name of the structure to load
+#  * the path to the file storage
+sub load($$$) {
+    my $host     = shift;
+    my $name     = shift;
+    my $storage  = shift;
+    my $hostkey  = find_hostkey( $host );
+    my $all;
+
+    $all = load_all( $storage );
 
     return $all->{$hostkey}{$name};
 }
@@ -644,7 +684,7 @@ sub dump_status_file {
     $f = $args{'status-file'} unless defined $f;
     $f = $args{'output'} unless $f ;
 
-    $all = lock_retrieve($f);
+    $all = load_all( $f );
 
     print Data::Dumper->new( [ $all ] )->Terse(1)->Dump;
 
@@ -1301,7 +1341,8 @@ sub status_ok($;$$$) {
 sub bin_output ($$;$$$) {
     my $rc      = shift;
     my $service = shift;
-    my $all = {};
+    my $storage = $args{'output'};
+    my $ref;
     my @msg;
     my @perfdata;
     my @longmsg;
@@ -1310,9 +1351,7 @@ sub bin_output ($$;$$$) {
     @perfdata = @{ $_[1] } if defined $_[1];
     @longmsg  = @{ $_[2] } if defined $_[2];
 
-    $all = lock_retrieve( $args{'output'} ) if -r $args{'output'};
-
-    $all->{ $args{'service'} } = {
+    $ref = {
         'timestamp' => time,
         'rc'        => $rc,
         'service'   => $service,
@@ -1321,8 +1360,12 @@ sub bin_output ($$;$$$) {
         'longmsg'   => \@longmsg
     };
 
-    lock_store( $all, $args{'output'} )
-        or die "Can't store data in '$args{'output'}'!\n";
+    my $fn_record = sub {
+        my $s = shift;
+        $s->{ $args{'service'} } = $ref;
+    };
+
+    save_internal($fn_record, $storage);
 }
 
 sub debug_output ($$;$$$) {
