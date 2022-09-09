@@ -458,6 +458,8 @@ my %args = (
     'wal_buffers'           => undef,
     'checkpoint_segments'   => undef,
     'effective_cache_size'  => undef,
+    'vacuum_table_min_size' => 10 * 1024 * 1024,
+    'analyze_table_min_size' => 1024 * 1024,
     'no_check_autovacuum'   => 0,
     'no_check_fsync'        => 0,
     'no_check_enable'       => 0,
@@ -4824,6 +4826,7 @@ sub check_last_maintenance {
     my $rs;
     my $c_limit;
     my $w_limit;
+    my $table_min_size;
     my @perfdata;
     my @msg_crit;
     my @msg_warn;
@@ -4838,6 +4841,9 @@ sub check_last_maintenance {
     my @dbinclude  = @{ $args{'dbinclude'} };
     my @dbexclude  = @{ $args{'dbexclude'} };
     my $me         = 'POSTGRES_LAST_' . uc($type);
+
+    $table_min_size = $args{$type . "_table_min_size"};
+
     my %queries    = (
         # 1st field: oldest known maintenance on a table
         #            -inf if a table never had maintenance
@@ -4862,6 +4868,7 @@ sub check_last_maintenance {
                     ||n_tup_del::text))
             FROM pg_stat_user_tables
             WHERE schemaname NOT LIKE 'pg_temp_%'
+              AND pg_relation_size(relid) > $table_min_size
         },
         # Starting with 8.3, we can check database activity from
         # pg_stat_database
@@ -4881,6 +4888,7 @@ sub check_last_maintenance {
             FROM pg_stat_user_tables
             WHERE schemaname NOT LIKE 'pg_temp_%'
               AND schemaname NOT LIKE 'pg_toast_temp_%'
+              AND pg_relation_size(relid) > $table_min_size
         },
         # Starting with 9.1, we can add the analyze/vacuum counts
         $PG_VERSION_91 => qq{
@@ -4900,6 +4908,7 @@ sub check_last_maintenance {
             FROM pg_stat_user_tables
             WHERE schemaname NOT LIKE 'pg_temp_%'
               AND schemaname NOT LIKE 'pg_toast_temp_%'
+              AND pg_relation_size(relid) > $table_min_size
         }
     );
 
@@ -9074,6 +9083,8 @@ GetOptions(
         'dump-status-file!',
         'dump-bin-file:s',
         'effective_cache_size=i',
+        'vacuum_table_min_size=i',
+        'analyze_table_min_size=i',
         'exclude=s',
         'format|F=s',
         'global-pattern=s',
