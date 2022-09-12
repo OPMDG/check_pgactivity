@@ -17,7 +17,7 @@ my $node = pgNode->new('prod'); # declare instance named "prod"
 $node->init;
 $node->start;
 
-### Begin of tests ###
+### Beginning of tests ###
 
 # This command sets PGHOST and PGPORT, then call and test the given command
 $node->command_checks_all( [

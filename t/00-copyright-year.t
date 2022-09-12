@@ -28,7 +28,7 @@ find(
     '.'
 );
 
-### Begin tests ###
+### Beginning tests ###
 
 foreach my $f (@filelist) {
     open my $fh, '<', $f;

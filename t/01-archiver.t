@@ -28,7 +28,7 @@ elsif ( $node->version >= 9.0 ) {
 
 $node->start;
 
-### Begin of tests ###
+### Beginning of tests ###
 
 # generate one archive
 # split create table and insert to produce more data in WAL

@@ -50,7 +50,7 @@ if ($node->version < 9.0) {
 
 $node->wait_for_archive($wal);
 
-### Begin of tests ###
+### Beginning of tests ###
 
 # simple success check
 $node->command_checks_all( [

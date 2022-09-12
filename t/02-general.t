@@ -4,7 +4,7 @@
 #
 # Copyright (C) 2012-2022: Open PostgreSQL Monitoring Development Group
 
-# This file gather various regression tests against the same cluster to avoid
+# This file gathers various regression tests against the same cluster to avoid
 # creating one cluster per regression test.
 
 use strict;
@@ -25,19 +25,19 @@ $node->append_conf('postgresql.conf', 'stats_block_level = on')
 
 $node->start;
 
-### Begin of tests ###
+### Beginning of tests ###
 
 # == Regression test for #326 ==
-# check_pga should not complain when using an existing status file missing
+# check_pga should not complain when using an existing status file
 # without an existing lock file.
 my $pga_data = "$TestLib::tmp_check/tmp-status-file.data";
 
 # Create an empty status file
 store( {}, $pga_data);
-# make there's no lock file leftovers from previous tests...
+# make sure there's no lock file leftovers from previous tests...
 unlink "${pga_data}.lock";
 
-# Trigger the failure
+# Trigger the failure described in issue #326
 $node->command_checks_all( [
     './check_pgactivity', '--service'     => 'hit_ratio',
                           '--username'    => getlogin,
@@ -46,7 +46,7 @@ $node->command_checks_all( [
                           '--warning'     => '101%',
                           '--critical'    => '0%'
     ],
-    0, [], [ qr/^$/ ], 'No error should occurs'
+    0, [], [ qr/^$/ ], 'No error should occur'
 );
 # cleanup everything for the next regression test
 unlink($pga_data, "${pga_data}.lock");
