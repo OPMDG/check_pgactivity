@@ -295,6 +295,10 @@ my %services = (
         'sub'  => \&check_uptime,
         'desc' => 'Time since postmaster start or configurtion reload.'
     },
+    'pgss_dealloc' => {
+        'sub'  => \&check_pg_stat_statements_dealloc,
+        'desc' => 'Check rate of pg_stat_statements dealloc.'
+    },
 );
 
 
@@ -6466,7 +6470,6 @@ sub check_oldest_xmin {
     return status_ok( $me, \@msg, \@perfdata );
 }
 
-
 =item B<pg_dump_backup>
 
 Check the age and size of backups.
@@ -6793,6 +6796,133 @@ sub check_pg_dump_backup {
         if scalar @msg_warn;
 
     return status_ok( $me, [], \@perfdata );
+}
+
+=item B<pgss_dealloc>
+
+Check number of pg_stat_statements deallocations.
+
+Many deallocations can have negative performance impact. This could be due to:
+
+Application performing many different queries:
+
+* ORM
+
+* different utility statements (SET application_name...). In this case,
+  try to disable pg_stat_statements.track_utility.
+
+* pg_stat_statements.max is too low
+
+This service uses the status file (see C<--status-file> parameter).
+
+The C<--critical> and C<--warning> thresholds are optional.
+Warning or critical will be raised if number of deallocations
+since previous check are above those thresholds.
+
+Perfdata returns a counter of deallocs since last call.
+
+Required privileges: unprivileged role able to log in database where
+pg_stat_statements extension has been created and loaded in shared_preload_libraries.
+
+=cut
+
+sub check_pg_stat_statements_dealloc {
+
+    my @rs;
+    my @perfdata;
+    my @perf_limits;
+    my @hosts;
+    my %dealloc;
+    my %new_dealloc;
+    my $dealloc_delta;
+    my $crit;
+    my $warn;
+    my %args    = %{ $_[0] };
+    my $me      = 'POSTGRES_PG_STAT_STATEMENTS_DEALLOC';
+    my $pgss_version;
+    my $pgss_version_query = q{
+    SELECT
+        extversion,
+        current_setting('shared_preload_libraries') like '%pg_stat_statements%'
+    FROM pg_extension
+    WHERE extname = 'pg_stat_statements'
+    };
+
+    my $sql = q{
+    SELECT dealloc
+    FROM pg_stat_statements_info
+    };
+
+    @hosts = @{ parse_hosts %args };
+
+    pod2usage(
+    -message => 'FATAL: you must give only one host with service "pgss_dealloc".',
+    -exitval => 127
+    ) if @hosts != 1;
+
+    is_compat $hosts[0], 'check_pg_stat_statements_dealloc', $PG_VERSION_140 or exit 1;
+
+    @rs = @{ query( $hosts[0], $pgss_version_query ) };
+
+    # No row:
+    return status_unknown( $me, [ 'Ensure pg_stat_statements extension has been created on target Database.' ] ) if (not defined $rs[0]);
+
+    $pgss_version = $rs[0][0];
+    $pgss_version =~  /(\d+).(\d+)/;
+    return status_unknown( $me, [ 'pg_stat_statements version must be above or equal 1.9' ] ) if (not ($1 >=1 and $2 >= 9));
+
+    return status_unknown( $me, [ 'Ensure pg_stat_statements has been loaded in shared_preload_libraries.' ] ) if ($rs[0][1] ne 't');
+
+    # Warning and critical are optional
+    pod2usage(
+        -message => "FATAL: you must specify both critical and warning thresholds.",
+        -exitval => 127
+    ) if ((defined $args{'warning'} and not defined $args{'critical'})
+      or (not defined $args{'warning'} and defined $args{'critical'})) ;
+
+    if (defined $args{'warning'} and defined $args{'critical'}) {
+        pod2usage(
+            -message => "FATAL: warning or critical threshold must be integer.",
+            -exitval => 127
+        ) if ($args{'warning'} !~ m/^([0-9]+)/) or ($args{'critical'} !~ m/^([0-9]+)/) ;
+
+        $warn = $args{'warning'};
+        $crit = $args{'critical'};
+        @perf_limits  = ( $warn, $crit );
+    }
+
+    %dealloc = %{ load( $hosts[0], 'pgss_dealloc', $args{'status-file'} ) || {} };
+
+    @rs = @{ query( $hosts[0], $sql ) };
+
+    %new_dealloc = (
+        'dealloc' => $rs[0][0]
+    );
+
+    save $hosts[0], 'pgss_dealloc', \%new_dealloc, $args{'status-file'};
+
+    return status_ok( $me, ['First call'] ) unless %dealloc;
+
+    $dealloc_delta = $new_dealloc{'dealloc'} - $dealloc{'dealloc'};
+
+    push @perfdata => (
+        # Return number of deallocs. The unit is "c" as a continuous counter
+        [ "pgss_deallocs",  $new_dealloc{'dealloc'} , 'c', @perf_limits]
+    );
+
+    if ( $dealloc_delta < 0) {
+        return status_unknown( $me, [ sprintf "Dealloc delta can't be negative: %d deallocs",$dealloc_delta], \@perfdata)
+    }
+
+    if ( $crit and $dealloc_delta > $crit) {
+        return status_critical( $me, [ sprintf "Deallocs delta: %d deallocs",$dealloc_delta], \@perfdata)
+    }
+
+    if ( $warn and $dealloc_delta > $warn) {
+        return status_warning( $me, [ sprintf "Deallocs delta: %d deallocs",$dealloc_delta], \@perfdata)
+    }
+
+    return status_ok( $me, [sprintf "Deallocs delta: %d deallocs",$dealloc_delta], \@perfdata);
 }
 
 =item B<pga_version>
