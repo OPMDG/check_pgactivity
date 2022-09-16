@@ -11,7 +11,7 @@ use lib 't/lib';
 use TestLib;
 use Test::More tests => 18;
 
-### Begin of tests ###
+### Beginning of tests ###
 
 my $good_version = '2.6';
 my $bad_version  = '0.0';

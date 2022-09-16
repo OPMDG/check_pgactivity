@@ -24,7 +24,7 @@ $node->append_conf('postgresql.conf', 'stats_row_level = on')
 
 $node->start;
 
-### Begin of tests ###
+### Beginning of tests ###
 
 # failing without thresholds
 $node->command_checks_all( [

@@ -18,7 +18,7 @@ my $proc;
 $node->init;
 $node->start;
 
-### Begin of tests ###
+### Beginning of tests ###
 
 # failing without thresholds
 $node->command_checks_all( [

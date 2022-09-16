@@ -81,7 +81,7 @@ SKIP: {
     $prim->wait_for_catchup($stb2, 'replay', $prim->lsn('insert'));
     note("standbys caught up");
 
-    ### Begin of tests ###
+    ### Beginning of tests ###
 
     # Normal check with two standby
     note "Normal check with two standby";

@@ -22,7 +22,7 @@ $node->append_conf('postgresql.conf', 'stats_block_level = on')
 
 $node->start;
 
-### Begin of tests ###
+### Beginning of tests ###
 
 # Check thresholds only accept percentages
 $node->command_checks_all( [

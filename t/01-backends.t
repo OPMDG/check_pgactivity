@@ -24,7 +24,7 @@ $node->init;
 $node->append_conf('postgresql.conf', 'max_connections=8');
 $node->start;
 
-### Begin of tests ###
+### Beginning of tests ###
 
 # failing without thresholds
 $node->command_checks_all( [

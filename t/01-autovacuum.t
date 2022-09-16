@@ -18,7 +18,7 @@ my $wal;
 # we have $num_tests normal tests + three tests for incompatible pg versions
 plan tests => $num_tests + 3;
 
-### Begin of tests ###
+### Beginning of tests ###
 
 $node->init;
     
