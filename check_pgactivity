@@ -1979,8 +1979,8 @@ sub check_archiver {
         # field 2: how long archiving is failing in second
         # field 3: last segment archived
         # field 4: last failing segment
-        # field 5: mod time of the next wal to archive
-        my $queries = (
+        # field 5: mod time of the next wal to archive (only for superuser in v10)
+        my %queries = (
         $PG_VERSION_100 => q{
         SELECT coalesce(pg_wal_lsn_diff(
                     current_pos,
@@ -2115,8 +2115,9 @@ sub check_archiver {
                 WHERE name = 'wal_segment_size'
               ) AS s
         ) stats
-	},
-        )
+	}
+        );
+
         @rs = @{ query_ver( $hosts[0], %queries ) };
 
         $nb_files = $rs[0][0];
@@ -2142,7 +2143,9 @@ sub check_archiver {
             }
         }
         else {
-            push @perfdata => [ 'oldest_ready_wal', 0, 's', undef, undef, 0 ];
+            if ( $rs[0][5] ne '' ) {
+                push @perfdata => [ 'oldest_ready_wal', 0, 's', undef, undef, 0 ];
+            }
         }
 
         push @msg => "$nb_files WAL files ready to archive";
