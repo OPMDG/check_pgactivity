@@ -1892,7 +1892,10 @@ waiting to be archived. They only accept a raw number of files.
 Whatever the given threshold, a critical alert is raised if the archiver
 process did not archive the oldest waiting WAL to be archived since last call.
 
-Required privileges: superuser (<v11), grant execute on function pg_stat_file(text) for v11+.
+Required privileges: superuser (<v10),
+<v10: superuser,
+v10: nonsuper user but output will lack perfdata oldest_ready_wal or superuser,
+v11+: grant execute on function pg_stat_file(text).
 
 =cut
 
@@ -1977,7 +1980,77 @@ sub check_archiver {
         # field 3: last segment archived
         # field 4: last failing segment
         # field 5: mod time of the next wal to archive
-        my $query = q{
+        my $queries = (
+        $PG_VERSION_100 => q{
+        SELECT coalesce(pg_wal_lsn_diff(
+                    current_pos,
+                    /* compute LSN from last archived offset */
+                    (to_hex(COALESCE(last_archived_off, last_failed_off)/4294967296)
+                    ||'/'||to_hex(COALESCE(last_archived_off, last_failed_off)%4294967296))::pg_lsn
+                )::bigint / walsegsize, 0),
+		failing,
+                CASE WHEN failing
+                THEN extract('epoch' from (current_timestamp - last_archived_time))
+                ELSE 0
+                END, last_archived_wal, last_failed_wal,
+                /* mod time of the next wal to archive
+		 * executed only if superuser
+	         */
+                (SELECT extract('epoch' from (current_timestamp -
+                        (pg_stat_file('pg_wal/'||pg_walfile_name(
+                           (to_hex((last_archived_off+1)/4294967296)
+                           ||'/'||to_hex((last_archived_off+1)%4294967296))::pg_lsn
+                      ))).modification ))
+		  WHERE current_setting('is_superuser')::bool
+		) AS oldest
+        FROM (
+            SELECT last_archived_wal, last_archived_time, last_failed_wal,
+                walsegsize,
+                /* compute last archive offset */
+                -- WAL offset
+                ('x'||substr(last_archived_wal_hex, 9, 8))::bit(32)::bigint*4294967296
+                    -- offset to the begining of the segment
+                    + ('x'||substr(last_archived_wal, 17, 8))::bit(32)::bigint * walsegsize
+                    -- offset to the end of the segment
+                    + walsegsize AS last_archived_off,
+                ('x'||substr(last_failed_wal_hex, 9, 8))::bit(32)::bigint*4294967296
+                    -- offset to the begining of the segment
+                    + ('x'||substr(last_failed_wal, 17, 8))::bit(32)::bigint * walsegsize
+                    -- offset to the end of the segment
+                    + walsegsize AS last_failed_off,
+                CASE WHEN pg_is_in_recovery()
+                THEN pg_last_wal_receive_lsn()
+                ELSE pg_current_wal_lsn()
+                END AS current_pos,
+                (last_failed_time >= last_archived_time)
+                    OR (last_archived_time IS NULL AND last_failed_time IS NOT NULL)
+                    AS failing
+              FROM (SELECT last_archived_wal,
+	                   last_archived_time,
+			   CASE WHEN (last_archived_wal NOT LIKE '%.history' AND last_archived_wal NOT LIKE '%.backup')
+	                        THEN last_archived_wal
+				ELSE NULL -- return NULL if last successfully archived file is a .history or .backup file
+			    END AS last_archived_wal_hex,
+                           CASE WHEN (last_failed_wal NOT LIKE '%.history' AND last_archived_wal NOT LIKE '%.backup')
+			        THEN last_failed_wal
+				ELSE NULL -- return NULL if last failed archive is a .history or .backup file
+			    END AS last_failed_wal_hex,
+			   last_failed_wal,
+			   last_failed_time
+	      FROM pg_stat_archiver) AS a
+	      CROSS JOIN (
+                SELECT setting::bigint *
+                    CASE unit
+                    WHEN '8kB' THEN 8192
+                    WHEN 'B' THEN 1
+                    ELSE 0
+                    END as walsegsize
+                FROM pg_catalog.pg_settings
+                WHERE name = 'wal_segment_size'
+              ) AS s
+        ) stats
+        },
+	$PG_VERSION_110 => q{
         SELECT coalesce(pg_wal_lsn_diff(
                     current_pos,
                     /* compute LSN from last archived offset */
@@ -2041,11 +2114,10 @@ sub check_archiver {
                 FROM pg_catalog.pg_settings
                 WHERE name = 'wal_segment_size'
               ) AS s
-
         ) stats
-        };
-
-        @rs = @{ query( $hosts[0], $query ) };
+	},
+        )
+        @rs = @{ query_ver( $hosts[0], %queries ) };
 
         $nb_files = $rs[0][0];
 
