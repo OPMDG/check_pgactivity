@@ -2775,7 +2775,8 @@ Perfdata returns the age of the backup_label file, -1 if not present.
 
 Critical and Warning thresholds only accept an interval (eg. 1h30m25s).
 
-Required privileges: unprivileged role (9.3+); superuser (<9.3)
+Required privileges: role pg_stat_file (pg12+); unprivileged role (9.3+);
+superuser (<9.3)
 
 =cut
 
@@ -2797,7 +2798,11 @@ sub check_backup_label_age {
             SELECT CASE WHEN pg_is_in_backup()
                         THEN CAST(extract(epoch FROM current_timestamp - pg_backup_start_time()) AS integer)
                         ELSE 0
-                   END}
+                   END},
+	$PG_VERSION_120 => q{
+	    SELECT coalesce((CAST(extract(epoch FROM current_timestamp - sf.modification)) AS integer), 0)
+	      FROM pg_stat_file('backup_label', true) sf;
+	},
     );
 
     # warning and critical are mandatory.
