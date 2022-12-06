@@ -1989,21 +1989,20 @@ sub check_archiver {
                     (to_hex(COALESCE(last_archived_off, last_failed_off)/4294967296)
                     ||'/'||to_hex(COALESCE(last_archived_off, last_failed_off)%4294967296))::pg_lsn
                 )::bigint / walsegsize, 0),
-		failing,
+                failing,
                 CASE WHEN failing
                 THEN extract('epoch' from (current_timestamp - last_archived_time))
                 ELSE 0
                 END, last_archived_wal, last_failed_wal,
                 /* mod time of the next wal to archive
-		 * executed only if superuser
-	         */
+                * executed only if superuser */
                 (SELECT extract('epoch' from (current_timestamp -
                         (pg_stat_file('pg_wal/'||pg_walfile_name(
                            (to_hex((last_archived_off+1)/4294967296)
                            ||'/'||to_hex((last_archived_off+1)%4294967296))::pg_lsn
                       ))).modification ))
-		  WHERE current_setting('is_superuser')::bool
-		) AS oldest
+                 WHERE current_setting('is_superuser')::bool
+                ) AS oldest
         FROM (
             SELECT last_archived_wal, last_archived_time, last_failed_wal,
                 walsegsize,
@@ -2027,19 +2026,19 @@ sub check_archiver {
                     OR (last_archived_time IS NULL AND last_failed_time IS NOT NULL)
                     AS failing
               FROM (SELECT last_archived_wal,
-	                   last_archived_time,
-			   CASE WHEN (last_archived_wal NOT LIKE '%.history' AND last_archived_wal NOT LIKE '%.backup')
-	                        THEN last_archived_wal
-				ELSE NULL -- return NULL if last successfully archived file is a .history or .backup file
-			    END AS last_archived_wal_hex,
-                           CASE WHEN (last_failed_wal NOT LIKE '%.history' AND last_archived_wal NOT LIKE '%.backup')
-			        THEN last_failed_wal
-				ELSE NULL -- return NULL if last failed archive is a .history or .backup file
-			    END AS last_failed_wal_hex,
-			   last_failed_wal,
-			   last_failed_time
-	      FROM pg_stat_archiver) AS a
-	      CROSS JOIN (
+                last_archived_time,
+                CASE WHEN (last_archived_wal NOT LIKE '%.history' AND last_archived_wal NOT LIKE '%.backup')
+                    THEN last_archived_wal
+                    ELSE NULL -- return NULL if last successfully archived file is a .history or .backup file
+                END AS last_archived_wal_hex,
+                CASE WHEN (last_failed_wal NOT LIKE '%.history' AND last_archived_wal NOT LIKE '%.backup')
+                    THEN last_failed_wal
+                    ELSE NULL -- return NULL if last failed archive is a .history or .backup file
+                END AS last_failed_wal_hex,
+                last_failed_wal,
+                last_failed_time
+              FROM pg_stat_archiver) AS a
+              CROSS JOIN (
                 SELECT setting::bigint *
                     CASE unit
                     WHEN '8kB' THEN 8192
@@ -2051,14 +2050,14 @@ sub check_archiver {
               ) AS s
         ) stats
         },
-	$PG_VERSION_110 => q{
+        $PG_VERSION_110 => q{
         SELECT coalesce(pg_wal_lsn_diff(
                     current_pos,
                     /* compute LSN from last archived offset */
                     (to_hex(COALESCE(last_archived_off, last_failed_off)/4294967296)
                     ||'/'||to_hex(COALESCE(last_archived_off, last_failed_off)%4294967296))::pg_lsn
                 )::bigint / walsegsize, 0),
-		failing,
+                failing,
                 CASE WHEN failing
                 THEN extract('epoch' from (current_timestamp - last_archived_time))
                 ELSE 0
@@ -2093,19 +2092,19 @@ sub check_archiver {
                     OR (last_archived_time IS NULL AND last_failed_time IS NOT NULL)
                     AS failing
               FROM (SELECT last_archived_wal,
-	                   last_archived_time,
-			   CASE WHEN (last_archived_wal NOT LIKE '%.history' AND last_archived_wal NOT LIKE '%.backup')
-	                        THEN last_archived_wal
-				ELSE NULL -- return NULL if last successfully archived file is a .history or .backup file
-			    END AS last_archived_wal_hex,
-                           CASE WHEN (last_failed_wal NOT LIKE '%.history' AND last_archived_wal NOT LIKE '%.backup')
-			        THEN last_failed_wal
-				ELSE NULL -- return NULL if last failed archive is a .history or .backup file
-			    END AS last_failed_wal_hex,
-			   last_failed_wal,
-			   last_failed_time
-	      FROM pg_stat_archiver) AS a
-	      CROSS JOIN (
+                last_archived_time,
+                CASE WHEN (last_archived_wal NOT LIKE '%.history' AND last_archived_wal NOT LIKE '%.backup')
+                    THEN last_archived_wal
+                    ELSE NULL -- return NULL if last successfully archived file is a .history or .backup file
+                END AS last_archived_wal_hex,
+                CASE WHEN (last_failed_wal NOT LIKE '%.history' AND last_archived_wal NOT LIKE '%.backup')
+                    THEN last_failed_wal
+                    ELSE NULL -- return NULL if last failed archive is a .history or .backup file
+                END AS last_failed_wal_hex,
+                last_failed_wal,
+                last_failed_time
+            FROM pg_stat_archiver) AS a
+            CROSS JOIN (
                 SELECT setting::bigint *
                     CASE unit
                     WHEN '8kB' THEN 8192
@@ -2116,7 +2115,7 @@ sub check_archiver {
                 WHERE name = 'wal_segment_size'
               ) AS s
         ) stats
-	}
+        }
         );
 
         @rs = @{ query_ver( $hosts[0], %queries ) };
@@ -2875,10 +2874,10 @@ sub check_backup_label_age {
                         THEN CAST(extract(epoch FROM current_timestamp - pg_backup_start_time()) AS integer)
                         ELSE 0
                    END},
-	$PG_VERSION_120 => q{
-	    SELECT coalesce((CAST(extract(epoch FROM current_timestamp - sf.modification)) AS integer), 0)
-	      FROM pg_stat_file('backup_label', true) sf;
-	},
+        $PG_VERSION_120 => q{
+            SELECT coalesce((CAST(extract(epoch FROM current_timestamp - sf.modification)) AS integer), 0)
+            FROM pg_stat_file('backup_label', true) sf;
+        },
     );
 
     # warning and critical are mandatory.
@@ -3539,7 +3538,7 @@ sub check_session_stats {
     my $sql   = q{
         SELECT extract(EPOCH from now()), s.datname, s.sessions,
             s.session_time, s.active_time, s.idle_in_transaction_time,
-	    s.sessions_killed, s.sessions_abandoned, s.sessions_fatal
+            s.sessions_killed, s.sessions_abandoned, s.sessions_fatal
         FROM pg_stat_database s
           JOIN pg_database d ON s.datid = d.oid
         WHERE d.datallowconn
@@ -3601,9 +3600,9 @@ sub check_session_stats {
     }
 
     return status_ok(
-	$me,
-	["Number of sessions per second for all databases: " . sprintf( "%.2f", $instance_session_rate )],
-	\@perfdata );
+        $me,
+        ["Number of sessions per second for all databases: " . sprintf( "%.2f", $instance_session_rate )],
+        \@perfdata );
 }
 
 
@@ -7435,7 +7434,7 @@ LEFT JOIN (SELECT d.objid, t.typname, n.nspname, c.relname, a.attname
             INNER JOIN pg_catalog.pg_class c  ON c.oid=d.refobjid
             INNER JOIN pg_catalog.pg_namespace n ON n.oid=c.relnamespace
             INNER JOIN pg_catalog.pg_attribute a ON (a.attrelid=c.oid
-	                                     AND a.attnum=d.refobjsubid)
+                AND a.attnum=d.refobjsubid)
             INNER JOIN pg_catalog.pg_type t ON a.atttypid=t.oid
             WHERE d.classid='pg_catalog.pg_class'::pg_catalog.regclass
               AND d.refclassid='pg_catalog.pg_class'::pg_catalog.regclass
@@ -7532,8 +7531,8 @@ SELECT
             elsif ($sequences{$seq}->{TYPE} eq 'int8') {
                 $max_value = 9223372036854775807;
             }
-	    # When we can't link the sequence to a column, we trust the dba/developer
-	    # and we're not going to try to guess.
+            # When we can't link the sequence to a column, we trust the dba/developer
+            # and we're not going to try to guess.
 
             if ($sequences{$seq}->{LASTVALSEQ} eq '') {
                 # Skip sequences having lastvalue not initialized
@@ -7550,8 +7549,8 @@ SELECT
                 $sequences{$seq}->{ABSVALSEQ} =-$sequences{$seq}->{LASTVALSEQ};
             }
             # The real maximum value is the smallest of both
-	    my $real_max_value;
-	    if ( defined $max_value ) {
+            my $real_max_value;
+            if ( defined $max_value ) {
                 $real_max_value = ($max_val_seq <= $max_value) ? $max_val_seq : $max_value;
             } else {
                 $real_max_value = $max_val_seq;
@@ -7567,9 +7566,9 @@ SELECT
             my $lim_warning=$usable_amount-get_size($args{'warning'},$usable_amount);
             my $lim_critical=$usable_amount-get_size($args{'critical'},$usable_amount);
             my $how_much_left=$real_max_value-$sequences{$seq}->{ABSVALSEQ};
-	    my $seq_desc;
-	    my $long_seq_desc;
-	    if ( $sequences{$seq}->{COLNAME} ne '' ) {
+            my $seq_desc;
+            my $long_seq_desc;
+            if ( $sequences{$seq}->{COLNAME} ne '' ) {
                 $seq_desc="$db.$seq(" . $sequences{$seq}->{COLNAME} . ')';
                 $long_seq_desc="$db.$seq(owned by " . $sequences{$seq}->{COLNAME} . ')';
             } else {
@@ -8554,11 +8553,11 @@ sub check_temp_files {
             FROM pg_database AS d
             JOIN pg_stat_database AS s ON s.datid=d.oid
         },
-	# Use pg_ls_tmpdir with PostgreSQL 12
-	# The technic to bypass function execution for non-superuser roles used in
-	# the query PG_VERSION_100 does not work anymore since commit b8d7f053c5c in
-	# PostgreSQL. From now on, this probe requires at least a pg_monitor role to
-	# perform with PostgreSQL >= 12.
+        # Use pg_ls_tmpdir with PostgreSQL 12
+        # The technic to bypass function execution for non-superuser roles used in
+        # the query PG_VERSION_100 does not work anymore since commit b8d7f053c5c in
+        # PostgreSQL. From now on, this probe requires at least a pg_monitor role to
+        # perform with PostgreSQL >= 12.
         $PG_VERSION_120 => q{
           SELECT 'live', agg.spcname, count(agg.name),
                  SUM(agg.size) AS SIZE
