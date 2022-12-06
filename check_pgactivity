@@ -2800,7 +2800,7 @@ sub check_backup_label_age {
                         ELSE 0
                    END},
 	$PG_VERSION_120 => q{
-	    SELECT coalesce((CAST(extract(epoch FROM current_timestamp - sf.modification)) AS integer), 0)
+	    SELECT coalesce(CAST((extract(epoch FROM current_timestamp - sf.modification)) AS integer), 0)
 	      FROM pg_stat_file('backup_label', true) sf;
 	},
     );
