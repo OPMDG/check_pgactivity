@@ -10,7 +10,7 @@ use warnings;
 use lib 't/lib';
 use TestLib ();
 use pgNode;
-use Test::More tests => 16;
+use Test::More;
 
 my $node      = pgNode->get_new_node('prod');
 my $pga_data = "$TestLib::tmp_check/pga.data";
@@ -119,3 +119,5 @@ $node->command_checks_all( [
 ### End of tests ###
 
 $node->stop;
+
+done_testing();
