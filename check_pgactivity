@@ -2488,7 +2488,6 @@ sub check_backends_status {
         'disabled'                      => [0, 0],
         'undefined'                     => [0, 0],
         'insufficient privilege'        => [0, 0],
-        'other wait event'              => [0, 0]
     );
     my %translate    = (
         'idle'         => 'idle',
@@ -2599,7 +2598,6 @@ sub check_backends_status {
         $PG_VERSION_96 => q{
             SELECT CASE
                 WHEN s.wait_event_type = 'Lock' THEN 'waiting for lock'
-                WHEN s.wait_event_type IS NOT NULL THEN 'other wait event'
                 WHEN s.query = '<insufficient privilege>'
                     THEN 'insufficient privilege'
                 WHEN s.state IS NULL THEN 'undefined'
@@ -2619,9 +2617,6 @@ sub check_backends_status {
                 WHEN s.query = '<insufficient privilege>'
                     THEN 'insufficient privilege'
                 WHEN s.state IS NULL THEN 'undefined'
-                WHEN s.wait_event_type IS NOT NULL
-                       AND s.wait_event_type NOT IN ('Client', 'Activity')
-                     THEN 'other wait event'
                 ELSE s.state
               END,
               extract('epoch' FROM
@@ -2671,9 +2666,6 @@ sub check_backends_status {
 
     delete $status{'idle in transaction (aborted)'}
         if $hosts[0]->{'version_num'} < $PG_VERSION_90;
-
-    delete $status{'other wait event'}
-        if $hosts[0]->{'version_num'} < $PG_VERSION_96;
 
     $max_connections = $rs[0][2] if scalar @rs;
 
