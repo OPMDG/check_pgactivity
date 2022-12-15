@@ -10,7 +10,7 @@ use warnings;
 use lib 't/lib';
 use TestLib ();
 use pgNode;
-use Test::More tests => 16;
+use Test::More;
 
 my $node      = pgNode->get_new_node('prod');
 my $pga_data = "$TestLib::tmp_check/pga.data";
@@ -68,7 +68,7 @@ $node->command_checks_all( [
         qr/^Perfdata *: oldest_ready_wal=0s min=0$/m
     ],
     [ qr/^$/ ],
-    'basic check without thresholds'
+    'basic check without thresholds with superuser'
 );
 
 # archiver failing
@@ -113,9 +113,45 @@ $node->command_checks_all( [
     2,
     \@stdout,
     [ qr/^$/ ],
-    'failing archiver'
+    'failing archiver with superuser'
+);
+
+# For PostgreSQL 10+, we now create a non-superuser monitoring role
+done_testing() if ( $node->version < 10 );
+
+$node->psql('postgres', 'create role check_pga login');
+$node->psql('postgres', 'grant pg_monitor to check_pga');
+$node->psql('postgres', 'grant execute on function pg_catalog.pg_stat_file(text) to check_pga');
+
+# With pg10, the perfdata oldest_ready_wal cannot be computed, thus is not
+# present in the perfdata.
+@stdout = (
+    qr/^Service      *: POSTGRES_ARCHIVER$/m,
+    qr/^Returns      *: 2 \(CRITICAL\)$/m,
+    qr/^Message      *: 1 WAL files ready to archive$/m,
+    qr/^Message      *: archiver failing on 000000010000000000000002$/m,
+    qr/^Long message *: 000000010000000000000002 not archived since (?:\ds|last check)$/m,
+    qr/^Perfdata     *: ready_archive=1 min=0$/m,
+);
+
+# For pg11+, oldest_ready_wal is always present.
+push @stdout, ( qr/^Perfdata     *: oldest_ready_wal=\ds min=0$/m )
+  unless ( $node->version < 11 );
+
+$node->command_checks_all( [
+    './check_pgactivity', '--service'     => 'archiver',
+                          '--username'    => 'check_pga',
+                          '--status-file' => $pga_data,
+                          '--format'      => 'human'
+    ],
+    2,
+    \@stdout,
+    [ qr/^$/ ],
+    'failing archiver with non-superuser'
 );
 
 ### End of tests ###
 
 $node->stop;
+
+done_testing();

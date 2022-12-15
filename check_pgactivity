@@ -2143,9 +2143,7 @@ sub check_archiver {
             }
         }
         else {
-            if ( $rs[0][5] ne '' ) {
                 push @perfdata => [ 'oldest_ready_wal', 0, 's', undef, undef, 0 ];
-            }
         }
 
         push @msg => "$nb_files WAL files ready to archive";
