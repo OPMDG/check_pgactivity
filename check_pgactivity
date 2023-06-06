@@ -7586,7 +7586,7 @@ SELECT
     return status_ok( $me, \@msg, \@perfdata );
 }
 
-=item B<stat_snapshot_age> (9.5+)
+=item B<stat_snapshot_age> (9.5 to 14 included)
 
 Check the age of the statistics snapshot (statistics collector's statistics).
 This probe helps to detect a frozen stats collector process.
@@ -7629,7 +7629,7 @@ sub check_stat_snapshot_age {
         -exitval => 127
     ) if @hosts != 1;
 
-    is_compat $hosts[0], 'stat_snapshot_age', $PG_VERSION_95 or exit 1;
+    is_compat $hosts[0], 'stat_snapshot_age', $PG_VERSION_95, $PG_VERSION_140 or exit 1;
 
     @rs = @{ query ( $hosts[0], $query ) };
 
