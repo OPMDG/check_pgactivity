@@ -2,7 +2,7 @@
 # This program is open source, licensed under the PostgreSQL License.
 # For license terms, see the LICENSE file.
 #
-# Copyright (C) 2012-2022: Open PostgreSQL Monitoring Development Group
+# Copyright (C) 2012-2023: Open PostgreSQL Monitoring Development Group
 
 use strict;
 use warnings;
@@ -10,7 +10,6 @@ use warnings;
 use lib 't/lib';
 use pgNode;
 use pgSession;
-use File::Path qw(rmtree);
 use Test::More tests => 39;
 
 my $node = pgNode->get_new_node('prod');
@@ -25,8 +24,8 @@ $node->start;
 
 # Tests for PostreSQL 8.1 and before
 SKIP: {
-    skip "testing incompatibility with PostgreSQL 8.1 and before", 3
-        if $node->version >= 8.2;
+    skip "testing incompatibility with PostgreSQL 8.0 and before", 3
+        if $node->version >= 8.1;
 
     $node->command_checks_all( [
         './check_pgactivity', '--service'  => 'temp_files',
@@ -41,7 +40,7 @@ SKIP: {
 }
 
 SKIP: {
-    skip "incompatible tests with PostgreSQL < 8.2", 34 if $node->version < 8.2;
+    skip "incompatible tests with PostgreSQL < 8.1", 34 if $node->version < 8.1;
 
     # basic check
     $node->command_checks_all( [
@@ -58,6 +57,9 @@ SKIP: {
         [ qr/^$/ ],
         'basic check'
     );
+   # The added sleep ensures that two tests are not executed within the same seconds. 
+   # The time difference is used to compute the Fpm and Bpm perfstat, if it's zero the 
+   # check crashes (division by zero).
     sleep 2;
 
     $proc = pgSession->new( $node, 'postgres' );
@@ -166,14 +168,16 @@ SKIP: {
     );
     sleep 2;
 
-    # unit test with a TS
-    # * are the temfile located in the correct directory ?
+    # unit test with a tablespace
+    # * are the tempfiles located in the correct directory ?
     # * do we only account for temp files ? (cf issue #351)
     mkdir $node->basedir . '/tablespace1';
     $node->psql('postgres', 'CREATE TABLESPACE myts1 LOCATION \'' . $node->basedir . '/tablespace1\';');
     mkdir $node->basedir . '/tablespace2';
     $node->psql('postgres', 'CREATE TABLESPACE myts2 LOCATION \'' . $node->basedir . '/tablespace2\';');
 
+    # Create some tables in the tablespaces to make sure their files are not
+    # reported as temp files (gh #351).
     $node->psql('postgres', 'CREATE TABLE matable0(x text);');
     $node->psql('postgres', 'CREATE TABLE matable1(x text) TABLESPACE myts1;');
     $node->psql('postgres', 'CREATE TABLE matable2(x text) TABLESPACE myts2;');
@@ -209,7 +213,7 @@ SKIP: {
           qr/^Perfdata *: template0=0B$/m,
         ],
         [ qr/^$/ ],
-        'test with ts'
+        'test with a tablespace'
     );
 }
 
