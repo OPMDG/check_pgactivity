@@ -42,7 +42,7 @@ SKIP: {
 SKIP: {
     skip "incompatible tests with PostgreSQL < 8.1", 34 if $node->version < 8.1;
 
-    # basic check
+    # basic check => Returns OK
     $node->command_checks_all( [
         './check_pgactivity', '--service'  => 'temp_files',
                               '--username' => getlogin,
@@ -58,13 +58,14 @@ SKIP: {
         'basic check'
     );
    # The added sleep ensures that two tests are not executed within the same seconds. 
-   # The time difference is used to compute the Fpm and Bpm perfstat, if it's zero the 
+   # The time difference is used to compute the Fpm and Bpm perfstats, if it's zero the
    # check crashes (division by zero).
     sleep 2;
 
     $proc = pgSession->new( $node, 'postgres' );
 
-    # unit test OK
+    # unit test based on the file count => Returns OK
+    # The query generates between 17.5MB (9?4) and 11,7MB (14) of WAL
     $proc->query('SELECT random() * x FROM generate_series(1,1000000) AS F(x) ORDER BY 1;', 2);
     $node->command_checks_all( [
         './check_pgactivity', '--service'  => 'temp_files',
@@ -94,11 +95,11 @@ SKIP: {
           qr/^Perfdata *: template0=0B$/m,
         ],
         [ qr/^$/ ],
-        'test OK'
+        'test file count OK '
     );
     sleep 2;
 
-    # unit test WARN
+    # unit test based on the file count => Returns WARN
     $proc->query('SELECT random() * x FROM generate_series(1,1000000) AS F(x) ORDER BY 1;', 2);
     $node->command_checks_all( [
         './check_pgactivity', '--service'  => 'temp_files',
@@ -129,11 +130,11 @@ SKIP: {
           qr/^Perfdata *: template0=0B$/m,
         ],
         [ qr/^$/ ],
-        'test WARN'
+        'test file count WARN'
     );
     sleep 2;
 
-    # unit test CRIT
+    # unit test based on the file count => Returns CRIT
     $proc->query('SELECT random() * x FROM generate_series(1,1000000) AS F(x) ORDER BY 1;', 2);
     $node->command_checks_all( [
         './check_pgactivity', '--service'  => 'temp_files',
@@ -164,11 +165,219 @@ SKIP: {
           qr/^Perfdata *: template1=0B$/m,
         ],
         [ qr/^$/ ],
-        'test CRIT'
+        'test file count CRIT'
     );
     sleep 2;
 
-    # unit test with a tablespace
+    # unit test based on the file size => Returns OK
+    $proc->query('SELECT random() * x FROM generate_series(1,1000000) AS F(x) ORDER BY 1;', 2);
+    $node->command_checks_all( [
+        './check_pgactivity', '--service'  => 'temp_files',
+                              '--username' => getlogin,
+                              '--format'   => 'human',
+                              '--dbname'   => 'template1',
+                              '--warning'  => '40MB',
+                              '--critical' => '50MB'
+        ],
+        0,
+        [ qr/^Service  *: POSTGRES_TEMP_FILES$/m,
+          qr/^Returns  *: 0 \(OK\)$/m,
+          qr/^Message  *: 4 tablespace\(s\)\/database\(s\) checked$/m,
+          qr/^Perfdata *: # files in pg_default=.*File$/m,
+          qr/^Perfdata *: Total size in pg_default=.* warn=40MB crit=50MB$/m,
+          qr/^Perfdata *: postgres=.*Fpm$/m,
+          qr/^Perfdata *: postgres=.*Bpm$/m,
+          qr/^Perfdata *: postgres=.*Files$/m,
+          qr/^Perfdata *: postgres=.*B warn=40MB crit=50MB$/m,
+          qr/^Perfdata *: template1=0Fpm$/m,
+          qr/^Perfdata *: template1=0Bpm$/m,
+          qr/^Perfdata *: template1=0Files$/m,
+          qr/^Perfdata *: template1=0B warn=40MB crit=50MB$/m,
+          qr/^Perfdata *: template0=0Fpm$/m,
+          qr/^Perfdata *: template0=0Bpm$/m,
+          qr/^Perfdata *: template0=0Files$/m,
+          qr/^Perfdata *: template0=0B warn=40MB crit=50MB$/m,
+        ],
+        [ qr/^$/ ],
+        'test file size OK'
+    );
+    sleep 2;
+
+    # unit test based on the file size => Returns WARN
+    $proc->query('SELECT random() * x FROM generate_series(1,1000000) AS F(x) ORDER BY 1;', 2);
+    $node->command_checks_all( [
+        './check_pgactivity', '--service'  => 'temp_files',
+                              '--username' => getlogin,
+                              '--format'   => 'human',
+                              '--dbname'   => 'template1',
+                              '--warning'  => '4MB',
+                              '--critical' => '40MB'
+        ],
+        1,
+        [ qr/^Service  *: POSTGRES_TEMP_FILES$/m,
+          qr/^Returns  *: 1 \(WARNING\)$/m,
+          qr/^Message  *: pg_default \(.* file\(s\)\/.*\)$/m,
+          qr/^Message  *: postgres \(.* file\(s\)\/.*\)$/m,
+          qr/^Perfdata *: # files in pg_default=.*File$/m,
+          qr/^Perfdata *: Total size in pg_default=.* warn=4MB crit=40MB$/m,
+          qr/^Perfdata *: postgres=.*Fpm$/m,
+          qr/^Perfdata *: postgres=.*Bpm$/m,
+          qr/^Perfdata *: postgres=.*Files$/m,
+          qr/^Perfdata *: postgres=.*B warn=4MB crit=40MB$/m,
+          qr/^Perfdata *: template1=0Fpm$/m,
+          qr/^Perfdata *: template1=0Bpm$/m,
+          qr/^Perfdata *: template1=0Files$/m,
+          qr/^Perfdata *: template1=0B warn=4MB crit=40MB$/m,
+          qr/^Perfdata *: template0=0Fpm$/m,
+          qr/^Perfdata *: template0=0Bpm$/m,
+          qr/^Perfdata *: template0=0Files$/m,
+          qr/^Perfdata *: template0=0B warn=4MB crit=40MB$/m,
+        ],
+        [ qr/^$/ ],
+        'test file size WARN'
+    );
+    sleep 2;
+
+    # unit test based on the file size => Returns CRIT
+    $proc->query('SELECT random() * x FROM generate_series(1,1000000) AS F(x) ORDER BY 1;', 2);
+    $node->command_checks_all( [
+        './check_pgactivity', '--service'  => 'temp_files',
+                              '--username' => getlogin,
+                              '--format'   => 'human',
+                              '--dbname'   => 'template1',
+                              '--warning'  => '4MB',
+                              '--critical' => '5MB'
+        ],
+        2,
+        [ qr/^Service  *: POSTGRES_TEMP_FILES$/m,
+          qr/^Returns  *: 2 \(CRITICAL\)$/m,
+          qr/^Message  *: pg_default \(.* file\(s\)\/.*\)$/m,
+          qr/^Message  *: postgres \(.* file\(s\)\/.*\)$/m,
+          qr/^Perfdata *: # files in pg_default=.*File$/m,
+          qr/^Perfdata *: Total size in pg_default=.* warn=4MB crit=5MB$/m,
+          qr/^Perfdata *: postgres=.*Fpm$/m,
+          qr/^Perfdata *: postgres=.*Bpm$/m,
+          qr/^Perfdata *: postgres=.*Files$/m,
+          qr/^Perfdata *: postgres=.*B warn=4MB crit=5MB$/m,
+          qr/^Perfdata *: template1=0Fpm$/m,
+          qr/^Perfdata *: template1=0Bpm$/m,
+          qr/^Perfdata *: template1=0Files$/m,
+          qr/^Perfdata *: template1=0B warn=4MB crit=5MB$/m,
+          qr/^Perfdata *: template0=0Fpm$/m,
+          qr/^Perfdata *: template0=0Bpm$/m,
+          qr/^Perfdata *: template0=0Files$/m,
+          qr/^Perfdata *: template1=0B warn=4MB crit=5MB$/m,
+        ],
+        [ qr/^$/ ],
+        'test file count CRIT'
+    );
+    sleep 2;
+
+    # unit test based on the file size and count => Returns OK
+    $proc->query('SELECT random() * x FROM generate_series(1,1000000) AS F(x) ORDER BY 1;', 2);
+    $node->command_checks_all( [
+        './check_pgactivity', '--service'  => 'temp_files',
+                              '--username' => getlogin,
+                              '--format'   => 'human',
+                              '--dbname'   => 'template1',
+                              '--warning'  => '3,49254kB',
+                              '--critical' => '4,65638kB'
+        ],
+        0,
+        [ qr/^Service  *: POSTGRES_TEMP_FILES$/m,
+          qr/^Returns  *: 0 \(OK\)$/m,
+          qr/^Message  *: 4 tablespace\(s\)\/database\(s\) checked$/m,
+          qr/^Perfdata *: # files in pg_default=.*File warn=3 crit=4$/m,
+          qr/^Perfdata *: Total size in pg_default=.* warn=48.102MB crit=64.102MB$/m,
+          qr/^Perfdata *: postgres=.*Fpm$/m,
+          qr/^Perfdata *: postgres=.*Bpm$/m,
+          qr/^Perfdata *: postgres=.*Files warn=3 crit=4$/m,
+          qr/^Perfdata *: postgres=.*B warn=48.102MB crit=64.102MB$/m,
+          qr/^Perfdata *: template1=0Fpm$/m,
+          qr/^Perfdata *: template1=0Bpm$/m,
+          qr/^Perfdata *: template1=0Files warn=3 crit=4$/m,
+          qr/^Perfdata *: template1=0B warn=48.102MB crit=64.102MB$/m,
+          qr/^Perfdata *: template0=0Fpm$/m,
+          qr/^Perfdata *: template0=0Bpm$/m,
+          qr/^Perfdata *: template0=0Files warn=3 crit=4$/m,
+          qr/^Perfdata *: template0=0B warn=48.102MB crit=64.102MB$/m,
+        ],
+        [ qr/^$/ ],
+        'test file size and count OK '
+    );
+    sleep 2;
+
+    # unit test based on the file size and count => Returns WARN
+    $proc->query('SELECT random() * x FROM generate_series(1,1000000) AS F(x) ORDER BY 1;', 2);
+    $node->command_checks_all( [
+        './check_pgactivity', '--service'  => 'temp_files',
+                              '--username' => getlogin,
+                              '--format'   => 'human',
+                              '--dbname'   => 'template1',
+                              '--warning'  => '1,16486kB',
+                              '--critical' => '3,49254kB'
+        ],
+        1,
+        [ qr/^Service  *: POSTGRES_TEMP_FILES$/m,
+          qr/^Returns  *: 1 \(WARNING\)$/m,
+          qr/^Message  *: pg_default \(.* file\(s\)\/.*\)$/m,
+          qr/^Message  *: postgres \(.* file\(s\)\/.*\)$/m,
+          qr/^Perfdata *: # files in pg_default=.*File warn=1 crit=3$/m,
+          qr/^Perfdata *: Total size in pg_default=.* warn=16.102MB crit=48.102MB$/m,
+          qr/^Perfdata *: postgres=.*Fpm$/m,
+          qr/^Perfdata *: postgres=.*Bpm$/m,
+          qr/^Perfdata *: postgres=.*Files warn=1 crit=3$/m,
+          qr/^Perfdata *: postgres=.*B warn=16.102MB crit=48.102MB$/m,
+          qr/^Perfdata *: template1=0Fpm$/m,
+          qr/^Perfdata *: template1=0Bpm$/m,
+          qr/^Perfdata *: template1=0Files warn=1 crit=3$/m,
+          qr/^Perfdata *: template1=0B warn=16.102MB crit=48.102MB$/m,
+          qr/^Perfdata *: template0=0Fpm$/m,
+          qr/^Perfdata *: template0=0Bpm$/m,
+          qr/^Perfdata *: template0=0Files warn=1 crit=3$/m,
+          qr/^Perfdata *: template0=0B warn=16.102MB crit=48.102MB$/m,
+        ],
+        [ qr/^$/ ],
+        'test file size and count WARN'
+    );
+    sleep 2;
+
+    # unit test based on the file size and count => Returns CRIT
+    $proc->query('SELECT random() * x FROM generate_series(1,1000000) AS F(x) ORDER BY 1;', 2);
+    $node->command_checks_all( [
+        './check_pgactivity', '--service'  => 'temp_files',
+                              '--username' => getlogin,
+                              '--format'   => 'human',
+                              '--dbname'   => 'template1',
+                              '--warning'  => '0,0MB',
+                              '--critical' => '1,4MB'
+        ],
+        2,
+        [ qr/^Service  *: POSTGRES_TEMP_FILES$/m,
+          qr/^Returns  *: 2 \(CRITICAL\)$/m,
+          qr/^Message  *: pg_default \(.* file\(s\)\/.*\)$/m,
+          qr/^Message  *: postgres \(.* file\(s\)\/.*\)$/m,
+          qr/^Perfdata *: # files in pg_default=.*File warn=0 crit=1$/m,
+          qr/^Perfdata *: Total size in pg_default=.* warn=0B crit=4MB$/m,
+          qr/^Perfdata *: postgres=.*Fpm$/m,
+          qr/^Perfdata *: postgres=.*Bpm$/m,
+          qr/^Perfdata *: postgres=.*Files warn=0 crit=1$/m,
+          qr/^Perfdata *: postgres=.*B warn=0B crit=4MB$/m,
+          qr/^Perfdata *: template1=0Fpm$/m,
+          qr/^Perfdata *: template1=0Bpm$/m,
+          qr/^Perfdata *: template1=0Files warn=0 crit=1$/m,
+          qr/^Perfdata *: template1=0B warn=0B crit=4MB$/m,
+          qr/^Perfdata *: template0=0Fpm$/m,
+          qr/^Perfdata *: template0=0Bpm$/m,
+          qr/^Perfdata *: template0=0Files warn=0 crit=1$/m,
+          qr/^Perfdata *: template1=0B warn=0B crit=4MB$/m,
+        ],
+        [ qr/^$/ ],
+        'test file size and count CRIT'
+    );
+    sleep 2;
+
+    # unit test with a tablespace => Returns OK
     # * are the tempfiles located in the correct directory ?
     # * do we only account for temp files ? (cf issue #351)
     mkdir $node->basedir . '/tablespace1';
