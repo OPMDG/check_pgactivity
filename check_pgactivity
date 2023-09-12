@@ -6450,6 +6450,11 @@ sub check_pg_dump_backup {
     ) unless $backup_path;
 
     pod2usage(
+        -message => "FATAL: the backup_path must contain a wilcard and not be a directory",
+        -exitval => 127
+    ) if ( -d "$backup_path") ;
+
+    pod2usage(
         -message => 'FATAL: you must give one (and only one) host with service "pg_dump_backup".',
         -exitval => 127
     ) if @hosts != 1;
@@ -6502,6 +6507,8 @@ sub check_pg_dump_backup {
         $crit{$threshold} = $value if $1 and defined $2;
     }
 
+    dprint ("Looking at files: $backup_path \n");
+
     # Stat files in the backup directory
     @dirfiles = glob $backup_path;
 
@@ -6514,6 +6521,7 @@ sub check_pg_dump_backup {
         ( undef, undef, undef, undef, undef, undef, undef, $size,
             undef, $mtime ) = stat $file;
 
+        dprint ("Looking at file: $file (size: $size) \n");
         next if $now - $mtime < $min_age;
 
         if ( $global_pattern and $filename =~ $global_pattern ) {
@@ -6526,6 +6534,7 @@ sub check_pg_dump_backup {
         next unless $filename =~ $pattern and defined $1;
 
         $dbname = $1;
+        dprint ("Looking for a DB named: $dbname \n") ;
 
         $firsts{$dbname} = [ $mtime, $size ] if not exists $firsts{$dbname}
             or $firsts{$dbname}[0] > $mtime;
