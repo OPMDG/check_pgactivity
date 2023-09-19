@@ -100,8 +100,8 @@ $node->command_checks_all( [
     'connection successful'
 );
 
-# stop instance
-$node->stop;
+# stop instance as fast as possible
+$node->stop('immediate');
 ~~~
 
 Class `pgNode` is facet class creating and returning the appropriate

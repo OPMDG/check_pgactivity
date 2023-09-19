@@ -89,7 +89,7 @@ SKIP: {
         'basic check without thresholds'
     );
 
-    $node->stop;
+    $node->stop( 'immediate' );
 }
 
 ### End of tests ###

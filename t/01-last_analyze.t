@@ -195,4 +195,4 @@ $node->command_checks_all( [
 
 ### End of tests ###
 
-$node->stop('fast');
+$node->stop( 'immediate' );

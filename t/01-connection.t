@@ -56,4 +56,4 @@ $node->command_checks_all( [
 
 ### End of tests ###
 
-$node->stop;
+$node->stop( 'immediate' );

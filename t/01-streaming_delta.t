@@ -189,7 +189,7 @@ SKIP: {
 
     # failing check when called with an explicit standby not connected
     note "failing check when called with an explicit standby not connected";
-    $stb1->stop;
+    $stb1->stop( 'fast' );
     $prim->command_checks_all( [
         './check_pgactivity', '--service'  => 'streaming_delta',
                               '--username' => getlogin,
@@ -215,7 +215,7 @@ SKIP: {
 
     # no standby connected
     note "no standby connected";
-    $stb2->stop;
+    $stb2->stop( 'fast' );
     $prim->command_checks_all( [
         './check_pgactivity', '--service'  => 'streaming_delta',
                               '--username' => getlogin,
@@ -349,10 +349,10 @@ SKIP: {
         'one explicit standby critical on replay lag'
     );
 
-    $stb1->stop;
-    $stb2->stop;
+    $stb1->stop( 'immediate' );
+    $stb2->stop( 'immediate' );
 } # End of SKIP
 
 ### End of tests ###
 
-$prim->stop;
+$prim->stop( 'immediate' );
