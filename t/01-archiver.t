@@ -16,6 +16,7 @@ my $node      = pgNode->get_new_node('prod');
 my $pga_data = "$TestLib::tmp_check/pga.data";
 my $wal;
 my @stdout;
+my $num_tests = 25;
 
 $node->init(has_archiving => 1);
 
@@ -27,6 +28,9 @@ elsif ( $node->version >= 9.0 ) {
 }
 
 $node->start;
+
+$num_tests-- if $node->version < 11;
+plan tests => $num_tests;
 
 ### Beginning of tests ###
 
@@ -117,41 +121,42 @@ $node->command_checks_all( [
 );
 
 # For PostgreSQL 10+, we now create a non-superuser monitoring role
-done_testing() if ( $node->version < 10 );
+SKIP: {
+    skip "checking with non superuser role is not supported before v10", 8
+        if $node->version < 10;
 
-$node->psql('postgres', 'create role check_pga login');
-$node->psql('postgres', 'grant pg_monitor to check_pga');
-$node->psql('postgres', 'grant execute on function pg_catalog.pg_stat_file(text) to check_pga');
+    $node->psql('postgres', 'create role check_pga login');
+    $node->psql('postgres', 'grant pg_monitor to check_pga');
+    $node->psql('postgres', 'grant execute on function pg_catalog.pg_stat_file(text) to check_pga');
 
-# With pg10, the perfdata oldest_ready_wal cannot be computed, thus is not
-# present in the perfdata.
-@stdout = (
-    qr/^Service      *: POSTGRES_ARCHIVER$/m,
-    qr/^Returns      *: 2 \(CRITICAL\)$/m,
-    qr/^Message      *: 1 WAL files ready to archive$/m,
-    qr/^Message      *: archiver failing on 000000010000000000000002$/m,
-    qr/^Long message *: 000000010000000000000002 not archived since (?:\ds|last check)$/m,
-    qr/^Perfdata     *: ready_archive=1 min=0$/m,
-);
+    # With pg10, the perfdata oldest_ready_wal cannot be computed, thus is not
+    # present in the perfdata.
+    @stdout = (
+        qr/^Service      *: POSTGRES_ARCHIVER$/m,
+        qr/^Returns      *: 2 \(CRITICAL\)$/m,
+        qr/^Message      *: 1 WAL files ready to archive$/m,
+        qr/^Message      *: archiver failing on 000000010000000000000002$/m,
+        qr/^Long message *: 000000010000000000000002 not archived since (?:\ds|last check)$/m,
+        qr/^Perfdata     *: ready_archive=1 min=0$/m,
+    );
 
-# For pg11+, oldest_ready_wal is always present.
-push @stdout, ( qr/^Perfdata     *: oldest_ready_wal=\ds min=0$/m )
-  unless ( $node->version < 11 );
+    # For pg11+, oldest_ready_wal is always present.
+    push @stdout, ( qr/^Perfdata     *: oldest_ready_wal=\ds min=0$/m )
+      unless $node->version < 11;
 
-$node->command_checks_all( [
-    './check_pgactivity', '--service'     => 'archiver',
-                          '--username'    => 'check_pga',
-                          '--status-file' => $pga_data,
-                          '--format'      => 'human'
-    ],
-    2,
-    \@stdout,
-    [ qr/^$/ ],
-    'failing archiver with non-superuser'
-);
+    $node->command_checks_all( [
+        './check_pgactivity', '--service'     => 'archiver',
+                              '--username'    => 'check_pga',
+                              '--status-file' => $pga_data,
+                              '--format'      => 'human'
+        ],
+        2,
+        \@stdout,
+        [ qr/^$/ ],
+        'failing archiver with non-superuser'
+    );
+}
 
 ### End of tests ###
 
-$node->stop;
-
-done_testing();
+$node->stop( 'immediate' );
