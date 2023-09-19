@@ -71,6 +71,8 @@ sub AUTOLOAD {
 
     $subname =~ s/^pgNode:://;
 
+    return if $subname eq "DESTROY" and not $self->{'node'}->can("DESTROY");
+
     return $self->{'node'}->$subname(@_);
 }
 
