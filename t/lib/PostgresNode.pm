@@ -415,6 +415,10 @@ sub set_replication_conf
 	return;
 }
 
+# Internal method to set stat_temp_directory GUC.
+# Parameter stat_temp_directory removed in v15
+sub set_stats_temp_directory { return }
+
 =pod
 
 =item $node->init(...)
@@ -478,9 +482,7 @@ sub init
 	print $conf TestLib::slurp_file($ENV{TEMP_CONFIG})
 	  if defined $ENV{TEMP_CONFIG};
 
-	# XXX Neutralize any stats_temp_directory in TEMP_CONFIG.  Nodes running
-	# concurrently must not share a stats_temp_directory.
-	print $conf "stats_temp_directory = 'pg_stat_tmp'\n";
+	$self->set_stats_temp_directory($conf);
 
 	if ($params{allows_streaming})
 	{
@@ -2784,11 +2786,44 @@ sub pg_recvlogical_upto
 #
 ##########################################################################
 
-package PostgresNodeV_13;    ## no critic (ProhibitMultiplePackages)
+package PostgresNodeV_16;    ## no critic (ProhibitMultiplePackages)
 
 use parent -norequire, qw(PostgresNode);
 
-# https://www.postgresql.org/docs/10/release-13.html
+# https://www.postgresql.org/docs/16/release-16.html
+
+##########################################################################
+
+package PostgresNodeV_15;    ## no critic (ProhibitMultiplePackages)
+
+use parent -norequire, qw(PostgresNodeV_16);
+
+# https://www.postgresql.org/docs/15/release-15.html
+
+##########################################################################
+
+package PostgresNodeV_14;    ## no critic (ProhibitMultiplePackages)
+
+use parent -norequire, qw(PostgresNodeV_15);
+
+# Internal method to set stat_temp_directory GUC
+sub set_stats_temp_directory
+{
+	my ($self, $conf) = @_;
+	# XXX Neutralize any stats_temp_directory in TEMP_CONFIG.  Nodes running
+	# concurrently must not share a stats_temp_directory.
+	print $conf "stats_temp_directory = 'pg_stat_tmp'\n";
+}
+
+# https://www.postgresql.org/docs/14/release-14.html
+
+##########################################################################
+
+package PostgresNodeV_13;    ## no critic (ProhibitMultiplePackages)
+
+use parent -norequire, qw(PostgresNodeV_14);
+
+# https://www.postgresql.org/docs/13/release-13.html
 
 ##########################################################################
 
