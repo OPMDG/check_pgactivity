@@ -23,9 +23,7 @@ my @procs;
 my $pgversion;
 
 $node->init;
-
 $node->start;
-$pgversion=PostgresVersion->new($node->version());
 
 ### Beginning of tests ###
 
@@ -49,21 +47,23 @@ TestLib::system_or_bail('createdb',
 );
 
 $node->psql('testdb', 'CREATE TABLE test1 (i smallint PRIMARY KEY)');
-$node->psql('testdb', 'CREATE SEQUENCE test1seq AS smallint INCREMENT BY 1000 START WITH 32000 OWNED BY test1.i');
+$node->psql('testdb', 'CREATE SEQUENCE test1seq INCREMENT BY 8000 START WITH 16000 OWNED BY test1.i');
 
-sleep 1;
+# As the sequence is new, set its first value
+$node->psql('testdb', "SELECT nextval('test1seq')") ;
 
 $node->command_checks_all( [
     './check_pgactivity', '--service'  => 'sequences_exhausted',
                           '--username' => getlogin,
                           '--format'   => 'human',
-			  '--warning'  => '5%',
-			  '--critical' => '10%'
+                          '--warning'  => '50%',
+                          '--critical' => '90%'
     ],
     0,
-    [ qr/^Service *: POSTGRES_CHECK_SEQ_EXHAUSTED$/m,
-      qr/^Returns *: 0 \(OK\)$/m,
-     ],
+    [
+        qr/^Service *: POSTGRES_CHECK_SEQ_EXHAUSTED$/m,
+        qr/^Returns *: 0 \(OK\)$/m,
+    ],
     [ qr/^$/ ],
     'basic check'
 );
@@ -74,13 +74,32 @@ $node->command_checks_all( [
     './check_pgactivity', '--service'  => 'sequences_exhausted',
                           '--username' => getlogin,
                           '--format'   => 'human',
-			  '--warning'  => '5%',
-			  '--critical' => '10%'
+                          '--warning'  => '50%',
+                          '--critical' => '90%'
+    ],
+    1,
+    [
+        qr/^Service *: POSTGRES_CHECK_SEQ_EXHAUSTED$/m,
+        qr/^Returns *: 1 \(WARNING\)$/m,
+    ],
+    [ qr/^$/ ],
+    'check warning'
+);
+
+$node->psql('testdb', "SELECT nextval('test1seq')");
+
+$node->command_checks_all( [
+    './check_pgactivity', '--service'  => 'sequences_exhausted',
+                          '--username' => getlogin,
+                          '--format'   => 'human',
+                          '--warning'  => '50%',
+                          '--critical' => '90%'
     ],
     2,
-    [ qr/^Service *: POSTGRES_CHECK_SEQ_EXHAUSTED$/m,
-      qr/^Returns *: 2 \(CRITICAL\)$/m,
-     ],
+    [
+        qr/^Service *: POSTGRES_CHECK_SEQ_EXHAUSTED$/m,
+        qr/^Returns *: 2 \(CRITICAL\)$/m,
+    ],
     [ qr/^$/ ],
     'check critical'
 );
