@@ -1,6 +1,23 @@
 Changelog
 =========
 
+2023-09-25 v2.7:
+
+* add: compatibility with PostgreSQL 15 and 16, Jehan-Guillaume de Rorthais, Thomas Reiss
+* change: `stat_snapshot_age` is compatible from PostgreSQL v9.5 to v14, Benoit Lobréau
+* change: simplify session accounting in `backends_status`, Thomas Reiss
+* fix: in `pg_dump_backup`, error explicitly if given `--path` is a directory, Christophe Courtois
+* fix: `temp_files` on PG10 was counting all DB files, Christophe Courtois, Benoit Lobréau
+* fix: make `check_archiver` output `oldest_ready_wal=0` when archive queue is empty, Thomas Reiss
+* fix: make `check_archiver` work properly with PostgreSQL 10 without being superuser, Thomas Reiss
+* fix: in `backends_status`, avoid "idle in transaction" false positive for PostgreSQL 9.2 and after, Thomas Reiss
+* fix: issue with check_pgactivity missing lock file, Joern Ott, Julien Rouhaud, Jehan-Guillaume de Rorthais
+* fix: in `btree_bloat`, adjust index tuple header size, Shangzi Xie, Jehan-Guillaume de Rorthais
+
+Thank you to all contributors of this release for feedbacks, bug reports,
+patches and patch reviews, etc.
+
+
 2022-07-08 v2.6:
 
 * add: new `session_stats` service to gather miscellaneous session statistics, Frédéric Yhuel

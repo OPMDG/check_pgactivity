@@ -299,8 +299,9 @@ COMPATIBILITY
         archiver process did not archive the oldest waiting WAL to be
         archived since last call.
 
-        Required privileges: superuser (<v11), grant execute on function
-        pg_stat_file(text) for v11+.
+        Required privileges: superuser (<v10), <v10: superuser, v10:
+        nonsuper user but output will lack perfdata oldest_ready_wal or
+        superuser, v11+: grant execute on function pg_stat_file(text).
 
     autovacuum (8.1+)
         Check the autovacuum activity on the cluster.
@@ -385,7 +386,8 @@ COMPATIBILITY
         Critical and Warning thresholds only accept an interval (eg.
         1h30m25s).
 
-        Required privileges: unprivileged role (9.3+); superuser (<9.3)
+        Required privileges: grant execute on function pg_stat_file(text,
+        boolean) (pg12+); unprivileged role (9.3+); superuser (<9.3)
 
     bgwriter (8.3+)
         Check the percentage of pages written by backends since last check.
@@ -1064,7 +1066,7 @@ COMPATIBILITY
 
         Required privileges: unprivileged role able to log in all databases
 
-    stat_snapshot_age (9.5+)
+    stat_snapshot_age (9.5 to 14 included)
         Check the age of the statistics snapshot (statistics collector's
         statistics). This probe helps to detect a frozen stats collector
         process.
@@ -1295,7 +1297,7 @@ COMPATIBILITY
           check_pgactivity -p 5433 -h slave --service hit_ratio --dbinclude importantone -w 90% -c 80%
 
 VERSION
-    check_pgactivity version 2.6, released on Fri Jul 08 2022.
+    check_pgactivity version 2.7, released on Mon Sep 25 2023.
 
 LICENSING
     This program is open source, licensed under the PostgreSQL license. For
