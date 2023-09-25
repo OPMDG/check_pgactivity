@@ -1,4 +1,5 @@
 The following contributors helped to bring check_pgactivity :
+
   * Jehan-Guillaume de Rorthais
   * Julien Rouhaud
   * Thomas Reiss
@@ -18,6 +19,8 @@ The following contributors helped to bring check_pgactivity :
   * macarbiter
   * Frédéric Yhuel
   * Julian Vanden Broeck
+  * Benoit Lobréau
+  * Shangzi Xie
 
 And many users that reported issues. Thanks to all !
 
