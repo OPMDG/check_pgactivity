@@ -6,7 +6,7 @@ Changelog
 * add: compatibility with PostgreSQL 15 and 16, Jehan-Guillaume de Rorthais, Thomas Reiss
 * change: `stat_snapshot_age` is compatible from PostgreSQL v9.5 to v14, Benoit Lobréau
 * change: simplify session accounting in `backends_status`, Thomas Reiss
-* fix: compatibility of `backup_label_age` wit PostgreSQL 15 and after, Thomas Reiss
+* fix: compatibility of `backup_label_age` with PostgreSQL 15 and after, Thomas Reiss
 * in `pg_dump_backup`, error explicitly if `--path` is a directory, Christophe Courtois
 * fix: `temp_files` on PG10 was counting all DB files, Christophe Courtois, Benoit Lobréau
 * fix: make `check_archiver` output `oldest_ready_wal=0` when archive queue is empty, Thomas Reiss
