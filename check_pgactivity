@@ -5182,7 +5182,26 @@ Required privileges: unprivileged role able to log in all databases.
 =cut
 
 sub check_last_vacuum {
-    return check_last_maintenance( 'vacuum', @_ );
+    my @rs;
+    my @hosts;
+    my %args          = %{ $_[0] };
+    my $me            = 'POSTGRES_CHECK_LAST_VACUUM';
+    my %queries       = (
+        $PG_VERSION_90 => q{SELECT pg_is_in_recovery()}
+    );
+
+    @hosts = @{ parse_hosts %args };
+
+    pod2usage(
+        -message => 'FATAL: you must give only one host with service "check_last_vacuum".',
+        -exitval => 127
+    ) if @hosts != 1;
+
+    is_compat $hosts[0], 'is_hot_standby', $PG_VERSION_90 or exit 1;
+    @rs = @{ query_ver( $hosts[0], %queries )->[0] };
+
+    return check_last_maintenance( 'vacuum', @_ ) if $rs[0] eq "f";
+    return status_ok( $me, [ "Cluster is hot standby, skipping check" ] );
 }
 
 
