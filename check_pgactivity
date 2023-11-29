@@ -4976,14 +4976,29 @@ sub check_last_maintenance {
     my @dbinclude  = @{ $args{'dbinclude'} };
     my @dbexclude  = @{ $args{'dbexclude'} };
     my $me         = 'POSTGRES_LAST_' . uc($type);
+
+    # warning and critical are mandatory.
+    pod2usage(
+        -message => "FATAL: you must specify critical and warning thresholds.",
+        -exitval => 127
+    ) unless defined $args{'warning'} and defined $args{'critical'} ;
+
+    pod2usage(
+        -message => "FATAL: critical and warning thresholds only acccepts interval.",
+        -exitval => 127
+    ) unless ( is_time( $args{'warning'} ) and is_time( $args{'critical'} ) );
+
+    $c_limit = get_time $args{'critical'};
+    $w_limit = get_time $args{'warning'};
+
     my %queries    = (
         # 1st field: oldest known maintenance on a table
         #            -inf if a table never had maintenance
         #             NaN if nothing found
         # 2nd field: total number of maintenance
         # 3nd field: total number of auto-maintenance
-        # 4th field: hash(insert||update||delete) to detect write
-        #            activity between two run and avoid useless alerts
+        # 4th field: hash(insert||update||delete||thresholds) to avoid
+        #  useless alerts when there is no write activity (if thresholds do not change)
         #
         # 8.2 does not have per-database activity stats. We must aggregate
         # from pg_stat_user_tables
@@ -4997,7 +5012,8 @@ sub check_last_maintenance {
                 NULL, NULL,
                 sum(hashtext(n_tup_ins::text
                     ||n_tup_upd::text
-                    ||n_tup_del::text))
+                    ||n_tup_del::text
+                    ||'$c_limit $w_limit'))
             FROM pg_stat_user_tables
             WHERE schemaname NOT LIKE 'pg_temp_%'
         },
@@ -5012,7 +5028,7 @@ sub check_last_maintenance {
                     'NaN'::float),
                 NULL, NULL,
                 (
-                  SELECT md5(tup_inserted::text||tup_updated::text||tup_deleted::text)
+                  SELECT md5(tup_inserted::text||tup_updated::text||tup_deleted::text||'$c_limit $w_limit'))
                   FROM pg_catalog.pg_stat_database
                   WHERE datname = current_database()
                 )
@@ -5031,7 +5047,8 @@ sub check_last_maintenance {
                 coalesce(sum(${type}_count), 0) AS ${type}_count,
                 coalesce(sum(auto${type}_count), 0) AS auto${type}_count,
                 (
-                  SELECT md5(tup_inserted::text||tup_updated::text||tup_deleted::text)
+                  SELECT md5(tup_inserted::text||tup_updated::text||tup_deleted::text||'$c_limit $w_limit'
+                  )
                   FROM pg_catalog.pg_stat_database
                   WHERE datname = current_database()
                 )
@@ -5040,20 +5057,6 @@ sub check_last_maintenance {
               AND schemaname NOT LIKE 'pg_toast_temp_%'
         }
     );
-
-    # warning and critical are mandatory.
-    pod2usage(
-        -message => "FATAL: you must specify critical and warning thresholds.",
-        -exitval => 127
-    ) unless defined $args{'warning'} and defined $args{'critical'} ;
-
-    pod2usage(
-        -message => "FATAL: critical and warning thresholds only acccepts interval.",
-        -exitval => 127
-    ) unless ( is_time( $args{'warning'} ) and is_time( $args{'critical'} ) );
-
-    $c_limit = get_time $args{'critical'};
-    $w_limit = get_time $args{'warning'};
 
     @hosts = @{ parse_hosts %args };
 
@@ -5159,7 +5162,7 @@ will raise a critical alert.
 B<NOTE>: this service does not raise alerts if the database had strictly
 no writes since last call. In consequence, a read-only database can have
 its oldest analyze reported in perfdata way after your thresholds, but not
-raise any alerts.
+raise any alerts, unless you change a threshold.
 
 This service supports both C<--dbexclude> and C<--dbinclude> parameters.
 The 'postgres' database and templates are always excluded.
@@ -5194,7 +5197,7 @@ will raise a critical alert.
 B<NOTE>: this service does not raise alerts if the database had strictly
 no writes since last call. In consequence, a read-only database can have
 its oldest vacuum reported in perfdata way after your thresholds, but not
-raise any alerts.
+raise any alerts, unless you change a threshold.
 
 This service supports both C<--dbexclude> and C<--dbinclude> parameters.
 The 'postgres' database and templates are always excluded.
