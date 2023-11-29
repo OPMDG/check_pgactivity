@@ -15,9 +15,13 @@ offers many options to measure and monitor useful performance metrics.
 
 =head1 COMPATIBILITY
 
-Each service is available from a different PostgreSQL version,
-from 7.4, as documented below.
-The psql client must be 8.3 at least. It can be used with an older server.
+Each service is available from a different PostgreSQL version, from 7.4, as
+documented below.
+
+Ideally, the psql client should be 8.4 at least, but it can be used with an
+older server. If your client is older, see C<--psql> and C<--old-psql> for more
+information.
+
 Please report any undocumented incompatibility.
 
 =over
@@ -114,7 +118,21 @@ script relies on the system default temporary directory if possible.
 =item B<-P>, B<--psql> FILE
 
 Path to the C<psql> executable (default: "psql").
-It should be version 8.3 at least, but the server can be older.
+
+Because check_pgactivity uses C<psql -w>, C<psql> must be version 8.4 at least,
+but the server can be older. If your C<psql> is older and does not support
+C<-w>, look at argument C<--old-psql>.
+
+=item B<--old-psql>
+
+Stay compatible with psql 8.3 and below.
+
+Can also be set be setting environment variable C<CHECK_PGA_OLD_PSQL>.
+
+This option removes the C<-w> argument from the C<psql> argument list. This
+means that if your password-less authentication is not correctly setup, C<psql>
+might either wait indefinitely for a password, effectively blocking
+C<check_pgactivity>, or fail immediately with an explicit error message.
 
 =item B<--status-file> PATH
 
