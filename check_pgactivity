@@ -386,18 +386,19 @@ script relies on the system default temporary directory if possible.
 Path to the C<psql> executable (default: "psql").
 
 Because check_pgactivity uses C<psql -w>, C<psql> must be version 8.4 at least,
-but the server can be older.
-
-If your C<psql> is older and does not support C<-w>, look at argument
-C<--old-psql>.
+but the server can be older. If your C<psql> is older and does not support
+C<-w>, look at argument C<--old-psql>.
 
 =item B<--old-psql>
 
 Stay compatible with psql 8.3 and below.
 
+Can also be set be setting environment variable C<CHECK_PGA_OLD_PSQL>.
+
 This option removes the C<-w> argument from the C<psql> argument list. This
 means that if your password-less authentication is not correctly setup, C<psql>
-will wait indefinitely for a password, effectively blocking C<check_pgactivity>.
+might either wait indefinitely for a password, effectively blocking
+C<check_pgactivity>, or fail immediately with an explicit error message.
 
 =item B<--status-file> PATH
 
