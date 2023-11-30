@@ -4998,7 +4998,8 @@ sub check_last_maintenance {
         # 2nd field: total number of maintenance
         # 3nd field: total number of auto-maintenance
         # 4th field: hash(insert||update||delete||thresholds) to avoid
-        #  useless alerts when there is no write activity (if thresholds do not change)
+        #            useless alerts when there is no write activity (if
+        #            thresholds do not change)
         #
         # 8.2 does not have per-database activity stats. We must aggregate
         # from pg_stat_user_tables
