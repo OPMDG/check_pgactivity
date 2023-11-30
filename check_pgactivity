@@ -5146,6 +5146,7 @@ LOOP_DB: foreach my $db (@all_db) {
 
 Check on each databases that the oldest C<analyze> (from autovacuum or not) is
 not older than the given threshold.
+This is to check that a scheduled ANALYZE is working correctly.
 
 This service uses the status file (see C<--status-file> parameter) with
 PostgreSQL 9.1+.
@@ -5154,7 +5155,7 @@ Perfdata returns oldest C<analyze> per database in seconds. With PostgreSQL
 9.1+, the number of [auto]analyses per database since last call is also
 returned.
 
-Critical and Warning thresholds only accept an interval (eg. 1h30m25s)
+Critical and Warning thresholds only accept an interval (eg. 24h30m)
 and apply to the oldest execution of analyse.
 
 Tables that were never analyzed, or whose analyze date was lost due to a crash,
@@ -5181,6 +5182,7 @@ sub check_last_analyze {
 
 Check that the oldest vacuum (from autovacuum or otherwise) in each database
 in the cluster is not older than the given threshold.
+This is to check that a scheduled VACUUM is working correctly.
 
 This service uses the status file (see C<--status-file> parameter) with
 PostgreSQL 9.1+.
@@ -5189,7 +5191,7 @@ Perfdata returns oldest vacuum per database in seconds. With PostgreSQL
 9.1+, it also returns the number of [auto]vacuums per database since last
 execution.
 
-Critical and Warning thresholds only accept an interval (eg. 1h30m25s)
+Critical and Warning thresholds only accept an interval (eg. 24h30m)
 and apply to the oldest vacuum.
 
 Tables that were never vacuumed, or whose vacuum date was lost due to a crash,
