@@ -5053,9 +5053,12 @@ sub check_last_maintenance {
                   FROM pg_catalog.pg_stat_database
                   WHERE datname = current_database()
                 )
-            FROM pg_stat_user_tables
+            FROM pg_stat_user_tables a
+            JOIN pg_class b on a.relid = b.oid
             WHERE schemaname NOT LIKE 'pg_temp_%'
               AND schemaname NOT LIKE 'pg_toast_temp_%'
+              AND (('${type}' = 'vacuum' AND relkind <> 'p') -- partitioned table do not have last_* information
+                OR  ('${type}' = 'analyze'))
         }
     );
 
