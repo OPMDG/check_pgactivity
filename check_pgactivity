@@ -5489,7 +5489,24 @@ sub check_longest_query {
                 WHERE state = 'active'
             ) AS s ON (d.datname=s.datname)
             WHERE d.datallowconn
-        }
+        },
+	$PG_VERSION_10 => q{SELECT d.datname,
+                COALESCE(elapsed, 0),
+                COALESCE(query, ''),
+                application_name
+            FROM pg_database AS d
+            LEFT JOIN (
+                SELECT datname, query,
+                    extract('epoch' FROM
+                        date_trunc('second', current_timestamp-state_change)
+                    ) AS elapsed,
+                    application_name
+                FROM pg_stat_activity
+                WHERE state = 'active'
+		  AND backend_type IN ('client backend', 'background worker', 'autovacuum worker')
+            ) AS s ON (d.datname=s.datname)
+            WHERE d.datallowconn
+        },
     );
 
     # Warning and critical are mandatory.
