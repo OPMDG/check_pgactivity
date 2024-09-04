@@ -5490,7 +5490,7 @@ sub check_longest_query {
             ) AS s ON (d.datname=s.datname)
             WHERE d.datallowconn
         },
-	$PG_VERSION_10 => q{SELECT d.datname,
+	$PG_VERSION_100 => q{SELECT d.datname,
                 COALESCE(elapsed, 0),
                 COALESCE(query, ''),
                 application_name
