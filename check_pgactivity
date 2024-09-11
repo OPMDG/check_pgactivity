@@ -2323,6 +2323,9 @@ Critical and Warning thresholds accept either a raw number or a percentage (eg.
 between the cluster parameters C<max_connections> and
 C<superuser_reserved_connections>.
 
+Autovacuum workers and walsender process are ignored. To check autovacuum, use
+the autovacuum service.
+
 Required privileges: an unprivileged user only sees its own queries;
 a pg_monitor (10+) or superuser (<10) role is required to see all queries.
 
@@ -5489,7 +5492,24 @@ sub check_longest_query {
                 WHERE state = 'active'
             ) AS s ON (d.datname=s.datname)
             WHERE d.datallowconn
-        }
+        },
+	$PG_VERSION_100 => q{SELECT d.datname,
+                COALESCE(elapsed, 0),
+                COALESCE(query, ''),
+                application_name
+            FROM pg_database AS d
+            LEFT JOIN (
+                SELECT datname, query,
+                    extract('epoch' FROM
+                        date_trunc('second', current_timestamp-state_change)
+                    ) AS elapsed,
+                    application_name
+                FROM pg_stat_activity
+                WHERE state = 'active'
+		  AND backend_type IN ('client backend', 'background worker')
+            ) AS s ON (d.datname=s.datname)
+            WHERE d.datallowconn
+        },
     );
 
     # Warning and critical are mandatory.
