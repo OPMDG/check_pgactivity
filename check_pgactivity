@@ -285,6 +285,10 @@ my %services = (
         'sub'  => \&check_pgdata_permission,
         'desc' => 'Check that the permission on PGDATA is 700.'
     },
+    'hugepages' => {
+        'sub'  => \&check_hugepages,
+        'desc' => 'Check if the hugepages are in the expected state.'
+    },
     'uptime' => {
         'sub'  => \&check_uptime,
         'desc' => 'Time since postmaster start or configurtion reload.'
@@ -496,7 +500,8 @@ my %args = (
     'dump-status-file'      => 0,
     'dump-bin-file'         => undef,
     'format'                => 'nagios',
-    'uid'                   => undef
+    'uid'                   => undef,
+    'with-hugepages'        => undef
 );
 
 # Set name of the program without path*
@@ -2311,6 +2316,7 @@ sub check_autovacuum {
     return status_ok( $me, \@msg , \@perfdata, \@longmsg );
 
 }
+
 
 =item B<backends> (all)
 
@@ -8788,6 +8794,51 @@ DB_LOOP: foreach my $stat (@rs) {
 }
 
 
+=item B<hugepages> (17+)
+
+Checks if the hupepages are in the expected state:
+  * unused: the default
+  * used: if C<--with-hugepages> is specified
+
+The perfdata returns the status where 0 is off, 1 is on and 2 is unknown.
+
+=cut
+
+sub check_hugepages {
+
+    my @rs;
+    my @perfdata;
+    my @hosts;
+    my %args         = %{ $_[0] };
+    my $me           = 'POSTGRES_HUGEPAGES';
+    my $hp_setting   = ( defined( $args{'with-hugepages'} ) ? 'on' : 'off' );
+    my $sql          = q{
+        SELECT setting as huge_pages_status,
+               CASE WHEN setting = 'off'     THEN 0
+                    WHEN setting = 'on'      THEN 1
+                    WHEN setting = 'unknown' THEN 2
+               END as huge_pages_status_code
+          FROM pg_settings WHERE name = 'huge_pages_status'
+    };
+
+    @hosts = @{ parse_hosts %args };
+
+    pod2usage(
+        -message => 'FATAL: you must give only one host with service "hugepages".',
+        -exitval => 127
+    ) if @hosts != 1;
+
+    is_compat $hosts[0], 'hugepages', $PG_VERSION_170 or exit 1;
+
+    @rs = @{ query( $hosts[0], $sql) };
+    push @perfdata => [ "huge_page_status", $rs[0][1] ];
+
+    return status_critical( $me, [ "The huge pages are: $rs[0][0], the expected state was: $hp_setting." ], \@perfdata )
+        if $rs[0][0] ne $hp_setting;
+
+    return status_ok( $me, [ "The huge pages are in the expected state: $hp_setting." ], \@perfdata );
+}
+
 =item B<uptime> (8.1+)
 
 Returns time since postmaster start ("uptime", from 8.1),
@@ -9262,6 +9313,7 @@ GetOptions(
         'global-pattern=s',
         'help|?!',
         'host|h=s',
+        'with-hugepages!',
         'ignore-wal-size!',
         'unarchiver=s',
         'dbname|d=s',
