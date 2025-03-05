@@ -8797,6 +8797,7 @@ DB_LOOP: foreach my $stat (@rs) {
 =item B<hugepages> (17+)
 
 Checks if the hupepages are in the expected state:
+
   * unused: the default
   * used: if C<--with-hugepages> is specified
 
