@@ -358,6 +358,7 @@ Repeat this option as many time as needed.
 See C<--dbinclude> as well. If a database match both dbexclude and
 dbinclude arguments, it is excluded.
 
+
 =item B<--dbinclude> REGEXP
 
 Some services automatically check all the databases of your
@@ -511,7 +512,9 @@ my %args = (
     'dump-bin-file'         => undef,
     'format'                => 'nagios',
     'uid'                   => undef,
-    'with-hugepages'        => undef
+    'with-hugepages'        => undef,
+    'schexclude'            => undef,
+    'relexclude'            => undef
 );
 
 # Set name of the program without path*
@@ -5146,7 +5149,7 @@ sub check_is_replay_paused {
 # Agnostic check vacuum or analyze sub
 # FIXME: we can certainly do better about temp tables
 sub check_last_maintenance {
-    my $rs;
+    my @rs;
     my $c_limit;
     my $w_limit;
     my @perfdata;
@@ -5179,12 +5182,16 @@ sub check_last_maintenance {
     $w_limit = get_time $args{'warning'};
 
     my %queries    = (
-        # 1st field: oldest known maintenance on a table
+        # 1st field: is the instance in recovery
+        # 2nd field: current database
+        # 3nd field: namespace
+        # 4nd filed: relation
+        # 5th field: oldest known maintenance on a table
         #            -inf if a table never had maintenance
-        #             NaN if nothing found or secondary
-        # 2nd field: total number of maintenance
-        # 3nd field: total number of auto-maintenance
-        # 4th field: hash(insert||update||delete||thresholds) to avoid
+        #             NaN if nothing found
+        # 6th field: total number of maintenance
+        # 7th field: total number of auto-maintenance
+        # 8th field: hash(insert||update||delete||thresholds) to avoid
         #            useless alerts when there is no write activity (if
         #            thresholds do not change)
         #
@@ -5193,6 +5200,9 @@ sub check_last_maintenance {
         $PG_VERSION_82 => qq{
             SELECT
                 false AS is_in_recovery,
+                current_database(),
+                schemaname,
+                relname,
                 coalesce(max(
                        coalesce(extract(epoch FROM
                          current_timestamp -
@@ -5206,12 +5216,16 @@ sub check_last_maintenance {
                     ||'$c_limit $w_limit'))
             FROM pg_stat_user_tables
             WHERE schemaname NOT LIKE 'pg_temp_%'
+            GROUP BY schemaname,relname
         },
         # Starting with 8.3, we can check database activity from
         # pg_stat_database
         $PG_VERSION_83 => qq{
             SELECT
                 false AS is_in_recovery,
+                current_database(),
+                schemaname,
+                relname,
                 coalesce(max(
                        coalesce(extract(epoch FROM
                          current_timestamp -
@@ -5227,12 +5241,16 @@ sub check_last_maintenance {
             FROM pg_stat_user_tables
             WHERE schemaname NOT LIKE 'pg_temp_%'
               AND schemaname NOT LIKE 'pg_toast_temp_%'
+            GROUP BY schemaname,relname
         },
         # Starting with 9.0, we can check database status
         # (primary or secondary)
         $PG_VERSION_90 => qq{
             SELECT
                 pg_is_in_recovery()::int AS is_in_recovery,
+                current_database(),
+                schemaname,
+                relname,
                 CASE WHEN NOT pg_is_in_recovery() THEN
                   coalesce(max(
                        coalesce(extract(epoch FROM
@@ -5250,11 +5268,15 @@ sub check_last_maintenance {
             FROM pg_stat_user_tables
             WHERE schemaname NOT LIKE 'pg_temp_%'
               AND schemaname NOT LIKE 'pg_toast_temp_%'
+            GROUP BY schemaname,relname
         },
         # Starting with 9.1, we can add the analyze/vacuum counts
         $PG_VERSION_91 => qq{
             SELECT
                 pg_is_in_recovery()::int AS is_in_recovery,
+                current_database(),
+                schemaname,
+                a.relname,
                 CASE WHEN NOT pg_is_in_recovery() THEN
                   coalesce(max(
                        coalesce(extract(epoch FROM
@@ -5285,6 +5307,7 @@ sub check_last_maintenance {
               AND schemaname NOT LIKE 'pg_toast_temp_%'
               AND (('${type}' = 'vacuum' AND relkind <> 'p') -- partitioned table do not have last_* information
                 OR  ('${type}' = 'analyze'))
+            GROUP BY schemaname, a.relname
         }
     );
 
@@ -5312,30 +5335,50 @@ sub check_last_maintenance {
 
 LOOP_DB: foreach my $db (@all_db) {
         my @perf;
-        my $rs;
+        my @rs;
+        my $maintenance;
+        my $maintenance_count = 0;
+        my $maintenance_count_auto = 0;
+        my $maintenance_max = -1;
+        my $maintenance_hash = 'null';
 
         next LOOP_DB if grep { $db =~ /$_/ } @dbexclude;
         next LOOP_DB if @dbinclude and not grep { $db =~ /$_/ } @dbinclude;
 
         $dbchecked++;
 
-        $rs = query_ver( $hosts[0], %queries, $db )->[0];
-
+        @rs = @{ query_ver( $hosts[0], %queries, $db ) };
         $db =~ s/=//g;
 
+        # Note: if @rs is empty $rs[0][0] is undef and the boolean test is false
+        #       we check if scalar as lines otherwise $rs[0][0] will create it
         return status_unknown( $me,
             [ "Server is no primary." ]
-        ) if $rs->[0];
+        ) if scalar @rs and $rs[0][0];
 
-        push @perfdata => [ $db, $rs->[1], 's', $w_limit, $c_limit ];
+    MAINTENANCE_LOOP: foreach my $maintenance (@rs) {
 
-        $new_counts{$db} = [ $rs->[2], $rs->[3] ];
+            foreach my $exclude_re ( @{ $args{'exclude'} } )  {
+                next MAINTENANCE_LOOP if "$maintenance->[1].$maintenance->[2].$maintenance->[3]" =~ m/$exclude_re/;
+            }
+
+            $maintenance_count += $maintenance->[5];
+            $maintenance_count_auto += $maintenance->[6];
+            $maintenance_hash = $maintenance->[7];
+            if ( $maintenance->[4] gt $maintenance_max ) {
+                $maintenance_max = $maintenance->[4];
+            }
+
+        }
+        push @perfdata => [ $db, $maintenance_max, 's', $w_limit, $c_limit ];
+
+        $new_counts{$db} = [ $maintenance_count, $maintenance_count_auto ];
 
         if ( exists $counts{$db} ) {
 
             if ($hosts[0]->{'version_num'} >= $PG_VERSION_91 ) {
-                my $delta      = $rs->[2] - $counts{$db}[0];
-                my $delta_auto = $rs->[3] - $counts{$db}[1];
+                my $delta      = $maintenance_count - $counts{$db}[0];
+                my $delta_auto = $maintenance_count_auto - $counts{$db}[1];
 
                 push @perfdata => (
                     [ "$db $type", $delta ],
@@ -5344,25 +5387,25 @@ LOOP_DB: foreach my $db (@all_db) {
             }
 
             # avoid alerts if no write activity since last call
-            if ( defined $counts{$db}[2] and $counts{$db}[2] eq $rs->[3] ) {
+            if ( defined $counts{$db}[2] and $counts{$db}[2] eq $maintenance_hash ) {
                 # keep old hashed status for this database
                 $new_counts{$db}[2] = $counts{$db}[2];
                 next LOOP_DB;
             }
         }
 
-        if ( $rs->[1] >= $c_limit ) {
-            push @msg_crit => "$db: " . to_interval($rs->[1]);
+        if ( $maintenance_max >= $c_limit ) {
+            push @msg_crit => "$db: " . to_interval($maintenance_max);
             next LOOP_DB;
         }
 
-        if ( $rs->[1] >= $w_limit ) {
-            push @msg_warn => "$db: " . to_interval($rs->[1]);
+        if ( $maintenance_max >= $w_limit ) {
+            push @msg_warn => "$db: " . to_interval($maintenance_max);
             next LOOP_DB;
         }
 
         # iif everything is OK, save the current hashed status for this database
-        $new_counts{$db}[2] = $rs->[4];
+        $new_counts{$db}[2] = $maintenance_hash ;
     }
 
     save $hosts[0], "${type}_counts", \%new_counts, $args{'status-file'};
@@ -5403,6 +5446,15 @@ raise any alerts, unless you change a threshold.
 This service supports both C<--dbexclude> and C<--dbinclude> parameters.
 The 'postgres' database and templates are always excluded.
 
+This service supports a C<--exclude REGEX>  parameter to exclude relations
+matching a regular expression. The regular expression applies to
+"database.schema_name.relation_name". This enables you to filter either on a
+relation name for all schemas and databases, on a qualified named relation
+(schema + relation) for all databases or on a qualified named relation in
+only one database.
+
+You can use multiple C<--exclude REGEX>  parameters.
+
 Required privileges: unprivileged role able to log in all databases.
 
 =cut
@@ -5438,6 +5490,15 @@ raise any alerts, unless you change a threshold.
 
 This service supports both C<--dbexclude> and C<--dbinclude> parameters.
 The 'postgres' database and templates are always excluded.
+
+This service supports a C<--exclude REGEX>  parameter to exclude relations
+matching a regular expression. The regular expression applies to
+"database.schema_name.relation_name". This enables you to filter either on a
+relation name for all schemas and databases, on a qualified named relation
+(schema + relation) for all databases or on a qualified named relation in
+only one database.
+
+You can use multiple C<--exclude REGEX>  parameters.
 
 Required privileges: unprivileged role able to log in all databases.
 

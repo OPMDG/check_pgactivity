@@ -59,7 +59,7 @@ $node->command_checks_all( [
     [ qr/^Service  *: POSTGRES_LAST_VACUUM$/m,
       qr/^Returns  *: 0 \(OK\)$/m,
       qr/^Message  *: .*$/m,
-      qr/^Perfdata *: testdb=NaNs warn=3600 crit=864000$/m,
+      qr/^Perfdata *: testdb=(NaN|-\d+)s warn=3600 crit=864000$/m,
     ],
     [ qr/^$/ ],
     'database with no tables'
