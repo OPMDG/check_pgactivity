@@ -497,9 +497,7 @@ my %args = (
     'dump-status-file'      => 0,
     'dump-bin-file'         => undef,
     'format'                => 'nagios',
-    'uid'                   => undef,
-    'schexclude'	    => undef,
-    'relexclude'	    => undef
+    'uid'                   => undef
 );
 
 # Set name of the program without path*
@@ -5029,7 +5027,6 @@ sub check_last_maintenance {
                     ||'$c_limit $w_limit'))
             FROM pg_stat_user_tables
             WHERE schemaname NOT LIKE 'pg_temp_%'
-	      AND n_live_tup > 0 
 	    GROUP BY schemaname,relname
         },
 
@@ -5051,7 +5048,6 @@ sub check_last_maintenance {
             FROM pg_stat_user_tables
             WHERE schemaname NOT LIKE 'pg_temp_%'
               AND schemaname NOT LIKE 'pg_toast_temp_%'
-	      AND n_live_tup > 0 
 	    GROUP BY schemaname,relname
         },
         # Starting with 9.1, we can add the analyze/vacuum counts
@@ -5073,7 +5069,6 @@ sub check_last_maintenance {
             FROM pg_stat_user_tables
             WHERE schemaname NOT LIKE 'pg_temp_%'
               AND schemaname NOT LIKE 'pg_toast_temp_%'
-	      AND n_live_tup > 0 
 	   GROUP BY schemaname,relname 
         }
     );
