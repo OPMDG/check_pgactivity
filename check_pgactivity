@@ -5273,6 +5273,7 @@ sub check_last_maintenance {
             FROM pg_stat_user_tables
             WHERE schemaname NOT LIKE 'pg_temp_%'
               AND schemaname NOT LIKE 'pg_toast_temp_%'
+<<<<<<< HEAD
               AND n_live_tup > 0
             GROUP BY schemaname,relname
         },
