@@ -5366,7 +5366,6 @@ LOOP_DB: foreach my $db (@all_db) {
             $maintenance_count_auto += $maintenance->[5];
             $maintenance_hash = $maintenance->[6];
             if ( $maintenance->[3] gt $maintenance_max ) {
-               # Getting the MAX
                 $maintenance_max = $maintenance->[3];
             }
 
