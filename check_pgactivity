@@ -5219,7 +5219,6 @@ sub check_last_maintenance {
                     ||'$c_limit $w_limit'))
             FROM pg_stat_user_tables
             WHERE schemaname NOT LIKE 'pg_temp_%'
-              AND n_live_tup > 0
             GROUP BY schemaname,relname
         },
         # Starting with 8.3, we can check database activity from
@@ -5245,7 +5244,6 @@ sub check_last_maintenance {
             FROM pg_stat_user_tables
             WHERE schemaname NOT LIKE 'pg_temp_%'
               AND schemaname NOT LIKE 'pg_toast_temp_%'
-              AND n_live_tup > 0
             GROUP BY schemaname,relname
         },
         # Starting with 9.0, we can check database status
@@ -5273,8 +5271,6 @@ sub check_last_maintenance {
             FROM pg_stat_user_tables
             WHERE schemaname NOT LIKE 'pg_temp_%'
               AND schemaname NOT LIKE 'pg_toast_temp_%'
-<<<<<<< HEAD
-              AND n_live_tup > 0
             GROUP BY schemaname,relname
         },
         # Starting with 9.1, we can add the analyze/vacuum counts
@@ -5314,7 +5310,6 @@ sub check_last_maintenance {
               AND schemaname NOT LIKE 'pg_toast_temp_%'
               AND (('${type}' = 'vacuum' AND relkind <> 'p') -- partitioned table do not have last_* information
                 OR  ('${type}' = 'analyze'))
-              AND n_live_tup > 0
             GROUP BY schemaname,relname
         }
     );
@@ -5345,39 +5340,37 @@ LOOP_DB: foreach my $db (@all_db) {
         my @perf;
         my @rs;
         my $maintenance;
-        my $maintenance_count = 0 ;
-        my $maintenance_count_auto = 0 ;
-        my $maintenance_max = -1 ;
-        my $maintenance_hash = 'null' ;
+        my $maintenance_count = 0;
+        my $maintenance_count_auto = 0;
+        my $maintenance_max = -1;
+        my $maintenance_hash = 'null';
 
-	next LOOP_DB if grep { $db =~ /$_/ } @dbexclude;
+    next LOOP_DB if grep { $db =~ /$_/ } @dbexclude;
         next LOOP_DB if @dbinclude and not grep { $db =~ /$_/ } @dbinclude;
 
         $dbchecked++;
 
-        @rs = @{ query_ver( $hosts[0], %queries, $db ) } ;
+        @rs = @{ query_ver( $hosts[0], %queries, $db ) };
         $db =~ s/=//g;
 
         return status_unknown( $me,
             [ "Server is no primary." ]
         ) if $rs->[0];
 
+    MAINTENANCE_LOOP: foreach my $maintenance (@rs) {
 
+            foreach my $exclude_re ( @{ $args{'exclude'} } )  {
+                next MAINTENANCE_LOOP if "$maintenance->[0].$maintenance->[1].$maintenance->[2]" =~ m/$exclude_re/;
+            }
+            $maintenance_count += $maintenance->[4];
+            $maintenance_count_auto += $maintenance->[5];
+            $maintenance_hash = $maintenance->[6];
+            if ( $maintenance->[3] gt $maintenance_max ) {
+               # Getting the MAX
+                $maintenance_max = $maintenance->[3];
+            }
 
-	MAINTENANCE_LOOP: foreach my $maintenance (@rs) {
-
-		foreach my $exclude_re ( @{ $args{'exclude'} } )  {
-		 next MAINTENANCE_LOOP if "$maintenance->[0].$maintenance->[1].$maintenance->[2]" =~ m/$exclude_re/;
-		}
-	    $maintenance_count += $maintenance->[4] ;
-	    $maintenance_count_auto += $maintenance->[5] ;
-	    $maintenance_hash = $maintenance->[6] ;
-	   if ( $maintenance->[3] gt $maintenance_max ) {
-		   # Getting the MAX
-		    $maintenance_max = $maintenance->[3] ;
-		}
-
-       }
+        }
         push @perfdata => [ $db, $maintenance_max, 's', $w_limit, $c_limit ];
 
         $new_counts{$db} = [ $maintenance_count, $maintenance_count_auto ];
@@ -5414,7 +5407,6 @@ LOOP_DB: foreach my $db (@all_db) {
 
         # iif everything is OK, save the current hashed status for this database
         $new_counts{$db}[2] = $maintenance_hash ;
-
     }
 
     save $hosts[0], "${type}_counts", \%new_counts, $args{'status-file'};
