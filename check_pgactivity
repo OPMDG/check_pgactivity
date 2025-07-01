@@ -4998,10 +4998,10 @@ sub check_last_maintenance {
     $w_limit = get_time $args{'warning'};
 
     my %queries    = (
-	# 1st field: current database 
-	# 2nd field: namespace 
-	# 3nd filed: relation 
-	#
+        # 1st field: current database
+        # 2nd field: namespace
+        # 3nd filed: relation
+        #
         # 4th field: oldest known maintenance on a table
         #            -inf if a table never had maintenance
         #             NaN if nothing found
@@ -5014,7 +5014,7 @@ sub check_last_maintenance {
         # 8.2 does not have per-database activity stats. We must aggregate
         # from pg_stat_user_tables
         $PG_VERSION_82 => qq{
-            SELECT current_database(),schemaname,relname,coalesce(max(
+            SELECT current_database(), schemaname, relname, coalesce(max(
                        coalesce(extract(epoch FROM
                          current_timestamp -
                                  greatest(last_${type}, last_auto${type})),
@@ -5027,13 +5027,13 @@ sub check_last_maintenance {
                     ||'$c_limit $w_limit'))
             FROM pg_stat_user_tables
             WHERE schemaname NOT LIKE 'pg_temp_%'
-	    GROUP BY schemaname,relname
+            GROUP BY schemaname, relname
         },
 
         # Starting with 8.3, we can check database activity from
         # pg_stat_database
         $PG_VERSION_83 => qq{
-            SELECT current_database(),schemaname,relname,coalesce(max(
+            SELECT current_database(), schemaname, relname, coalesce(max(
                        coalesce(extract(epoch FROM
                          current_timestamp -
                                  greatest(last_${type}, last_auto${type})),
@@ -5048,11 +5048,11 @@ sub check_last_maintenance {
             FROM pg_stat_user_tables
             WHERE schemaname NOT LIKE 'pg_temp_%'
               AND schemaname NOT LIKE 'pg_toast_temp_%'
-	    GROUP BY schemaname,relname
+            GROUP BY schemaname, relname
         },
         # Starting with 9.1, we can add the analyze/vacuum counts
         $PG_VERSION_91 => qq{
-            SELECT current_database(),schemaname,relname,coalesce(max(
+            SELECT current_database(), schemaname, relname, coalesce(max(
                        coalesce(extract(epoch FROM
                          current_timestamp -
                                  greatest(last_${type}, last_auto${type})),
@@ -5069,7 +5069,7 @@ sub check_last_maintenance {
             FROM pg_stat_user_tables
             WHERE schemaname NOT LIKE 'pg_temp_%'
               AND schemaname NOT LIKE 'pg_toast_temp_%'
-	   GROUP BY schemaname,relname 
+            GROUP BY schemaname, relname
         }
     );
 
@@ -5098,35 +5098,35 @@ sub check_last_maintenance {
 LOOP_DB: foreach my $db (@all_db) {
         my @perf;
         my @rs;
-        my $maintenance; 
-        my $maintenance_count = 0 ;
-        my $maintenance_count_auto = 0 ;
-        my $maintenance_max = -1 ;
-        my $maintenance_hash = 'null' ; 
-        
-	next LOOP_DB if grep { $db =~ /$_/ } @dbexclude;
+        my $maintenance;
+        my $maintenance_count = 0;
+        my $maintenance_count_auto = 0;
+        my $maintenance_max = -1;
+        my $maintenance_hash = 'null';
+
+    next LOOP_DB if grep { $db =~ /$_/ } @dbexclude;
         next LOOP_DB if @dbinclude and not grep { $db =~ /$_/ } @dbinclude;
 
         $dbchecked++;
 
-        @rs = @{ query_ver( $hosts[0], %queries, $db ) } ;
+        @rs = @{ query_ver( $hosts[0], %queries, $db ) };
         $db =~ s/=//g;
 
-        
-	MAINTENANCE_LOOP: foreach my $maintenance (@rs) { 
-		
-		foreach my $exclude_re ( @{ $args{'exclude'} } )  {
-		 next MAINTENANCE_LOOP if "$maintenance->[0].$maintenance->[1].$maintenance->[2]" =~ m/$exclude_re/;
-		} 
-	    $maintenance_count += $maintenance->[4] ;
-	    $maintenance_count_auto += $maintenance->[5] ; 
-	    $maintenance_hash = $maintenance->[6] ;
-	   if ( $maintenance->[3] gt $maintenance_max ) {
-		   # Getting the MAX 
-		    $maintenance_max = $maintenance->[3] ;
-		}
 
-       } 
+    MAINTENANCE_LOOP: foreach my $maintenance (@rs) {
+
+            foreach my $exclude_re ( @{ $args{'exclude'} } )  {
+                next MAINTENANCE_LOOP if "$maintenance->[0].$maintenance->[1].$maintenance->[2]" =~ m/$exclude_re/;
+            }
+            $maintenance_count += $maintenance->[4];
+            $maintenance_count_auto += $maintenance->[5];
+            $maintenance_hash = $maintenance->[6];
+            if ( $maintenance->[3] gt $maintenance_max ) {
+               # Getting the MAX
+                $maintenance_max = $maintenance->[3];
+            }
+
+        }
         push @perfdata => [ $db, $maintenance_max, 's', $w_limit, $c_limit ];
 
         $new_counts{$db} = [ $maintenance_count, $maintenance_count_auto ];
@@ -5163,7 +5163,6 @@ LOOP_DB: foreach my $db (@all_db) {
 
         # iif everything is OK, save the current hashed status for this database
         $new_counts{$db}[2] = $maintenance_hash ;
-      
     }
 
     save $hosts[0], "${type}_counts", \%new_counts, $args{'status-file'};
