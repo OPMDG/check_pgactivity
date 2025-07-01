@@ -5345,7 +5345,7 @@ LOOP_DB: foreach my $db (@all_db) {
         my $maintenance_max = -1;
         my $maintenance_hash = 'null';
 
-    next LOOP_DB if grep { $db =~ /$_/ } @dbexclude;
+        next LOOP_DB if grep { $db =~ /$_/ } @dbexclude;
         next LOOP_DB if @dbinclude and not grep { $db =~ /$_/ } @dbinclude;
 
         $dbchecked++;
