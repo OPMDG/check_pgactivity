@@ -6804,9 +6804,7 @@ Check number of pg_stat_statements deallocations.
 
 Many deallocations can have negative performance impact. This could be due to:
 
-Application performing many different queries:
-
-* ORM
+* Application performing many different queries (ORM, lists of varying length, ...)
 
 * different utility statements (SET application_name...). In this case,
   try to disable pg_stat_statements.track_utility.
@@ -6816,13 +6814,13 @@ Application performing many different queries:
 This service uses the status file (see C<--status-file> parameter).
 
 The C<--critical> and C<--warning> thresholds are optional.
-Warning or critical will be raised if number of deallocations
-since previous check are above those thresholds.
+Warning or critical will be raised if the number of deallocations
+since the previous check exceeds the thresholds.
 
 Perfdata returns a counter of deallocs since last call.
 
-Required privileges: unprivileged role able to log in database where
-pg_stat_statements extension has been created and loaded in shared_preload_libraries.
+Required privileges: unprivileged role able to log in to any database in
+which the pg_stat_statements extension has been installed.
 
 =cut
 
@@ -6865,13 +6863,13 @@ sub check_pg_stat_statements_dealloc {
     @rs = @{ query( $hosts[0], $pgss_version_query ) };
 
     # No row:
-    return status_unknown( $me, [ 'Ensure pg_stat_statements extension has been created on target Database.' ] ) if (not defined $rs[0]);
+    return status_unknown( $me, [ 'Ensure that the pg_stat_statements extension has been created on the target database.' ] ) if (not defined $rs[0]);
 
     $pgss_version = $rs[0][0];
     $pgss_version =~  /(\d+).(\d+)/;
     return status_unknown( $me, [ 'pg_stat_statements version must be above or equal 1.9' ] ) if (not ($1 >=1 and $2 >= 9));
 
-    return status_unknown( $me, [ 'Ensure pg_stat_statements has been loaded in shared_preload_libraries.' ] ) if ($rs[0][1] ne 't');
+    return status_unknown( $me, [ 'Ensure that the pg_stat_statements has been loaded in shared_preload_libraries.' ] ) if ($rs[0][1] ne 't');
 
     # Warning and critical are optional
     pod2usage(
