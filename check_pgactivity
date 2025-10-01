@@ -8796,10 +8796,10 @@ DB_LOOP: foreach my $stat (@rs) {
 
 =item B<hugepages> (17+)
 
-Checks if the hupe pages are in use.
+Check whether huge pages are in use.
 
 The default is to expect the huge pages to be unused, if C<--with-hugepages> is
-specified the service expect them to be in use.
+specified the service expects them to be in use.
 
 The perfdata returns the status where 0 is off, 1 is on and 2 is unknown.
 
