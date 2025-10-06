@@ -3002,6 +3002,30 @@ sub check_bgwriter {
               buffers_backend_fsync,
               extract ('epoch' from stats_reset)
             FROM pg_stat_bgwriter;
+        },
+        # Some columns were moved & renamed in PG17 from pg_stat_bgwriter
+        # to pg_stat_checkpointer (commit 96f052613f35d07d001c8dd2f284ca8d95f82d1b)
+        # & pg_stat_io (commit 74604a37f)
+        # This query is a hack to avoid to change too many things
+        $PG_VERSION_170 => q{WITH ioagg AS (
+                SELECT  sum(writes*op_bytes)    AS buff_backends,
+                        coalesce(sum(fsyncs),0) AS backend_fsync,
+                        current_setting('block_size')::numeric AS bs
+                FROM pg_stat_io
+                WHERE object='relation'
+                AND backend_type IN ('client backend','autovacuum worker')
+              )
+            SELECT
+                c.num_timed            AS checkpoints_timed,
+                c.num_requested        AS checkpoints_req,
+                c.buffers_written * bs AS buff_checkpoint,
+                b.buffers_clean   * bs AS buff_clean,
+                b.maxwritten_clean,
+                ioagg.buff_backends,
+                b.buffers_alloc * bs   AS buff_alloc,
+                ioagg.backend_fsync,
+                extract ('epoch' from b.stats_reset)
+            FROM pg_stat_bgwriter b, pg_stat_checkpointer c, ioagg ;
         }
     );
 
