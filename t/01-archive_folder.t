@@ -55,7 +55,7 @@ $node->wait_for_archive($wal);
 # simple success check
 $node->command_checks_all( [
     './check_pgactivity', '--service'  => 'archive_folder',
-                          '--username' => getlogin,
+                          '--username' => $ENV{'USER'} || 'postgres',
                           '--warning'  => '5m',
                           '--critical' => '10m',
                           '--path'     => $archive_dir,
@@ -79,7 +79,7 @@ rename "$archive_dir/000000010000000000000002",
 
 $node->command_checks_all( [
     './check_pgactivity', '--service'  => 'archive_folder',
-                          '--username' => getlogin,
+                          '--username' => $ENV{'USER'} || 'postgres',
                           '--warning'  => '5m',
                           '--critical' => '10m',
                           '--path'     => $archive_dir,
@@ -109,7 +109,7 @@ utime $time, $time,
 
 $node->command_checks_all( [
     './check_pgactivity', '--service'  => 'archive_folder',
-                          '--username' => getlogin,
+                          '--username' => $ENV{'USER'} || 'postgres',
                           '--warning'  => '5m',
                           '--critical' => '10m',
                           '--path'     => $archive_dir,
@@ -130,7 +130,7 @@ $node->command_checks_all( [
 # test critical archive too old
 $node->command_checks_all( [
     './check_pgactivity', '--service'  => 'archive_folder',
-                          '--username' => getlogin,
+                          '--username' => $ENV{'USER'} || 'postgres',
                           '--warning'  => '2m',
                           '--critical' => '5m',
                           '--path'     => $archive_dir,
@@ -158,7 +158,7 @@ utime $time, $time, "$archive_dir/000000010000000000000002";
     
 $node->command_checks_all( [
     './check_pgactivity', '--service'  => 'archive_folder',
-                          '--username' => getlogin,
+                          '--username' => $ENV{'USER'} || 'postgres',
                           '--warning'  => '10m',
                           '--critical' => '15m',
                           '--path'     => $archive_dir,

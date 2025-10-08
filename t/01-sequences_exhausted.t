@@ -31,7 +31,7 @@ $node->start;
 # basic check without thresholds
 $node->command_checks_all( [
     './check_pgactivity', '--service'  => 'sequences_exhausted',
-                          '--username' => getlogin,
+                          '--username' => $ENV{'USER'} || 'postgres',
                           '--format'   => 'human'
     ],
     127,
@@ -54,7 +54,7 @@ $node->psql('testdb', "SELECT nextval('test1seq')") ;
 
 $node->command_checks_all( [
     './check_pgactivity', '--service'  => 'sequences_exhausted',
-                          '--username' => getlogin,
+                          '--username' => $ENV{'USER'} || 'postgres',
                           '--format'   => 'human',
                           '--warning'  => '50%',
                           '--critical' => '90%'
@@ -72,7 +72,7 @@ $node->psql('testdb', "SELECT nextval('test1seq')");
 
 $node->command_checks_all( [
     './check_pgactivity', '--service'  => 'sequences_exhausted',
-                          '--username' => getlogin,
+                          '--username' => $ENV{'USER'} || 'postgres',
                           '--format'   => 'human',
                           '--warning'  => '50%',
                           '--critical' => '90%'
@@ -90,7 +90,7 @@ $node->psql('testdb', "SELECT nextval('test1seq')");
 
 $node->command_checks_all( [
     './check_pgactivity', '--service'  => 'sequences_exhausted',
-                          '--username' => getlogin,
+                          '--username' => $ENV{'USER'} || 'postgres',
                           '--format'   => 'human',
                           '--warning'  => '50%',
                           '--critical' => '90%'

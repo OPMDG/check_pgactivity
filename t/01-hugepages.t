@@ -29,7 +29,7 @@ SKIP: {
 
     $node->command_checks_all( [
         './check_pgactivity', '--service'  => 'hugepages',
-                              '--username' => getlogin,
+                              '--username' => $ENV{'USER'} || 'postgres',
                               '--format'   => 'human',
         ],
         1,
@@ -45,7 +45,7 @@ SKIP: {
     # basic check => Returns OK
     $node->command_checks_all( [
         './check_pgactivity', '--service'  => 'hugepages',
-                              '--username' => getlogin,
+                              '--username' => $ENV{'USER'} || 'postgres',
                               '--format'   => 'human',
         ],
         0,
@@ -60,7 +60,7 @@ SKIP: {
 
     $node->command_checks_all( [
         './check_pgactivity', '--service'  => 'hugepages',
-                              '--username' => getlogin,
+                              '--username' => $ENV{'USER'} || 'postgres',
                               '--format'   => 'human',
                               '--with-hugepages',
         ],

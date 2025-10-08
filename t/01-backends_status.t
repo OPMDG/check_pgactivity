@@ -30,7 +30,7 @@ $node->start;
 # basic check without thresholds
 $node->command_checks_all( [
     './check_pgactivity', '--service'  => 'backends_status',
-                          '--username' => getlogin,
+                          '--username' => $ENV{'USER'} || 'postgres',
                           '--format'   => 'human'
     ],
     0,
@@ -44,7 +44,7 @@ $node->command_checks_all( [
 # basic check with thresholds
 $node->command_checks_all( [
     './check_pgactivity', '--service'  => 'backends_status',
-                          '--username' => getlogin,
+                          '--username' => $ENV{'USER'} || 'postgres',
                           '--format'   => 'human',
                           '--dbname'   => 'template1',
                           '--warning'  => 'idle_xact=4s',
@@ -98,7 +98,7 @@ $node->poll_query_until('template1', q{
 
 $node->command_checks_all( [
     './check_pgactivity', '--service'  => 'backends_status',
-                          '--username' => getlogin,
+                          '--username' => $ENV{'USER'} || 'postgres',
                           '--format'   => 'human',
                           '--dbname'   => 'template1',
                           '--warning'  => 'active=3',
@@ -118,7 +118,7 @@ $node->command_checks_all( [
 
 $node->command_checks_all( [
     './check_pgactivity', '--service'  => 'backends_status',
-                          '--username' => getlogin,
+                          '--username' => $ENV{'USER'} || 'postgres',
                           '--format'   => 'human',
                           '--dbname'   => 'template1',
                           '--warning'  => 'active=1',

@@ -29,7 +29,7 @@ $node->start;
 # failing without thresholds
 $node->command_checks_all( [
     './check_pgactivity', '--service'  => 'last_analyze',
-                          '--username' => getlogin,
+                          '--username' => $ENV{'USER'} || 'postgres',
                           '--format'   => 'human'
     ],
     127,
@@ -48,7 +48,7 @@ TestLib::system_or_bail('createdb',
 
 $node->command_checks_all( [
     './check_pgactivity', '--service'  => 'last_analyze',
-                          '--username' => getlogin,
+                          '--username' => $ENV{'USER'} || 'postgres',
                           '--format'   => 'human',
                           '--dbname'   => 'template1',
                           '--status-file' => $pga_data,
@@ -104,7 +104,7 @@ SKIP: {
 
 $node->command_checks_all( [
     './check_pgactivity', '--service'  => 'last_analyze',
-                          '--username' => getlogin,
+                          '--username' => $ENV{'USER'} || 'postgres',
                           '--format'   => 'human',
                           '--dbname'   => 'testdb',
                           '--status-file' => $pga_data,
@@ -143,7 +143,7 @@ push @stdout, (
 
 $node->command_checks_all( [
     './check_pgactivity', '--service'  => 'last_analyze',
-                          '--username' => getlogin,
+                          '--username' => $ENV{'USER'} || 'postgres',
                           '--format'   => 'human',
                           '--dbname'   => 'testdb',
                           '--status-file' => $pga_data,
@@ -180,7 +180,7 @@ push @stdout, (
 
 $node->command_checks_all( [
     './check_pgactivity', '--service'  => 'last_analyze',
-                          '--username' => getlogin,
+                          '--username' => $ENV{'USER'} || 'postgres',
                           '--format'   => 'human',
                           '--dbname'   => 'testdb',
                           '--status-file' => $pga_data,
