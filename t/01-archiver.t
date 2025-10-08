@@ -59,7 +59,7 @@ $node->wait_for_archive($wal);
 
 $node->command_checks_all( [
     './check_pgactivity', '--service'     => 'archiver',
-                          '--username'    => getlogin,
+                          '--username'    => $ENV{'USER'} || 'postgres',
                           '--status-file' => $pga_data,
                           '--format'      => 'human'
     ],
@@ -91,7 +91,7 @@ sleep 1;
 # for 9.6 and before, the alert is raised on second call.
 TestLib::system_or_bail('./check_pgactivity',
     '--service'     => 'archiver',
-    '--username'    => getlogin,
+    '--username'    => $ENV{'USER'} || 'postgres',
     '--host'        => $node->host,
     '--port'        => $node->port,
     '--status-file' => $pga_data,
@@ -110,7 +110,7 @@ TestLib::system_or_bail('./check_pgactivity',
 
 $node->command_checks_all( [
     './check_pgactivity', '--service'     => 'archiver',
-                          '--username'    => getlogin,
+                          '--username'    => $ENV{'USER'} || 'postgres',
                           '--status-file' => $pga_data,
                           '--format'      => 'human'
     ],

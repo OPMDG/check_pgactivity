@@ -42,7 +42,7 @@ ok( ! -f "${pga_data}.lock", "double check the lock file does not exist" );
 # First call to create the status and lock files
 $node->command_checks_all( [
     './check_pgactivity', '--service'     => 'hit_ratio',
-                          '--username'    => getlogin,
+                          '--username'    => $ENV{'USER'} || 'postgres',
                           '--format'      => 'human',
                           '--status-file' => $pga_data,
                           '--warning'     => '101%',
@@ -66,7 +66,7 @@ sleep 1;
 # trigger the failure described in issue #326
 $node->command_checks_all( [
     './check_pgactivity', '--service'     => 'hit_ratio',
-                          '--username'    => getlogin,
+                          '--username'    => $ENV{'USER'} || 'postgres',
                           '--format'      => 'human',
                           '--status-file' => $pga_data,
                           '--warning'     => '101%',

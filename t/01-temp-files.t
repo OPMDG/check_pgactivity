@@ -32,7 +32,7 @@ SKIP: {
 
     $node->command_checks_all( [
         './check_pgactivity', '--service'  => 'temp_files',
-                              '--username' => getlogin,
+                              '--username' => $ENV{'USER'} || 'postgres',
                               '--format'   => 'human',
         ],
         1,
@@ -49,7 +49,7 @@ SKIP: {
     $t0 = [gettimeofday];
     $node->command_checks_all( [
         './check_pgactivity', '--service'  => 'temp_files',
-                              '--username' => getlogin,
+                              '--username' => $ENV{'USER'} || 'postgres',
                               '--format'   => 'human',
                               '--dbname'   => 'template1',
         ],
@@ -78,7 +78,7 @@ SKIP: {
     usleep(100_000) while tv_interval($t0) < 1.01;
     $node->command_checks_all( [
         './check_pgactivity', '--service'  => 'temp_files',
-                              '--username' => getlogin,
+                              '--username' => $ENV{'USER'} || 'postgres',
                               '--format'   => 'human',
                               '--dbname'   => 'template1',
                               '--warning'  => '3',
@@ -109,7 +109,7 @@ SKIP: {
     usleep(100_000) while tv_interval($t0) < 1.01;
     $node->command_checks_all( [
         './check_pgactivity', '--service'  => 'temp_files',
-                              '--username' => getlogin,
+                              '--username' => $ENV{'USER'} || 'postgres',
                               '--format'   => 'human',
                               '--dbname'   => 'template1',
                               '--warning'  => '1',
@@ -140,7 +140,7 @@ SKIP: {
     usleep(100_000) while tv_interval($t0) < 1.01;
     $node->command_checks_all( [
         './check_pgactivity', '--service'  => 'temp_files',
-                              '--username' => getlogin,
+                              '--username' => $ENV{'USER'} || 'postgres',
                               '--format'   => 'human',
                               '--dbname'   => 'template1',
                               '--warning'  => '0',
@@ -171,7 +171,7 @@ SKIP: {
     usleep(100_000) while tv_interval($t0) < 1.01;
     $node->command_checks_all( [
         './check_pgactivity', '--service'  => 'temp_files',
-                              '--username' => getlogin,
+                              '--username' => $ENV{'USER'} || 'postgres',
                               '--format'   => 'human',
                               '--dbname'   => 'template1',
                               '--warning'  => '40MB',
@@ -202,7 +202,7 @@ SKIP: {
     usleep(100_000) while tv_interval($t0) < 1.01;
     $node->command_checks_all( [
         './check_pgactivity', '--service'  => 'temp_files',
-                              '--username' => getlogin,
+                              '--username' => $ENV{'USER'} || 'postgres',
                               '--format'   => 'human',
                               '--dbname'   => 'template1',
                               '--warning'  => '4MB',
@@ -233,7 +233,7 @@ SKIP: {
     usleep(100_000) while tv_interval($t0) < 1.01;
     $node->command_checks_all( [
         './check_pgactivity', '--service'  => 'temp_files',
-                              '--username' => getlogin,
+                              '--username' => $ENV{'USER'} || 'postgres',
                               '--format'   => 'human',
                               '--dbname'   => 'template1',
                               '--warning'  => '4MB',
@@ -264,7 +264,7 @@ SKIP: {
     usleep(100_000) while tv_interval($t0) < 1.01;
     $node->command_checks_all( [
         './check_pgactivity', '--service'  => 'temp_files',
-                              '--username' => getlogin,
+                              '--username' => $ENV{'USER'} || 'postgres',
                               '--format'   => 'human',
                               '--dbname'   => 'template1',
                               '--warning'  => '3,49254kB',
@@ -295,7 +295,7 @@ SKIP: {
     usleep(100_000) while tv_interval($t0) < 1.01;
     $node->command_checks_all( [
         './check_pgactivity', '--service'  => 'temp_files',
-                              '--username' => getlogin,
+                              '--username' => $ENV{'USER'} || 'postgres',
                               '--format'   => 'human',
                               '--dbname'   => 'template1',
                               '--warning'  => '1,16486kB',
@@ -326,7 +326,7 @@ SKIP: {
     usleep(100_000) while tv_interval($t0) < 1.01;
     $node->command_checks_all( [
         './check_pgactivity', '--service'  => 'temp_files',
-                              '--username' => getlogin,
+                              '--username' => $ENV{'USER'} || 'postgres',
                               '--format'   => 'human',
                               '--dbname'   => 'template1',
                               '--warning'  => '0,0MB',
@@ -394,7 +394,7 @@ SKIP: {
 
     $node->command_checks_all( [
         './check_pgactivity', '--service'  => 'temp_files',
-                              '--username' => getlogin,
+                              '--username' => $ENV{'USER'} || 'postgres',
                               '--format'   => 'human',
                               '--dbname'   => 'template1',
         ],
