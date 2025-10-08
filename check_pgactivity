@@ -93,6 +93,7 @@ my $PG_VERSION_140 = 140000;
 my $PG_VERSION_150 = 150000;
 my $PG_VERSION_160 = 160000;
 my $PG_VERSION_170 = 170000;
+my $PG_VERSION_180 = 180000;
 
 # reference to the output sub
 my $output_fmt;
@@ -1727,7 +1728,9 @@ sub check_archive_folder {
         '130' => 53510, # 0xD106
         '140' => 53517, # 0xD10D
         '150' => 53520, # 0xD110
-        '160' => 53523  # 0xD113
+        '160' => 53523, # 0xD113
+        '170' => 53526, # 0xD116
+        '180' => 53528, # 0xD118
     );
 
     # "path" argument must be given
