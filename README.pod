@@ -382,6 +382,9 @@ Critical and Warning thresholds accept either a raw number or a percentage (eg.
 between the cluster parameters C<max_connections> and
 C<superuser_reserved_connections>.
 
+Autovacuum workers and walsender process are ignored. To check autovacuum, use
+the autovacuum service.
+
 Required privileges: an unprivileged user only sees its own queries;
 a pg_monitor (10+) or superuser (<10) role is required to see all queries.
 
@@ -741,6 +744,7 @@ Required privileges: unprivileged role.
 
 Check on each databases that the oldest C<analyze> (from autovacuum or not) is
 not older than the given threshold.
+This is to check that a scheduled ANALYZE is working correctly.
 
 This service uses the status file (see C<--status-file> parameter) with
 PostgreSQL 9.1+.
@@ -749,7 +753,7 @@ Perfdata returns oldest C<analyze> per database in seconds. With PostgreSQL
 9.1+, the number of [auto]analyses per database since last call is also
 returned.
 
-Critical and Warning thresholds only accept an interval (eg. 1h30m25s)
+Critical and Warning thresholds only accept an interval (eg. 24h30m)
 and apply to the oldest execution of analyse.
 
 Tables that were never analyzed, or whose analyze date was lost due to a crash,
@@ -758,7 +762,7 @@ will raise a critical alert.
 B<NOTE>: this service does not raise alerts if the database had strictly
 no writes since last call. In consequence, a read-only database can have
 its oldest analyze reported in perfdata way after your thresholds, but not
-raise any alerts.
+raise any alerts, unless you change a threshold.
 
 This service supports both C<--dbexclude> and C<--dbinclude> parameters.
 The 'postgres' database and templates are always excluded.
@@ -769,6 +773,7 @@ Required privileges: unprivileged role able to log in all databases.
 
 Check that the oldest vacuum (from autovacuum or otherwise) in each database
 in the cluster is not older than the given threshold.
+This is to check that a scheduled VACUUM is working correctly.
 
 This service uses the status file (see C<--status-file> parameter) with
 PostgreSQL 9.1+.
@@ -777,7 +782,7 @@ Perfdata returns oldest vacuum per database in seconds. With PostgreSQL
 9.1+, it also returns the number of [auto]vacuums per database since last
 execution.
 
-Critical and Warning thresholds only accept an interval (eg. 1h30m25s)
+Critical and Warning thresholds only accept an interval (eg. 24h30m)
 and apply to the oldest vacuum.
 
 Tables that were never vacuumed, or whose vacuum date was lost due to a crash,
@@ -786,7 +791,7 @@ will raise a critical alert.
 B<NOTE>: this service does not raise alerts if the database had strictly
 no writes since last call. In consequence, a read-only database can have
 its oldest vacuum reported in perfdata way after your thresholds, but not
-raise any alerts.
+raise any alerts, unless you change a threshold.
 
 This service supports both C<--dbexclude> and C<--dbinclude> parameters.
 The 'postgres' database and templates are always excluded.
@@ -1262,6 +1267,15 @@ on functions pg_ls_dir(text), pg_read_file(text), pg_stat_file(text, boolean);
 the same restrictions than on v10 will still apply
  v12+: a role with pg_monitor privilege.
 
+=item B<hugepages> (17+)
+
+Check whether huge pages are in use.
+
+The default is to expect the huge pages to be unused, if C<--with-hugepages> is
+specified the service expects them to be in use.
+
+The perfdata returns the status where 0 is off, 1 is on and 2 is unknown.
+
 =item B<uptime> (8.1+)
 
 Returns time since postmaster start ("uptime", from 8.1),
@@ -1357,7 +1371,7 @@ pg_ls_waldir
 
 =head1 VERSION
 
-check_pgactivity version 2.7, released on Mon Sep 25 2023.
+check_pgactivity version 2.8, released on Tue Oct 14 2025.
 
 =head1 LICENSING
 
@@ -1367,5 +1381,5 @@ For license terms, see the LICENSE provided with the sources.
 =head1 AUTHORS
 
 S<Author: Open PostgreSQL Monitoring Development Group>
-S<Copyright: (C) 2012-2023 Open PostgreSQL Monitoring Development Group>
+S<Copyright: (C) 2012-2025 Open PostgreSQL Monitoring Development Group>
 

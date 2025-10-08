@@ -7,11 +7,12 @@ In `check_pgactivity`:
   * update the version and release date at the end of the inline documentation
     * date format: `LC_TIME=C date +"%a %b %d %Y"`
 
-In `check_pgactivity.spec`:
+In `check_pgactivity.spec` (RPM file):
   * update the tag in the `_tag` variable (first line)
   * update the version in `Version:`
-  * edit the changelog
-    * date format: `LC_TIME=C date +"%a %b %d %Y"`
+  * add a line to the changelog
+    * date format: `LC_TIME=C date +"%a %b %d %Y"`, name address and version
+    * `new major release X.X`
 
 In `CHANGELOG.md`, add a changelog entry for the new release with the format:
 
