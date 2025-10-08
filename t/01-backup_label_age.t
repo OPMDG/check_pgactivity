@@ -46,7 +46,7 @@ $node->start;
 # basic check without thresholds
 $node->command_checks_all( [
     './check_pgactivity', '--service'  => 'backup_label_age',
-                          '--username' => getlogin,
+                          '--username' => $ENV{'USER'} || 'postgres',
                           '--format'   => 'human'
     ],
     127,
@@ -58,7 +58,7 @@ $node->command_checks_all( [
 # first check, with no backup being performed
 $node->command_checks_all( [
     './check_pgactivity', '--service'  => 'backup_label_age',
-                          '--username' => getlogin,
+                          '--username' => $ENV{'USER'} || 'postgres',
                           '--format'   => 'human',
 			  '--warning'  => '5s',
 			  '--critical' => '10s'
@@ -91,7 +91,7 @@ sleep 1;
 # first check, with no backup being performed
 $node->command_checks_all( [
     './check_pgactivity', '--service'  => 'backup_label_age',
-                          '--username' => getlogin,
+                          '--username' => $ENV{'USER'} || 'postgres',
                           '--format'   => 'human',
 			  '--warning'  => '5s',
 			  '--critical' => '10s'
@@ -110,7 +110,7 @@ sleep 3;
 
 $node->command_checks_all( [
     './check_pgactivity', '--service'  => 'backup_label_age',
-                          '--username' => getlogin,
+                          '--username' => $ENV{'USER'} || 'postgres',
                           '--format'   => 'human',
 			  '--warning'  => '2s',
 			  '--critical' => '10s'

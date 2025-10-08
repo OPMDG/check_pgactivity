@@ -30,7 +30,7 @@ SKIP: {
     $node->start;
     $node->command_checks_all( [
         './check_pgactivity', '--service'  => 'autovacuum',
-                              '--username' => getlogin,
+                              '--username' => $ENV{'USER'} || 'postgres',
                               '--format'   => 'human'
         ],
         1,
@@ -80,7 +80,7 @@ SKIP: {
 
     $node->command_checks_all( [
         './check_pgactivity', '--service'  => 'autovacuum',
-                              '--username' => getlogin,
+                              '--username' => $ENV{'USER'} || 'postgres',
                               '--format'   => 'human'
         ],
         0,

@@ -27,7 +27,7 @@ $node->start;
 # Check thresholds only accept percentages
 $node->command_checks_all( [
     './check_pgactivity', '--service'     => 'hit_ratio',
-                          '--username'    => getlogin,
+                          '--username'    => $ENV{'USER'} || 'postgres',
                           '--format'      => 'human',
                           '--status-file' => $pga_data,
                           '--warning'     => '101',
@@ -43,7 +43,7 @@ $node->command_checks_all( [
 # Even with ridiculous threshold, no alert is possible during the first call
 $node->command_checks_all( [
     './check_pgactivity', '--service'     => 'hit_ratio',
-                          '--username'    => getlogin,
+                          '--username'    => $ENV{'USER'} || 'postgres',
                           '--format'      => 'human',
                           '--status-file' => $pga_data,
                           '--warning'     => '101%',
@@ -66,7 +66,7 @@ sleep 1;
 # Ridiculous thresholds to trigger a warning
 $node->command_checks_all( [
     './check_pgactivity', '--service'     => 'hit_ratio',
-                          '--username'    => getlogin,
+                          '--username'    => $ENV{'USER'} || 'postgres',
                           '--format'      => 'human',
                           '--status-file' => $pga_data,
                           '--warning'     => '101%',
@@ -85,7 +85,7 @@ $node->command_checks_all( [
 # Ridiculous thresholds to trigger a critical
 $node->command_checks_all( [
     './check_pgactivity', '--service'     => 'hit_ratio',
-                          '--username'    => getlogin,
+                          '--username'    => $ENV{'USER'} || 'postgres',
                           '--format'      => 'human',
                           '--status-file' => $pga_data,
                           '--warning'     => '110%',
