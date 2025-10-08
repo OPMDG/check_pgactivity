@@ -2,7 +2,7 @@
 # This program is open source, licensed under the PostgreSQL License.
 # For license terms, see the LICENSE file.
 #
-# Copyright (C) 2012-2023: Open PostgreSQL Monitoring Development Group
+# Copyright (C) 2012-2025: Open PostgreSQL Monitoring Development Group
 
 =head1 NAME
 
@@ -68,7 +68,7 @@ delete $ENV{'LANGUAGE'};
 
 $| = 1;
 
-$VERSION = '2.7';
+$VERSION = '2.8';
 $PROGRAM = 'check_pgactivity';
 
 my $PG_VERSION_MIN =  70400;
@@ -9536,7 +9536,7 @@ __END__
 
 =head1 VERSION
 
-check_pgactivity version 2.7, released on Mon Sep 25 2023.
+check_pgactivity version 2.8, released on Tue Oct 14 2025.
 
 =head1 LICENSING
 
@@ -9546,6 +9546,6 @@ For license terms, see the LICENSE provided with the sources.
 =head1 AUTHORS
 
 S<Author: Open PostgreSQL Monitoring Development Group>
-S<Copyright: (C) 2012-2023 Open PostgreSQL Monitoring Development Group>
+S<Copyright: (C) 2012-2025 Open PostgreSQL Monitoring Development Group>
 
 =cut
