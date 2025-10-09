@@ -42,6 +42,12 @@ SKIP: {
 SKIP: {
     skip "incompatible tests with PostgreSQL < 17", 34 if $node->version < 17;
 
+    # Note: this service is only tested without huge pages because for
+    # PostgreSQL to allocate huge page, the system must have huge pages
+    # available. Stock OSes usually dont have either vm.nr_hugepages or
+    # vm.nr_overcommit_hugepages configured, thus the tests would fail in most
+    # cases. Modifying the sysctl config would require a superuser privileges,
+    # we cannot expect it to be available everywhere either.
     $node->append_conf('postgresql.conf', "huge_pages = off");
     $node->restart();
 
