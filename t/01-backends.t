@@ -2,7 +2,7 @@
 # This program is open source, licensed under the PostgreSQL License.
 # For license terms, see the LICENSE file.
 #
-# Copyright (C) 2012-2023: Open PostgreSQL Monitoring Development Group
+# Copyright (C) 2012-2025: Open PostgreSQL Monitoring Development Group
 
 use strict;
 use warnings;
@@ -29,7 +29,7 @@ $node->start;
 # failing without thresholds
 $node->command_checks_all( [
     './check_pgactivity', '--service'  => 'backends',
-                          '--username' => getlogin,
+                          '--username' => $ENV{'USER'} || 'postgres',
                           '--format'   => 'human'
     ],
     127,
@@ -41,7 +41,7 @@ $node->command_checks_all( [
 # basic check
 $node->command_checks_all( [
     './check_pgactivity', '--service'  => 'backends',
-                          '--username' => getlogin,
+                          '--username' => $ENV{'USER'} || 'postgres',
                           '--format'   => 'human',
                           '--dbname'   => 'template1',
                           '--warning'  => '4',
@@ -80,7 +80,7 @@ $node->poll_query_until('template1', q{
 
 $node->command_checks_all( [
     './check_pgactivity', '--service'  => 'backends',
-                          '--username' => getlogin,
+                          '--username' => $ENV{'USER'} || 'postgres',
                           '--format'   => 'human',
                           '--dbname'   => 'template1',
                           '--warning'  => '4',
@@ -103,7 +103,7 @@ push( @procs, pgSession->new($node) ) for 1..2;
 
 $node->command_checks_all( [
     './check_pgactivity', '--service'  => 'backends',
-                          '--username' => getlogin,
+                          '--username' => $ENV{'USER'} || 'postgres',
                           '--format'   => 'human',
                           '--dbname'   => 'template1',
                           '--warning'  => '4',
@@ -126,7 +126,7 @@ push @procs, pgSession->new($node);
 
 $node->command_checks_all( [
     './check_pgactivity', '--service'  => 'backends',
-                          '--username' => getlogin,
+                          '--username' => $ENV{'USER'} || 'postgres',
                           '--format'   => 'human',
                           '--dbname'   => 'template1',
                           '--warning'  => '4',

@@ -2,7 +2,7 @@
 # This program is open source, licensed under the PostgreSQL License.
 # For license terms, see the LICENSE file.
 #
-# Copyright (C) 2012-2023: Open PostgreSQL Monitoring Development Group
+# Copyright (C) 2012-2025: Open PostgreSQL Monitoring Development Group
 
 use strict;
 use warnings;
@@ -29,7 +29,7 @@ $node->start;
 # failing without thresholds
 $node->command_checks_all( [
     './check_pgactivity', '--service'  => 'last_analyze',
-                          '--username' => getlogin,
+                          '--username' => $ENV{'USER'} || 'postgres',
                           '--format'   => 'human'
     ],
     127,
@@ -48,7 +48,7 @@ TestLib::system_or_bail('createdb',
 
 $node->command_checks_all( [
     './check_pgactivity', '--service'  => 'last_analyze',
-                          '--username' => getlogin,
+                          '--username' => $ENV{'USER'} || 'postgres',
                           '--format'   => 'human',
                           '--dbname'   => 'template1',
                           '--status-file' => $pga_data,
@@ -104,7 +104,7 @@ SKIP: {
 
 $node->command_checks_all( [
     './check_pgactivity', '--service'  => 'last_analyze',
-                          '--username' => getlogin,
+                          '--username' => $ENV{'USER'} || 'postgres',
                           '--format'   => 'human',
                           '--dbname'   => 'testdb',
                           '--status-file' => $pga_data,
@@ -143,7 +143,7 @@ push @stdout, (
 
 $node->command_checks_all( [
     './check_pgactivity', '--service'  => 'last_analyze',
-                          '--username' => getlogin,
+                          '--username' => $ENV{'USER'} || 'postgres',
                           '--format'   => 'human',
                           '--dbname'   => 'testdb',
                           '--status-file' => $pga_data,
@@ -180,7 +180,7 @@ push @stdout, (
 
 $node->command_checks_all( [
     './check_pgactivity', '--service'  => 'last_analyze',
-                          '--username' => getlogin,
+                          '--username' => $ENV{'USER'} || 'postgres',
                           '--format'   => 'human',
                           '--dbname'   => 'testdb',
                           '--status-file' => $pga_data,

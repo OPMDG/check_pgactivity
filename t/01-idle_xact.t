@@ -2,7 +2,7 @@
 # This program is open source, licensed under the PostgreSQL License.
 # For license terms, see the LICENSE file.
 #
-# Copyright (C) 2012-2023: Open PostgreSQL Monitoring Development Group
+# Copyright (C) 2012-2025: Open PostgreSQL Monitoring Development Group
 
 use strict;
 use warnings;
@@ -23,7 +23,7 @@ $node->start;
 # failing without thresholds
 $node->command_checks_all( [
     './check_pgactivity', '--service'  => 'oldest_idlexact',
-                          '--username' => getlogin,
+                          '--username' => $ENV{'USER'} || 'postgres',
                           '--format'   => 'human'
     ],
     127,
@@ -39,7 +39,7 @@ SKIP: {
 
     $node->command_checks_all( [
         './check_pgactivity', '--service'  => 'oldest_idlexact',
-                              '--username' => getlogin,
+                              '--username' => $ENV{'USER'} || 'postgres',
                               '--format'   => 'human',
                               '--warning'  => '30s',
                               '--critical' => '1h'
@@ -57,7 +57,7 @@ SKIP: {
     # basic check
     $node->command_checks_all( [
         './check_pgactivity', '--service'  => 'oldest_idlexact',
-                              '--username' => getlogin,
+                              '--username' => $ENV{'USER'} || 'postgres',
                               '--format'   => 'human',
                               '--dbname'   => 'template1',
                               '--warning'  => '30s',
@@ -76,7 +76,7 @@ SKIP: {
     # unit check
     $node->command_checks_all( [
         './check_pgactivity', '--service'  => 'oldest_idlexact',
-                              '--username' => getlogin,
+                              '--username' => $ENV{'USER'} || 'postgres',
                               '--format'   => 'human',
                               '--dbname'   => 'template1',
                               '--warning'  => '30m',
@@ -98,7 +98,7 @@ SKIP: {
     # OK check
     $node->command_checks_all( [
         './check_pgactivity', '--service'  => 'oldest_idlexact',
-                              '--username' => getlogin,
+                              '--username' => $ENV{'USER'} || 'postgres',
                               '--format'   => 'human',
                               '--dbname'   => 'postgres',
                               '--warning'  => '3s',
@@ -126,7 +126,7 @@ SKIP: {
     # warning check
     $node->command_checks_all( [
         './check_pgactivity', '--service'  => 'oldest_idlexact',
-                              '--username' => getlogin,
+                              '--username' => $ENV{'USER'} || 'postgres',
                               '--format'   => 'human',
                               '--dbname'   => 'postgres',
                               '--warning'  => '2s',
@@ -145,7 +145,7 @@ SKIP: {
     # critical check
     $node->command_checks_all( [
         './check_pgactivity', '--service'  => 'oldest_idlexact',
-                              '--username' => getlogin,
+                              '--username' => $ENV{'USER'} || 'postgres',
                               '--format'   => 'human',
                               '--dbname'   => 'template1',
                               '--warning'  => '1s',
@@ -170,7 +170,7 @@ SKIP: {
         # active transaction check
         $node->command_checks_all( [
             './check_pgactivity', '--service'  => 'oldest_idlexact',
-                                  '--username' => getlogin,
+                                  '--username' => $ENV{'USER'} || 'postgres',
                                   '--format'   => 'human',
                                   '--dbname'   => 'template1',
                                   '--warning'  => '2s',

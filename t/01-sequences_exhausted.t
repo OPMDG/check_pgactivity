@@ -2,7 +2,7 @@
 # This program is open source, licensed under the PostgreSQL License.
 # For license terms, see the LICENSE file.
 #
-# Copyright (C) 2012-2023: Open PostgreSQL Monitoring Development Group
+# Copyright (C) 2012-2025: Open PostgreSQL Monitoring Development Group
 
 use strict;
 use warnings;
@@ -31,7 +31,7 @@ $node->start;
 # basic check without thresholds
 $node->command_checks_all( [
     './check_pgactivity', '--service'  => 'sequences_exhausted',
-                          '--username' => getlogin,
+                          '--username' => $ENV{'USER'} || 'postgres',
                           '--format'   => 'human'
     ],
     127,
@@ -54,7 +54,7 @@ $node->psql('testdb', "SELECT nextval('test1seq')") ;
 
 $node->command_checks_all( [
     './check_pgactivity', '--service'  => 'sequences_exhausted',
-                          '--username' => getlogin,
+                          '--username' => $ENV{'USER'} || 'postgres',
                           '--format'   => 'human',
                           '--warning'  => '50%',
                           '--critical' => '90%'
@@ -72,7 +72,7 @@ $node->psql('testdb', "SELECT nextval('test1seq')");
 
 $node->command_checks_all( [
     './check_pgactivity', '--service'  => 'sequences_exhausted',
-                          '--username' => getlogin,
+                          '--username' => $ENV{'USER'} || 'postgres',
                           '--format'   => 'human',
                           '--warning'  => '50%',
                           '--critical' => '90%'
@@ -90,7 +90,7 @@ $node->psql('testdb', "SELECT nextval('test1seq')");
 
 $node->command_checks_all( [
     './check_pgactivity', '--service'  => 'sequences_exhausted',
-                          '--username' => getlogin,
+                          '--username' => $ENV{'USER'} || 'postgres',
                           '--format'   => 'human',
                           '--warning'  => '50%',
                           '--critical' => '90%'

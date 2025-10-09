@@ -2,7 +2,7 @@
 # This program is open source, licensed under the PostgreSQL License.
 # For license terms, see the LICENSE file.
 #
-# Copyright (C) 2012-2023: Open PostgreSQL Monitoring Development Group
+# Copyright (C) 2012-2025: Open PostgreSQL Monitoring Development Group
 
 use strict;
 use warnings;
@@ -11,7 +11,7 @@ use lib 't/lib';
 use pgNode;
 use pgSession;
 use Time::HiRes qw(usleep gettimeofday tv_interval);
-use Test::More tests => 143;
+use Test::More tests => 15;
 
 my $node = pgNode->get_new_node('prod');
 
@@ -29,7 +29,7 @@ SKIP: {
 
     $node->command_checks_all( [
         './check_pgactivity', '--service'  => 'hugepages',
-                              '--username' => getlogin,
+                              '--username' => $ENV{'USER'} || 'postgres',
                               '--format'   => 'human',
         ],
         1,
@@ -42,10 +42,19 @@ SKIP: {
 SKIP: {
     skip "incompatible tests with PostgreSQL < 17", 34 if $node->version < 17;
 
+    # Note: this service is only tested without huge pages because for
+    # PostgreSQL to allocate huge page, the system must have huge pages
+    # available. Stock OSes usually dont have either vm.nr_hugepages or
+    # vm.nr_overcommit_hugepages configured, thus the tests would fail in most
+    # cases. Modifying the sysctl config would require a superuser privileges,
+    # we cannot expect it to be available everywhere either.
+    $node->append_conf('postgresql.conf', "huge_pages = off");
+    $node->restart();
+
     # basic check => Returns OK
     $node->command_checks_all( [
         './check_pgactivity', '--service'  => 'hugepages',
-                              '--username' => getlogin,
+                              '--username' => $ENV{'USER'} || 'postgres',
                               '--format'   => 'human',
         ],
         0,
@@ -60,7 +69,7 @@ SKIP: {
 
     $node->command_checks_all( [
         './check_pgactivity', '--service'  => 'hugepages',
-                              '--username' => getlogin,
+                              '--username' => $ENV{'USER'} || 'postgres',
                               '--format'   => 'human',
                               '--with-hugepages',
         ],

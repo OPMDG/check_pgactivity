@@ -2,7 +2,7 @@
 # This program is open source, licensed under the PostgreSQL License.
 # For license terms, see the LICENSE file.
 #
-# Copyright (C) 2012-2023: Open PostgreSQL Monitoring Development Group
+# Copyright (C) 2012-2025: Open PostgreSQL Monitoring Development Group
 
 use strict;
 use warnings;
@@ -39,7 +39,7 @@ SKIP: {
 
     $prim->command_checks_all( [
         './check_pgactivity', '--service'  => 'streaming_delta',
-                              '--username' => getlogin,
+                              '--username' => $ENV{'USER'} || 'postgres',
                               '--format'   => 'human'
         ],
         1,
@@ -87,7 +87,7 @@ SKIP: {
     note "Normal check with two standby";
     $prim->command_checks_all( [
         './check_pgactivity', '--service'  => 'streaming_delta',
-                              '--username' => getlogin,
+                              '--username' => $ENV{'USER'} || 'postgres',
                               '--format'   => 'human'
         ],
         0,
@@ -116,7 +116,7 @@ SKIP: {
     note "Normal check with two standby, excluding one";
     $prim->command_checks_all( [
         './check_pgactivity', '--service'  => 'streaming_delta',
-                              '--username' => getlogin,
+                              '--username' => $ENV{'USER'} || 'postgres',
                               '--exclude'  => 'sec1',
                               '--format'   => 'human'
         ],
@@ -141,7 +141,7 @@ SKIP: {
     note "Normal check excluding both standby";
     $prim->command_checks_all( [
         './check_pgactivity', '--service'  => 'streaming_delta',
-                              '--username' => getlogin,
+                              '--username' => $ENV{'USER'} || 'postgres',
                               '--exclude'  => 'sec[12]',
                               '--format'   => 'human'
         ],
@@ -161,7 +161,7 @@ SKIP: {
     note "normal check with one explicit standby";
     $prim->command_checks_all( [
         './check_pgactivity', '--service'  => 'streaming_delta',
-                              '--username' => getlogin,
+                              '--username' => $ENV{'USER'} || 'postgres',
                               '--slave'    => 'sec1 ',
                               '--format'   => 'human'
         ],
@@ -192,7 +192,7 @@ SKIP: {
     $stb1->stop( 'fast' );
     $prim->command_checks_all( [
         './check_pgactivity', '--service'  => 'streaming_delta',
-                              '--username' => getlogin,
+                              '--username' => $ENV{'USER'} || 'postgres',
                               '--slave'    => 'sec1 ',
                               '--format'   => 'human'
         ],
@@ -218,7 +218,7 @@ SKIP: {
     $stb2->stop( 'fast' );
     $prim->command_checks_all( [
         './check_pgactivity', '--service'  => 'streaming_delta',
-                              '--username' => getlogin,
+                              '--username' => $ENV{'USER'} || 'postgres',
                               '--format'   => 'human'
         ],
         3,
@@ -239,7 +239,7 @@ SKIP: {
     $prim->command_checks_all( [
         'perl', '-It/lib', '-MMocker::Streaming',
         './check_pgactivity', '--service'  => 'streaming_delta',
-                              '--username' => getlogin,
+                              '--username' => $ENV{'USER'} || 'postgres',
                               '--slave'    => 'sec1 ',
                               '--warning'  => '512,4MB',
                               '--critical' => '4MB,4MB',
@@ -268,7 +268,7 @@ SKIP: {
     $prim->command_checks_all( [
         'perl', '-It/lib', '-MMocker::Streaming',
         './check_pgactivity', '--service'  => 'streaming_delta',
-                              '--username' => getlogin,
+                              '--username' => $ENV{'USER'} || 'postgres',
                               '--slave'    => 'sec1 ',
                               '--warning'  => '512,4MB',
                               '--critical' => '1MB,4MB',
@@ -297,7 +297,7 @@ SKIP: {
     $prim->command_checks_all( [
         'perl', '-It/lib', '-MMocker::Streaming',
         './check_pgactivity', '--service'  => 'streaming_delta',
-                              '--username' => getlogin,
+                              '--username' => $ENV{'USER'} || 'postgres',
                               '--slave'    => 'sec1 ',
                               '--warning'  => '3MB,512',
                               '--critical' => '4MB,4MB',
@@ -326,7 +326,7 @@ SKIP: {
     $prim->command_checks_all( [
         'perl', '-It/lib', '-MMocker::Streaming',
         './check_pgactivity', '--service'  => 'streaming_delta',
-                              '--username' => getlogin,
+                              '--username' => $ENV{'USER'} || 'postgres',
                               '--slave'    => 'sec1 ',
                               '--warning'  => '3MB,512',
                               '--critical' => '4MB,2MB',

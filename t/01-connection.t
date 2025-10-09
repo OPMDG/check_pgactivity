@@ -2,7 +2,7 @@
 # This program is open source, licensed under the PostgreSQL License.
 # For license terms, see the LICENSE file.
 #
-# Copyright (C) 2012-2023: Open PostgreSQL Monitoring Development Group
+# Copyright (C) 2012-2025: Open PostgreSQL Monitoring Development Group
 
 use strict;
 use warnings;
@@ -23,7 +23,7 @@ $node->start;
 $node->command_checks_all( [
     # command to run
     './check_pgactivity', '--service'  => 'connection',
-                          '--username' => getlogin
+                          '--username' => $ENV{'USER'} || 'postgres'
     ],
     # expected return code
     0,
@@ -40,7 +40,7 @@ $node->command_checks_all( [
 $node->command_checks_all( [
     './check_pgactivity', '--service'  => 'connection',
                           '--port'     => $node->port -1, # wrong port
-                          '--username' => getlogin
+                          '--username' => $ENV{'USER'} || 'postgres'
     ],
     2,
     [

@@ -2,7 +2,7 @@
 # This program is open source, licensed under the PostgreSQL License.
 # For license terms, see the LICENSE file.
 #
-# Copyright (C) 2012-2023: Open PostgreSQL Monitoring Development Group
+# Copyright (C) 2012-2025: Open PostgreSQL Monitoring Development Group
 
 # This file gathers various regression tests against the same cluster to avoid
 # creating one cluster per regression test.
@@ -42,7 +42,7 @@ ok( ! -f "${pga_data}.lock", "double check the lock file does not exist" );
 # First call to create the status and lock files
 $node->command_checks_all( [
     './check_pgactivity', '--service'     => 'hit_ratio',
-                          '--username'    => getlogin,
+                          '--username'    => $ENV{'USER'} || 'postgres',
                           '--format'      => 'human',
                           '--status-file' => $pga_data,
                           '--warning'     => '101%',
@@ -66,7 +66,7 @@ sleep 1;
 # trigger the failure described in issue #326
 $node->command_checks_all( [
     './check_pgactivity', '--service'     => 'hit_ratio',
-                          '--username'    => getlogin,
+                          '--username'    => $ENV{'USER'} || 'postgres',
                           '--format'      => 'human',
                           '--status-file' => $pga_data,
                           '--warning'     => '101%',
