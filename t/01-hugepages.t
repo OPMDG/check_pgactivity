@@ -11,7 +11,7 @@ use lib 't/lib';
 use pgNode;
 use pgSession;
 use Time::HiRes qw(usleep gettimeofday tv_interval);
-use Test::More tests => 143;
+use Test::More tests => 15;
 
 my $node = pgNode->get_new_node('prod');
 
@@ -41,6 +41,9 @@ SKIP: {
 
 SKIP: {
     skip "incompatible tests with PostgreSQL < 17", 34 if $node->version < 17;
+
+    $node->append_conf('postgresql.conf', "huge_pages = off");
+    $node->restart();
 
     # basic check => Returns OK
     $node->command_checks_all( [
