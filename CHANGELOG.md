@@ -3,12 +3,12 @@ Changelog
 
 2025-10-10 v2.8:
 
-* add: full compatibility with PostgreSQL 16 and 17 (bgwriter) (Thomas Reiss, Christophe Courtois)
-* add: hugepages service (PG≥17)(Benoit Lobréau)
+* add: compatibility with PostgreSQL 16 and 17, basic v18 compatibility (Thomas Reiss)
+* add: hugepages service (PG≥17) (Benoit Lobréau)
+* fix: bgwriter service for PG17 (Christophe Courtois)
 * change: minimum psql version is 8.4, or use "--old-psql" (Jehan-Guillaume de Rorthais)
 * change: longest_query only looks at client backends and bgworkers, not autovacuum nor walsender workers (Thomas)
 * fix: last_vacuum/analyze was never raising an alert if a threshold was changed on an inactive server (Christophe)
-*
 
 2023-09-25 v2.7:
 
