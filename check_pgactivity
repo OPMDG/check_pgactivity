@@ -2837,7 +2837,7 @@ sub check_checksum_errors {
         -exitval => 127
     ) if @hosts != 1;
 
-    is_compat $hosts[0], 'checksum_error', $PG_VERSION_120 or exit 1;
+    is_compat $hosts[0], 'checksum_errors', $PG_VERSION_120 or exit 1;
 
     # Check if data checksums are enabled
     @rs = @{ query( $hosts[0], "SELECT pg_catalog.current_setting('data_checksums')" ) };
