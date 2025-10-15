@@ -6863,7 +6863,7 @@ sub check_pg_stat_statements_dealloc {
     @rs = @{ query( $hosts[0], $pgss_version_query ) };
 
     # No row:
-    return status_unknown( $me, [ 'Ensure that the pg_stat_statements extension has been created on the target database.' ] ) if (not defined $rs[0]);
+    return status_unknown( $me, [ "Ensure that the pg_stat_statements extension has been created on the target database (currently $ENV{PGDATABASE})" ] ) if (not defined $rs[0]);
 
     $pgss_version = $rs[0][0];
     $pgss_version =~  /(\d+).(\d+)/;
