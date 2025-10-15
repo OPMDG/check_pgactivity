@@ -6802,14 +6802,11 @@ sub check_pg_dump_backup {
 
 Check number of pg_stat_statements deallocations.
 
-Many deallocations can have negative performance impact. This could be due to:
-
-* Application performing many different queries (ORM, lists of varying length, ...)
-
-* different utility statements (SET application_name...). In this case,
-  try to disable pg_stat_statements.track_utility.
-
-* pg_stat_statements.max is too low
+Too many deallocations can have a negative performance impact. This could be due to:
+  * an application performing many different queries (ORM, lists of varying length, ...)
+  * some utility statements (SET application_name...).
+    In this case, try to disable pg_stat_statements.track_utility.
+  * pg_stat_statements.max is too low
 
 This service uses the status file (see C<--status-file> parameter).
 
@@ -6909,7 +6906,7 @@ sub check_pg_stat_statements_dealloc {
     );
 
     if ( $dealloc_delta < 0) {
-        return status_unknown( $me, [ sprintf "Dealloc delta can't be negative: %d deallocs",$dealloc_delta], \@perfdata)
+        return status_unknown( $me, [ sprintf "Negative dealloc delta; did you call pg_stat_statements_reset()?: %d deallocs",$dealloc_delta], \@perfdata)
     }
 
     if ( $crit and $dealloc_delta > $crit) {
