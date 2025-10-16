@@ -49,6 +49,7 @@ use Pod::Usage;
 use Scalar::Util qw(looks_like_number);
 use Fcntl qw(:flock);
 use Storable qw(retrieve store);
+use Time::HiRes qw(gettimeofday tv_interval);
 
 use Config;
 use FindBin;
@@ -2982,7 +2983,7 @@ sub check_bgwriter {
     my %new_bgw;
     my %bgw;
     my @hosts;
-    my $now     = time();
+    my $now     = [gettimeofday];
     my %args    = %{ $_[0] };
     my $me      = 'POSTGRES_BGWRITER';
     my %queries = (
@@ -3074,6 +3075,9 @@ sub check_bgwriter {
                                 # instead of raising some ugly Perl errors
                                 # when upgrading.
 
+    # avoid raising errors when upgrading from time to gettimeofday.
+    return status_ok( $me, ['First call'] ) unless ref($bgw{'ts'}) eq 'ARRAY';
+
     return status_ok( $me, ['Stats reseted since last call'] )
         if $new_bgw{'stat_reset'}       > $bgw{'stat_reset'}
         or $new_bgw{'checkpoint_timed'} < $bgw{'checkpoint_timed'}
@@ -3089,7 +3093,7 @@ sub check_bgwriter {
         + $rs[3] - $bgw{'buff_clean'}
         + $rs[5] - $bgw{'buff_backend'};
 
-    $delta_ts                = $now   - $bgw{'ts'};
+    $delta_ts                = tv_interval $bgw{'ts'}, $now;
     $delta_buff_backend      = ($rs[5] - $bgw{'buff_backend'})     / $delta_ts;
     $delta_buff_bgwriter     = ($rs[3] - $bgw{'buff_clean'})       / $delta_ts;
     $delta_buff_checkpointer = ($rs[2] - $bgw{'buff_checkpoint'})  / $delta_ts;
@@ -8468,7 +8472,7 @@ the same restrictions than on v10 will still apply
 
 sub check_temp_files {
     my $me  = 'POSTGRES_TEMP_FILES';
-    my $now = time();
+    my $now = [gettimeofday];
     my $w_flimit;
     my $c_flimit;
     my $w_limit;
@@ -8774,6 +8778,12 @@ DB_LOOP: foreach my $stat (@rs) {
         $last_size   = $prev_temp_files{ $stat->[1] }[2];
         $diff_number = $stat->[2] - $last_number;
         $diff_size   = $stat->[3] - $last_size;
+
+        # avoid trashing results when upgrading from time to gettimeofday
+        if ( ref($prev_temp_files{ $stat->[1] }[0]) ne 'ARRAY' ) {
+            save $hosts[0], 'temp_files', \%new_temp_files, $args{'status-file'};
+            return status_ok( $me, ['First call'] );
+	}
 
         $frate = 60 * $diff_number / ($now - $last_check);
         $brate = 60 * $diff_size   / ($now - $last_check);
