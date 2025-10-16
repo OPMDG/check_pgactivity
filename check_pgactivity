@@ -8807,8 +8807,8 @@ DB_LOOP: foreach my $stat (@rs) {
             return status_ok( $me, ['First call'] );
 	}
 
-        $frate = 60 * $diff_number / ($now - $last_check);
-        $brate = 60 * $diff_size   / ($now - $last_check);
+        $frate = 60 * $diff_number / (tv_interval $last_check, $now);
+        $brate = 60 * $diff_size   / (tv_interval $last_check, $now);
 
         push @perfdata => [ "$stat->[1]", $frate, 'Fpm' ];
         push @perfdata => [ "$stat->[1]", $brate, 'Bpm' ];
