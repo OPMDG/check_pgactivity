@@ -5107,20 +5107,32 @@ sub check_last_maintenance {
         },
         # Starting with 9.1, we can add the analyze/vacuum counts
         $PG_VERSION_91 => qq{
-            SELECT coalesce(max(
+            SELECT
+                pg_is_in_recovery()::int AS is_in_recovery,
+                CASE WHEN NOT pg_is_in_recovery() THEN
+                  coalesce(max(
                        coalesce(extract(epoch FROM
                          current_timestamp -
                                  greatest(last_${type}, last_auto${type})),
                         'infinity'::float)),
-                   'NaN'::float),
-                coalesce(sum(${type}_count), 0) AS ${type}_count,
-                coalesce(sum(auto${type}_count), 0) AS auto${type}_count,
-                (
-                  SELECT md5(tup_inserted::text||tup_updated::text||tup_deleted::text||'$c_limit $w_limit'
+                   'NaN'::float)
+                  ELSE 'NaN'::float END,
+                CASE WHEN NOT pg_is_in_recovery() THEN
+                  coalesce(sum(${type}_count), 0)
+                  ELSE 0 END
+                  AS ${type}_count,
+                CASE WHEN NOT pg_is_in_recovery() THEN
+                  coalesce(sum(auto${type}_count), 0)
+                  ELSE 0 END
+                  AS auto${type}_count,
+                CASE WHEN NOT pg_is_in_recovery() THEN
+                  (
+                    SELECT md5(tup_inserted::text||tup_updated::text||tup_deleted::text||'$c_limit $w_limit'
+                    )
+                    FROM pg_catalog.pg_stat_database
+                    WHERE datname = current_database()
                   )
-                  FROM pg_catalog.pg_stat_database
-                  WHERE datname = current_database()
-                )
+                  ELSE '' END
             FROM pg_stat_user_tables a
             JOIN pg_class b on a.relid = b.oid
             WHERE schemaname NOT LIKE 'pg_temp_%'
@@ -5162,17 +5174,22 @@ LOOP_DB: foreach my $db (@all_db) {
         $dbchecked++;
 
         $rs = query_ver( $hosts[0], %queries, $db )->[0];
+
         $db =~ s/=//g;
 
-        push @perfdata => [ $db, $rs->[0], 's', $w_limit, $c_limit ];
+        return status_unknown( $me,
+            [ "Server is no primary." ]
+        ) if $rs->[0];
 
-        $new_counts{$db} = [ $rs->[1], $rs->[2] ];
+        push @perfdata => [ $db, $rs->[1], 's', $w_limit, $c_limit ];
+
+        $new_counts{$db} = [ $rs->[2], $rs->[3] ];
 
         if ( exists $counts{$db} ) {
 
             if ($hosts[0]->{'version_num'} >= $PG_VERSION_91 ) {
-                my $delta      = $rs->[1] - $counts{$db}[0];
-                my $delta_auto = $rs->[2] - $counts{$db}[1];
+                my $delta      = $rs->[2] - $counts{$db}[0];
+                my $delta_auto = $rs->[3] - $counts{$db}[1];
 
                 push @perfdata => (
                     [ "$db $type", $delta ],
@@ -5188,18 +5205,18 @@ LOOP_DB: foreach my $db (@all_db) {
             }
         }
 
-        if ( $rs->[0] >= $c_limit ) {
+        if ( $rs->[1] >= $c_limit ) {
             push @msg_crit => "$db: " . to_interval($rs->[0]);
             next LOOP_DB;
         }
 
-        if ( $rs->[0] >= $w_limit ) {
+        if ( $rs->[1] >= $w_limit ) {
             push @msg_warn => "$db: " . to_interval($rs->[0]);
             next LOOP_DB;
         }
 
         # iif everything is OK, save the current hashed status for this database
-        $new_counts{$db}[2] = $rs->[3];
+        $new_counts{$db}[2] = $rs->[4];
     }
 
     save $hosts[0], "${type}_counts", \%new_counts, $args{'status-file'};
