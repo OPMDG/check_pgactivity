@@ -1,0 +1,30 @@
+---
+name: GitHub Actions tests
+run-name: Tests triggered by ${{ github.actor }}
+on: [push, pull_request]
+
+jobs:
+
+  tests:
+    strategy:
+      matrix:
+        pg: [18, 17, 16, 15, 14]
+    name: PostgreSQL ${{ matrix.pg }}
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - name: Check out repository code
+        uses: actions/checkout@v5
+      - name: Update packages
+        run: sudo apt update
+      - name: Install packages
+        run: sudo apt install -y postgresql-common ca-certificates libipc-run-perl
+      - name: Install PGDG
+        run: sudo /usr/share/postgresql-common/pgdg/apt.postgresql.org.sh -y
+      - name: Install packages
+        run: sudo apt install -y libipc-run-perl postgresql-${{ matrix.pg }}
+      - name: Execute all tests
+        run: PATH="/usr/lib/postgresql/${{ matrix.pg }}/bin/:$PATH" prove
+      - name: print logs if test failed
+        run: cat tmp_check/log/*
+        if: ${{ failure() }}
