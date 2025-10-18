@@ -8,7 +8,7 @@ jobs:
   tests:
     strategy:
       matrix:
-        pg: [18, 17, 16, 15, 14]
+        pg: [18, 17, 16, 15, 14, 13, 12, 11, 10]
     name: PostgreSQL ${{ matrix.pg }}
     runs-on: ubuntu-latest
     continue-on-error: true
