@@ -16,7 +16,7 @@ my $node      = pgNode->get_new_node('prod');
 my $pga_data = "$TestLib::tmp_check/pga.data";
 my $wal;
 my @stdout;
-my $num_tests = 25;
+my $num_tests = 29;
 
 $node->init(has_archiving => 1);
 
@@ -155,6 +155,40 @@ SKIP: {
         [ qr/^$/ ],
         'failing archiver with non-superuser'
     );
+}
+
+# Specific tests for PG9.4+, edge cases with pg_stat_archiver
+# Covers issue #358 and #384
+SKIP: {
+    skip "checking with non superuser role is not supported before v10", 4
+        if $node->version < '9.4';
+
+    # Turn archiving off, pg_stat_archiver remains
+    # see issue #358 and #384
+    $node->stop;
+    $node->append_conf('postgresql.conf', "archive_mode = 'off'");
+    $node->start;
+    $node->psql('template1', 'insert into t select generate_series(20001,30000) as i');
+    $wal = $node->switch_wal;
+
+    # Current behavior is to bail out an error "could not stat file"
+
+    $node->command_checks_all( [
+        './check_pgactivity', '--service'     => 'archiver',
+                              '--username'    => $ENV{'USER'} || 'postgres',
+                              '--status-file' => $pga_data,
+                              '--format'      => 'human'
+        ],
+        0,
+        [
+          # Should not return an error in this case
+          qr/^Service  *: POSTGRES_ARCHIVER$/m,
+          qr/^Returns  *: 0 \(OK\)$/m,
+        ],
+        [ qr/^$/ ],
+        'do not bail out when archiver is off'
+    );
+
 }
 
 ### End of tests ###
