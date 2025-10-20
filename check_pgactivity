@@ -6125,22 +6125,21 @@ sub check_oldest_idlexact {
                     date_trunc('second', current_timestamp-state_change)
                 ), -1)
             FROM pg_database AS d
-            LEFT JOIN pg_stat_activity AS a ON (a.datid = d.oid)
-            WHERE a.state='idle in transaction'
+            LEFT JOIN pg_stat_activity AS a ON (a.datid = d.oid AND state='idle in transaction')
         },
         $PG_VERSION_94 => q{SELECT d.datname,
             coalesce(extract('epoch' FROM
                     date_trunc('second', current_timestamp-state_change)
                 ), -1)
             FROM pg_database AS d
-            LEFT JOIN pg_stat_activity AS a ON (a.datid = d.oid)
-            WHERE a.state='idle in transaction' AND NOT (a.backend_xid IS NULL AND a.backend_xmin IS NULL)
+            LEFT JOIN pg_stat_activity AS a ON (a.datid = d.oid AND a.state='idle in transaction'
+	            AND NOT (a.backend_xid IS NULL AND a.backend_xmin IS NULL))
         }
     );
 
     # Exclude some apps
     if(defined $args{'exclude'}[0]){
-        $exclude_filter = " AND a.application_name NOT IN ('".join("','", split(',', $args{'exclude'}[0]))."')";
+        $exclude_filter = " WHERE a.application_name NOT IN ('".join("','", split(',', $args{'exclude'}[0]))."')";
         $queries{$PG_VERSION_92} .= $exclude_filter;
         $queries{$PG_VERSION_94} .= $exclude_filter;
     }
