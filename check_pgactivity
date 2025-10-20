@@ -1931,7 +1931,7 @@ process did not archive the oldest waiting WAL to be archived since last call.
 Required privileges: superuser (<v10),
 <v10: superuser,
 v10: nonsuper user but output will lack perfdata oldest_ready_wal or superuser,
-v11+: grant execute on function pg_stat_file(text).
+v10+: grant execute on function pg_stat_file(text, bool).
 
 =cut
 
