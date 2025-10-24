@@ -1,7 +1,7 @@
 ---
 name: GitHub Actions tests
 run-name: Tests triggered by ${{ github.actor }}
-on: [push, pull_request]
+on: [push]
 
 jobs:
 
@@ -26,5 +26,5 @@ jobs:
       - name: Execute all tests
         run: PATH="/usr/lib/postgresql/${{ matrix.pg }}/bin/:$PATH" prove
       - name: print logs if test failed
-        run: cat tmp_check/log/*
+        run: head -n 100000 tmp_check/log/*
         if: ${{ failure() }}
