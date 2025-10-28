@@ -5062,7 +5062,7 @@ sub check_last_maintenance {
     my %queries    = (
         # 1st field: oldest known maintenance on a table
         #            -inf if a table never had maintenance
-        #             NaN if nothing found
+        #             NaN if nothing found or secondary
         # 2nd field: total number of maintenance
         # 3nd field: total number of auto-maintenance
         # 4th field: hash(insert||update||delete||thresholds) to avoid
@@ -5072,7 +5072,9 @@ sub check_last_maintenance {
         # 8.2 does not have per-database activity stats. We must aggregate
         # from pg_stat_user_tables
         $PG_VERSION_82 => qq{
-            SELECT coalesce(max(
+            SELECT
+                false AS is_in_recovery,
+                coalesce(max(
                        coalesce(extract(epoch FROM
                          current_timestamp -
                                  greatest(last_${type}, last_auto${type})),
@@ -5089,12 +5091,37 @@ sub check_last_maintenance {
         # Starting with 8.3, we can check database activity from
         # pg_stat_database
         $PG_VERSION_83 => qq{
-            SELECT coalesce(max(
+            SELECT
+                false AS is_in_recovery,
+                coalesce(max(
                        coalesce(extract(epoch FROM
                          current_timestamp -
                                  greatest(last_${type}, last_auto${type})),
                          'infinity'::float)),
                     'NaN'::float),
+                NULL, NULL,
+                (
+                  SELECT md5(tup_inserted::text||tup_updated::text||tup_deleted::text||'$c_limit $w_limit'))
+                  FROM pg_catalog.pg_stat_database
+                  WHERE datname = current_database()
+                )
+            FROM pg_stat_user_tables
+            WHERE schemaname NOT LIKE 'pg_temp_%'
+              AND schemaname NOT LIKE 'pg_toast_temp_%'
+        },
+        # Starting with 9.0, we can check database status
+        # (primary or secondary)
+        $PG_VERSION_90 => qq{
+            SELECT
+                pg_is_in_recovery()::int AS is_in_recovery,
+                CASE WHEN NOT pg_is_in_recovery() THEN
+                  coalesce(max(
+                       coalesce(extract(epoch FROM
+                         current_timestamp -
+                                 greatest(last_${type}, last_auto${type})),
+                         'infinity'::float)),
+                    'NaN'::float)
+                  ELSE 'NaN'::float END,
                 NULL, NULL,
                 (
                   SELECT md5(tup_inserted::text||tup_updated::text||tup_deleted::text||'$c_limit $w_limit'))
@@ -5206,12 +5233,12 @@ LOOP_DB: foreach my $db (@all_db) {
         }
 
         if ( $rs->[1] >= $c_limit ) {
-            push @msg_crit => "$db: " . to_interval($rs->[0]);
+            push @msg_crit => "$db: " . to_interval($rs->[1]);
             next LOOP_DB;
         }
 
         if ( $rs->[1] >= $w_limit ) {
-            push @msg_warn => "$db: " . to_interval($rs->[0]);
+            push @msg_warn => "$db: " . to_interval($rs->[1]);
             next LOOP_DB;
         }
 
