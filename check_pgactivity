@@ -299,6 +299,10 @@ my %services = (
         'sub'  => \&check_pg_stat_statements_dealloc,
         'desc' => 'Check rate of pg_stat_statements dealloc.'
     },
+    'slru_hit_ratio' => {
+        'sub'  => \&check_slru_hit_ratio,
+        'desc' => 'Check SLRU ratio on a host.'
+    },
 );
 
 
@@ -4536,6 +4540,128 @@ sub check_hit_ratio {
     }
 
     return status_ok( $me, [ "$db_checked database(s) checked" ], \@perfdata );
+}
+
+
+=item B<slru_hit_ratio> (all)
+
+Check the cache SLRU ratio on the cluster.
+
+This service uses the status file (see C<--status-file> parameter).
+
+Perfdata returns the cache SLRU ratio for one cluster.
+
+Critical and Warning thresholds are optional. They only accept a percentage.
+
+Required privileges: unprivileged role.
+
+=cut
+
+sub check_slru_hit_ratio {
+    my @rs;
+    my @perfdata;
+    my @msg_crit;
+    my @msg_warn;
+    my @hosts;
+    my %slru_hitratio;
+    my %new_slru_hitratio;
+    my %args       = %{ $_[0] };
+    my $me         = 'POSTGRES_SLRU_HIT_RATIO';
+    my $slru_checked = 0;
+    my $sql        = q{SELECT name, blks_hit, blks_read
+        FROM pg_stat_slru
+        ORDER BY name};
+
+    # Warning and critical must be %.
+    if ( defined $args{'warning'} and defined $args{'critical'} ) {
+        pod2usage(
+            -message => "FATAL: critical and warning thresholds only accept percentages.",
+            -exitval => 127
+        ) unless $args{'warning'} =~ m/^([0-9.]+)%$/
+            and $args{'critical'} =~ m/^([0-9.]+)%$/;
+
+        $args{'warning'}  = substr $args{'warning'}, 0, -1;
+        $args{'critical'} = substr $args{'critical'}, 0, -1;
+    }
+
+
+    @hosts = @{ parse_hosts %args };
+
+    pod2usage(
+        -message => 'FATAL: you must give only one host with service "slru_hit_ratio".',
+        -exitval => 127
+    ) if @hosts != 1;
+
+
+    %slru_hitratio = %{ load( $hosts[0], 'slru_hitratio', $args{'status-file'} ) || {} };
+
+    @rs = @{ query( $hosts[0], $sql ) };
+
+    SLRU_LOOP: foreach my $slru (@rs) {
+        my $ratio;
+        my $hit_delta;
+        my $read_delta;
+        my @perfdata_value;
+
+        $new_slru_hitratio{ $slru->[0] } = [ $slru->[1], $slru->[2], 'NaN' ];
+
+        $slru_checked++;
+
+        next SLRU_LOOP unless defined $slru_hitratio{ $slru->[0] };
+
+        $hit_delta  = $new_slru_hitratio{ $slru->[0] }[0] - $slru_hitratio{ $slru->[0] }[0];
+        $read_delta = $new_slru_hitratio{ $slru->[0] }[1] - $slru_hitratio{ $slru->[0] }[1];
+
+        # Metrics moved since last run
+        if ( $hit_delta + $read_delta > 0 ) {
+            $ratio = 100 * $hit_delta / ( $hit_delta + $read_delta );
+            # rounding the fractional part to 2 digits
+            $ratio = int($ratio*100+0.5)/100;
+            $new_slru_hitratio{ $slru->[0] }[2] = $ratio;
+
+            @perfdata_value = ( $slru->[0], $ratio, '%' );
+        }
+        # Without activity since last run, use previous hit ratio.
+        # This should not happen as the query itself hits/reads.
+        elsif ( $slru->[1] + $slru->[2] > 0 ) {
+            $ratio = $slru_hitratio{ $slru->[0] }[2];
+            @perfdata_value = ( $slru->[0], $ratio, '%' );
+        }
+        # This database has no reported activity yet
+        else {
+            $ratio='NaN';
+            $new_slru_hitratio{ $slru->[0] }[2] = 'NaN';
+            @perfdata_value = ( $slru->[0], 'NaN', '%' );
+        }
+
+        push @perfdata_value => ( $args{'warning'}, $args{'critical'} )
+            if defined $args{'critical'};
+
+        push @perfdata => \@perfdata_value;
+
+        if ( defined $args{'critical'} ) {
+            if ( $ratio < $args{'critical'} ) {
+                push @msg_crit => sprintf "%s: %s%%", $slru->[0], $ratio;
+                next SLRU_LOOP;
+            }
+
+            if ( defined $args{'warning'} and $ratio < $args{'warning'} ) {
+                push @msg_warn => sprintf "%s: %s%%", $slru->[0], $ratio;
+            }
+        }
+    }
+
+    save $hosts[0], 'slru_hitratio', \%new_slru_hitratio, $args{'status-file'};
+
+    if ( defined $args{'critical'} ) {
+        return status_critical( $me, [ @msg_crit, @msg_warn ], \@perfdata )
+            if scalar @msg_crit;
+
+        return status_warning( $me, \@msg_warn, \@perfdata )
+            if scalar @msg_warn;
+    }
+
+    return status_ok( $me, [ "$slru_checked SLRU(s) checked" ], \@perfdata );
 }
 
 
