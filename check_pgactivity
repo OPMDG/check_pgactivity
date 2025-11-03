@@ -2837,7 +2837,7 @@ sub check_checksum_errors {
     @hosts = @{ parse_hosts %args };
 
     pod2usage(
-        -message => 'FATAL: you must give only one host with service "database_size".',
+        -message => 'FATAL: you must give only one host with service "checksum_errors".',
         -exitval => 127
     ) if @hosts != 1;
 
