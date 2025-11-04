@@ -19,6 +19,7 @@ my $t0; # use to avoid two check_pga calls within the same second.
         # See comment before first call of usleep.
 
 $node->init;
+$node->append_conf('postgresql.conf', 'work_mem=64kB');
 $node->start;
 
 ### Beginning of tests ###
@@ -56,7 +57,7 @@ SKIP: {
         0,
         [ qr/^Service  *: POSTGRES_TEMP_FILES$/m,
           qr/^Returns  *: 0 \(OK\)$/m,
-          qr/^Message  *: [2-3] tablespace\(s\)\/database\(s\) checked$/m,
+          qr/^Message  *: [2-4] tablespace\(s\)\/database\(s\) checked$/m,
         ],
         [ qr/^$/ ],
         'basic check'
@@ -65,8 +66,8 @@ SKIP: {
     $t0 = [gettimeofday];
 
     # unit test based on the file count => Returns OK
-    # The query generates between 17.5MB (9.4) and 11,7MB (14) of WAL
-    $node->psql('postgres', 'SELECT count(*) FROM (SELECT random() * x FROM generate_series(1,1000000) AS F(x) ORDER BY 1) q;');
+    # Generate one temp file of 140000 bytes
+    $node->psql('postgres', 'SELECT count(*) FROM generate_series(1,10000);');
 
     # The added sleep ensures that two tests are not executed within the same
     # seconds.
@@ -92,10 +93,10 @@ SKIP: {
           qr/^Perfdata *: postgres=[1-9][.0-9]*[kMGTPE]*Bpm$/m,
           qr/^Perfdata *: postgres=[1-9][0-9]*Files warn=3 crit=4$/m,
           qr/^Perfdata *: postgres=[1-9][.0-9]*[kMGTPE]*B$/m,
-          qr/^Perfdata *: template1=0Fpm$/m,
-          qr/^Perfdata *: template1=0Bpm$/m,
-          qr/^Perfdata *: template1=0Files warn=3 crit=4$/m,
-          qr/^Perfdata *: template1=0B$/m,
+          qr/^Perfdata *: template1=[1-9][.0-9]*Fpm$/m,
+          qr/^Perfdata *: template1=[1-9][.0-9]*[kMGTPE]*Bpm$/m,
+          qr/^Perfdata *: template1=[1-9][0-9]*Files warn=3 crit=4$/m,
+          qr/^Perfdata *: template1=[1-9][.0-9]*[kMGTPE]*B$/m,
         ],
         [ qr/^$/ ],
         'test file count OK'
@@ -104,38 +105,7 @@ SKIP: {
     $t0 = [gettimeofday];
 
     # unit test based on the file count => Returns WARN
-    $node->psql('postgres', 'SELECT count(*) FROM (SELECT random() * x FROM generate_series(1,1000000) AS F(x) ORDER BY 1) q;');
-
-    usleep(100_000) while tv_interval($t0) < 1.01;
-    $node->command_checks_all( [
-        './check_pgactivity', '--service'  => 'temp_files',
-                              '--username' => $ENV{'USER'} || 'postgres',
-                              '--format'   => 'human',
-                              '--dbname'   => 'template1',
-                              '--warning'  => '1',
-                              '--critical' => '3'
-        ],
-        1,
-        [ qr/^Service  *: POSTGRES_TEMP_FILES$/m,
-          qr/^Returns  *: 1 \(WARNING\)$/m,
-          qr/^Message  *: postgres \(.* file\(s\)\/.*\)$/m,
-          qr/^Perfdata *: postgres=[1-9][.0-9]*Fpm$/m,
-          qr/^Perfdata *: postgres=[1-9][.0-9]*[kMGTPE]*Bpm$/m,
-          qr/^Perfdata *: postgres=[1-9][0-9]*Files warn=1 crit=3$/m,
-          qr/^Perfdata *: postgres=[1-9][.0-9]*[kMGTPE]*B$/m,
-          qr/^Perfdata *: template1=0Fpm$/m,
-          qr/^Perfdata *: template1=0Bpm$/m,
-          qr/^Perfdata *: template1=0Files warn=1 crit=3$/m,
-          qr/^Perfdata *: template1=0B$/m,
-        ],
-        [ qr/^$/ ],
-        'test file count WARN'
-    );
-
-    $t0 = [gettimeofday];
-
-    # unit test based on the file count => Returns CRIT
-    $node->psql('postgres', 'SELECT count(*) FROM (SELECT random() * x FROM generate_series(1,1000000) AS F(x) ORDER BY 1) q;');
+    $node->psql('postgres', 'SELECT count(*) FROM generate_series(1,10000);');
 
     usleep(100_000) while tv_interval($t0) < 1.01;
     $node->command_checks_all( [
@@ -144,7 +114,38 @@ SKIP: {
                               '--format'   => 'human',
                               '--dbname'   => 'template1',
                               '--warning'  => '0',
-                              '--critical' => '1'
+                              '--critical' => '3'
+        ],
+        1,
+        [ qr/^Service  *: POSTGRES_TEMP_FILES$/m,
+          qr/^Returns  *: 1 \(WARNING\)$/m,
+          qr/^Message  *: postgres \(.* file\(s\)\/.*\)$/m,
+          qr/^Perfdata *: postgres=[1-9][.0-9]*Fpm$/m,
+          qr/^Perfdata *: postgres=[1-9][.0-9]*[kMGTPE]*Bpm$/m,
+          qr/^Perfdata *: postgres=[1-9][0-9]*Files warn=0 crit=3$/m,
+          qr/^Perfdata *: postgres=[1-9][.0-9]*[kMGTPE]*B$/m,
+          qr/^Perfdata *: template1=[1-9][.0-9]*Fpm$/m,
+          qr/^Perfdata *: template1=[1-9][.0-9]*[kMGTPE]*Bpm$/m,
+          qr/^Perfdata *: template1=[1-9][0-9]*Files warn=0 crit=3$/m,
+          qr/^Perfdata *: template1=[1-9][.0-9]*[kMGTPE]*B$/m,
+        ],
+        [ qr/^$/ ],
+        'test file count WARN'
+    );
+
+    $t0 = [gettimeofday];
+
+    # unit test based on the file count => Returns CRIT
+    $node->psql('postgres', 'SELECT count(*) FROM generate_series(1,10000);');
+
+    usleep(100_000) while tv_interval($t0) < 1.01;
+    $node->command_checks_all( [
+        './check_pgactivity', '--service'  => 'temp_files',
+                              '--username' => $ENV{'USER'} || 'postgres',
+                              '--format'   => 'human',
+                              '--dbname'   => 'template1',
+                              '--warning'  => '0',
+                              '--critical' => '0'
         ],
         2,
         [ qr/^Service  *: POSTGRES_TEMP_FILES$/m,
@@ -152,12 +153,12 @@ SKIP: {
           qr/^Message  *: postgres \(.* file\(s\)\/.*\)$/m,
           qr/^Perfdata *: postgres=[1-9][.0-9]*Fpm$/m,
           qr/^Perfdata *: postgres=[1-9][.0-9]*[kMGTPE]*Bpm$/m,
-          qr/^Perfdata *: postgres=[1-9][0-9]*Files warn=0 crit=1$/m,
+          qr/^Perfdata *: postgres=[1-9][0-9]*Files warn=0 crit=0$/m,
           qr/^Perfdata *: postgres=[1-9][.0-9]*[kMGTPE]*B$/m,
-          qr/^Perfdata *: template1=0Fpm$/m,
-          qr/^Perfdata *: template1=0Bpm$/m,
-          qr/^Perfdata *: template1=0Files warn=0 crit=1$/m,
-          qr/^Perfdata *: template1=0B$/m,
+          qr/^Perfdata *: template1=[1-9][.0-9]*Fpm$/m,
+          qr/^Perfdata *: template1=[1-9][.0-9]*[kMGTPE]*Bpm$/m,
+          qr/^Perfdata *: template1=[1-9][0-9]*Files warn=0 crit=0$/m,
+          qr/^Perfdata *: template1=[1-9][.0-9]*[kMGTPE]*B$/m,
         ],
         [ qr/^$/ ],
         'test file count CRIT'
@@ -166,7 +167,7 @@ SKIP: {
     $t0 = [gettimeofday];
 
     # unit test based on the file size => Returns OK
-    $node->psql('postgres', 'SELECT count(*) FROM (SELECT random() * x FROM generate_series(1,1000000) AS F(x) ORDER BY 1) q;');
+    $node->psql('postgres', 'SELECT count(*) FROM generate_series(1,10000);');
 
     usleep(100_000) while tv_interval($t0) < 1.01;
     $node->command_checks_all( [
@@ -174,8 +175,8 @@ SKIP: {
                               '--username' => $ENV{'USER'} || 'postgres',
                               '--format'   => 'human',
                               '--dbname'   => 'template1',
-                              '--warning'  => '40MB',
-                              '--critical' => '50MB'
+                              '--warning'  => '200kB',
+                              '--critical' => '300kB'
         ],
         0,
         [ qr/^Service  *: POSTGRES_TEMP_FILES$/m,
@@ -184,11 +185,11 @@ SKIP: {
           qr/^Perfdata *: postgres=[1-9][.0-9]*Fpm$/m,
           qr/^Perfdata *: postgres=[1-9][.0-9]*[kMGTPE]*Bpm$/m,
           qr/^Perfdata *: postgres=[1-9][0-9]*Files$/m,
-          qr/^Perfdata *: postgres=[1-9][.0-9]*[kMGTPE]*B warn=40MB crit=50MB$/m,
-          qr/^Perfdata *: template1=0Fpm$/m,
-          qr/^Perfdata *: template1=0Bpm$/m,
-          qr/^Perfdata *: template1=0Files$/m,
-          qr/^Perfdata *: template1=0B warn=40MB crit=50MB$/m,
+          qr/^Perfdata *: postgres=[1-9][.0-9]*[kMGTPE]*B warn=200kB crit=300kB$/m,
+          qr/^Perfdata *: template1=[1-9][.0-9]*Fpm$/m,
+          qr/^Perfdata *: template1=[1-9][.0-9]*[kMGTPE]*Bpm$/m,
+          qr/^Perfdata *: template1=[1-9][0-9]*Files$/m,
+          qr/^Perfdata *: template1=[1-9][.0-9]*[kMGTPE]*B warn=200kB crit=300kB$/m,
         ],
         [ qr/^$/ ],
         'test file size OK'
@@ -197,7 +198,7 @@ SKIP: {
     $t0 = [gettimeofday];
 
     # unit test based on the file size => Returns WARN
-    $node->psql('postgres', 'SELECT count(*) FROM (SELECT random() * x FROM generate_series(1,1000000) AS F(x) ORDER BY 1) q;');
+    $node->psql('postgres', 'SELECT count(*) FROM generate_series(1,10000);');
 
     usleep(100_000) while tv_interval($t0) < 1.01;
     $node->command_checks_all( [
@@ -205,8 +206,8 @@ SKIP: {
                               '--username' => $ENV{'USER'} || 'postgres',
                               '--format'   => 'human',
                               '--dbname'   => 'template1',
-                              '--warning'  => '4MB',
-                              '--critical' => '40MB'
+                              '--warning'  => '100kB',
+                              '--critical' => '200kB'
         ],
         1,
         [ qr/^Service  *: POSTGRES_TEMP_FILES$/m,
@@ -215,11 +216,11 @@ SKIP: {
           qr/^Perfdata *: postgres=[1-9][.0-9]*Fpm$/m,
           qr/^Perfdata *: postgres=[1-9][.0-9]*[kMGTPE]*Bpm$/m,
           qr/^Perfdata *: postgres=[1-9][0-9]*Files$/m,
-          qr/^Perfdata *: postgres=[1-9][.0-9]*[kMGTPE]*B warn=4MB crit=40MB$/m,
-          qr/^Perfdata *: template1=0Fpm$/m,
-          qr/^Perfdata *: template1=0Bpm$/m,
-          qr/^Perfdata *: template1=0Files$/m,
-          qr/^Perfdata *: template1=0B warn=4MB crit=40MB$/m,
+          qr/^Perfdata *: postgres=[1-9][.0-9]*[kMGTPE]*B warn=100kB crit=200kB$/m,
+          qr/^Perfdata *: template1=[1-9][.0-9]*Fpm$/m,
+          qr/^Perfdata *: template1=[1-9][.0-9]*[kMGTPE]*Bpm$/m,
+          qr/^Perfdata *: template1=[1-9][0-9]*Files$/m,
+          qr/^Perfdata *: template1=[1-9][.0-9]*[kMGTPE]*B warn=100kB crit=200kB$/m,
         ],
         [ qr/^$/ ],
         'test file size WARN'
@@ -228,7 +229,7 @@ SKIP: {
     $t0 = [gettimeofday];
 
     # unit test based on the file size => Returns CRIT
-    $node->psql('postgres', 'SELECT count(*) FROM (SELECT random() * x FROM generate_series(1,1000000) AS F(x) ORDER BY 1) q;');
+    $node->psql('postgres', 'SELECT count(*) FROM generate_series(1,10000);');
 
     usleep(100_000) while tv_interval($t0) < 1.01;
     $node->command_checks_all( [
@@ -236,8 +237,8 @@ SKIP: {
                               '--username' => $ENV{'USER'} || 'postgres',
                               '--format'   => 'human',
                               '--dbname'   => 'template1',
-                              '--warning'  => '4MB',
-                              '--critical' => '5MB'
+                              '--warning'  => '50kB',
+                              '--critical' => '100kB'
         ],
         2,
         [ qr/^Service  *: POSTGRES_TEMP_FILES$/m,
@@ -246,11 +247,11 @@ SKIP: {
           qr/^Perfdata *: postgres=[1-9][.0-9]*Fpm$/m,
           qr/^Perfdata *: postgres=[1-9][.0-9]*[kMGTPE]*Bpm$/m,
           qr/^Perfdata *: postgres=[1-9][0-9]*Files$/m,
-          qr/^Perfdata *: postgres=[1-9][.0-9]*[kMGTPE]*B warn=4MB crit=5MB$/m,
-          qr/^Perfdata *: template1=0Fpm$/m,
-          qr/^Perfdata *: template1=0Bpm$/m,
-          qr/^Perfdata *: template1=0Files$/m,
-          qr/^Perfdata *: template1=0B warn=4MB crit=5MB$/m,
+          qr/^Perfdata *: postgres=[1-9][.0-9]*[kMGTPE]*B warn=50kB crit=100kB$/m,
+          qr/^Perfdata *: template1=[1-9][.0-9]*Fpm$/m,
+          qr/^Perfdata *: template1=[1-9][.0-9]*[kMGTPE]*Bpm$/m,
+          qr/^Perfdata *: template1=[1-9][0-9]*Files$/m,
+          qr/^Perfdata *: template1=[1-9][.0-9]*[kMGTPE]*B warn=50kB crit=100kB$/m,
         ],
         [ qr/^$/ ],
         'test file count CRIT'
@@ -259,7 +260,7 @@ SKIP: {
     $t0 = [gettimeofday];
 
     # unit test based on the file size and count => Returns OK
-    $node->psql('postgres', 'SELECT count(*) FROM (SELECT random() * x FROM generate_series(1,1000000) AS F(x) ORDER BY 1) q;');
+    $node->psql('postgres', 'SELECT count(*) FROM generate_series(1,10000);');
 
     usleep(100_000) while tv_interval($t0) < 1.01;
     $node->command_checks_all( [
@@ -278,10 +279,10 @@ SKIP: {
           qr/^Perfdata *: postgres=[1-9][.0-9]*[kMGTPE]*Bpm$/m,
           qr/^Perfdata *: postgres=[1-9][0-9]*Files warn=3 crit=4$/m,
           qr/^Perfdata *: postgres=[1-9][.0-9]*[kMGTPE]*B warn=48.102MB crit=64.102MB$/m,
-          qr/^Perfdata *: template1=0Fpm$/m,
-          qr/^Perfdata *: template1=0Bpm$/m,
-          qr/^Perfdata *: template1=0Files warn=3 crit=4$/m,
-          qr/^Perfdata *: template1=0B warn=48.102MB crit=64.102MB$/m,
+          qr/^Perfdata *: template1=[1-9][.0-9]*Fpm$/m,
+          qr/^Perfdata *: template1=[1-9][.0-9]*[kMGTPE]*Bpm$/m,
+          qr/^Perfdata *: template1=[1-9][0-9]*Files warn=3 crit=4$/m,
+          qr/^Perfdata *: template1=[1-9][.0-9]*[kMGTPE]*B warn=48.102MB crit=64.102MB$/m,
         ],
         [ qr/^$/ ],
         'test file size and count OK '
@@ -290,7 +291,7 @@ SKIP: {
     $t0 = [gettimeofday];
 
     # unit test based on the file size and count => Returns WARN
-    $node->psql('postgres', 'SELECT count(*) FROM (SELECT random() * x FROM generate_series(1,1000000) AS F(x) ORDER BY 1) q;');
+    $node->psql('postgres', 'SELECT count(*) FROM generate_series(1,10000);');
 
     usleep(100_000) while tv_interval($t0) < 1.01;
     $node->command_checks_all( [
@@ -298,8 +299,8 @@ SKIP: {
                               '--username' => $ENV{'USER'} || 'postgres',
                               '--format'   => 'human',
                               '--dbname'   => 'template1',
-                              '--warning'  => '1,16486kB',
-                              '--critical' => '3,49254kB'
+                              '--warning'  => '1,100kB',
+                              '--critical' => '3,200kB'
         ],
         1,
         [ qr/^Service  *: POSTGRES_TEMP_FILES$/m,
@@ -308,11 +309,11 @@ SKIP: {
           qr/^Perfdata *: postgres=[1-9][.0-9]*Fpm$/m,
           qr/^Perfdata *: postgres=[1-9][.0-9]*[kMGTPE]*Bpm$/m,
           qr/^Perfdata *: postgres=[1-9][0-9]*Files warn=1 crit=3$/m,
-          qr/^Perfdata *: postgres=[1-9][.0-9]*[kMGTPE]*B warn=16.102MB crit=48.102MB$/m,
-          qr/^Perfdata *: template1=0Fpm$/m,
-          qr/^Perfdata *: template1=0Bpm$/m,
-          qr/^Perfdata *: template1=0Files warn=1 crit=3$/m,
-          qr/^Perfdata *: template1=0B warn=16.102MB crit=48.102MB$/m,
+          qr/^Perfdata *: postgres=[1-9][.0-9]*[kMGTPE]*B warn=100kB crit=200kB$/m,
+          qr/^Perfdata *: template1=[1-9][.0-9]*Fpm$/m,
+          qr/^Perfdata *: template1=[1-9][.0-9]*[kMGTPE]*Bpm$/m,
+          qr/^Perfdata *: template1=[1-9][0-9]*Files warn=1 crit=3$/m,
+          qr/^Perfdata *: template1=[1-9][.0-9]*[kMGTPE]*B warn=100kB crit=200kB$/m,
         ],
         [ qr/^$/ ],
         'test file size and count WARN'
@@ -321,7 +322,7 @@ SKIP: {
     $t0 = [gettimeofday];
 
     # unit test based on the file size and count => Returns CRIT
-    $node->psql('postgres', 'SELECT count(*) FROM (SELECT random() * x FROM generate_series(1,1000000) AS F(x) ORDER BY 1) q;');
+    $node->psql('postgres', 'SELECT count(*) FROM generate_series(1,10000);');
 
     usleep(100_000) while tv_interval($t0) < 1.01;
     $node->command_checks_all( [
@@ -329,8 +330,8 @@ SKIP: {
                               '--username' => $ENV{'USER'} || 'postgres',
                               '--format'   => 'human',
                               '--dbname'   => 'template1',
-                              '--warning'  => '0,0MB',
-                              '--critical' => '1,4MB'
+                              '--warning'  => '0,50kB',
+                              '--critical' => '1,100kB'
         ],
         2,
         [ qr/^Service  *: POSTGRES_TEMP_FILES$/m,
@@ -339,11 +340,11 @@ SKIP: {
           qr/^Perfdata *: postgres=[1-9][.0-9]*Fpm$/m,
           qr/^Perfdata *: postgres=[1-9][.0-9]*[kMGTPE]*Bpm$/m,
           qr/^Perfdata *: postgres=[1-9][0-9]*Files warn=0 crit=1$/m,
-          qr/^Perfdata *: postgres=[1-9][.0-9]*[kMGTPE]*B warn=0B crit=4MB$/m,
-          qr/^Perfdata *: template1=0Fpm$/m,
-          qr/^Perfdata *: template1=0Bpm$/m,
-          qr/^Perfdata *: template1=0Files warn=0 crit=1$/m,
-          qr/^Perfdata *: template1=0B warn=0B crit=4MB$/m,
+          qr/^Perfdata *: postgres=[1-9][.0-9]*[kMGTPE]*B warn=50kB crit=100kB$/m,
+          qr/^Perfdata *: template1=[1-9][.0-9]*Fpm$/m,
+          qr/^Perfdata *: template1=[1-9][.0-9]*[kMGTPE]*Bpm$/m,
+          qr/^Perfdata *: template1=[1-9][0-9]*Files warn=0 crit=1$/m,
+          qr/^Perfdata *: template1=[1-9][.0-9]*[kMGTPE]*B warn=50kB crit=100kB$/m,
         ],
         [ qr/^$/ ],
         'test file size and count CRIT'
@@ -384,7 +385,7 @@ SKIP: {
 
     $node->psql('postgres', q{
       SET temp_tablespaces TO myts2;
-      SELECT count(*) FROM (SELECT random() * x FROM generate_series(1,1000000) AS F(x) ORDER BY 1) q;
+      SELECT count(*) FROM generate_series(1,10000) ;
     });
 
     ok(-f "$tbsp2_tmp/pgsql_tmp1.1", "temp file pgsql_tmp1.1 exists in tablespace myts2");
@@ -409,10 +410,10 @@ SKIP: {
           qr/^Perfdata *: postgres=[1-9][.0-9]*[kMGTPE]*Bpm$/m,
           qr/^Perfdata *: postgres=[1-9][0-9]*Files$/m,
           qr/^Perfdata *: postgres=[1-9][.0-9]*[kMGTPE]*B$/m,
-          qr/^Perfdata *: template1=0Fpm$/m,
-          qr/^Perfdata *: template1=0Bpm$/m,
-          qr/^Perfdata *: template1=0Files$/m,
-          qr/^Perfdata *: template1=0B$/m,
+          qr/^Perfdata *: template1=[1-9][.0-9]*Fpm$/m,
+          qr/^Perfdata *: template1=[1-9][.0-9]*[kMGTPE]*Bpm$/m,
+          qr/^Perfdata *: template1=[1-9][0-9]*Files$/m,
+          qr/^Perfdata *: template1=[1-9][.0-9]*[kMGTPE]*B$/m,
         ],
         [ qr/^$/ ],
         'test with a tablespace'

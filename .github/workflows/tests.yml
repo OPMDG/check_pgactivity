@@ -26,5 +26,5 @@ jobs:
       - name: Execute all tests
         run: PATH="/usr/lib/postgresql/${{ matrix.pg }}/bin/:$PATH" prove
       - name: print logs if test failed
-        run: cat tmp_check/log/*
+        run: grep "" tmp_check/log/*
         if: ${{ failure() }}
