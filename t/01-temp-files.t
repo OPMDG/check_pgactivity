@@ -66,7 +66,7 @@ SKIP: {
 
     # unit test based on the file count => Returns OK
     # The query generates between 17.5MB (9.4) and 11,7MB (14) of WAL
-    $node->psql('postgres', 'CREATE TABLE rand1 AS SELECT random() * x FROM generate_series(1,1000000) AS F(x) ORDER BY 1;');
+    $node->psql('postgres', 'SELECT count(*) FROM (SELECT random() * x FROM generate_series(1,1000000) AS F(x) ORDER BY 1) q;');
 
     # The added sleep ensures that two tests are not executed within the same
     # seconds.
@@ -101,12 +101,10 @@ SKIP: {
         'test file count OK'
     );
 
-    $node->psql('postgres', 'DROP TABLE rand1;');
-
     $t0 = [gettimeofday];
 
     # unit test based on the file count => Returns WARN
-    $node->psql('postgres', 'CREATE TABLE rand2 AS SELECT random() * x FROM generate_series(1,1000000) AS F(x) ORDER BY 1;');
+    $node->psql('postgres', 'SELECT count(*) FROM (SELECT random() * x FROM generate_series(1,1000000) AS F(x) ORDER BY 1) q;');
 
     usleep(100_000) while tv_interval($t0) < 1.01;
     $node->command_checks_all( [
@@ -134,12 +132,10 @@ SKIP: {
         'test file count WARN'
     );
 
-    $node->psql('postgres', 'DROP TABLE rand2;');
-
     $t0 = [gettimeofday];
 
     # unit test based on the file count => Returns CRIT
-    $node->psql('postgres', 'CREATE TABLE rand3 AS SELECT random() * x FROM generate_series(1,1000000) AS F(x) ORDER BY 1;');
+    $node->psql('postgres', 'SELECT count(*) FROM (SELECT random() * x FROM generate_series(1,1000000) AS F(x) ORDER BY 1) q;');
 
     usleep(100_000) while tv_interval($t0) < 1.01;
     $node->command_checks_all( [
@@ -167,12 +163,10 @@ SKIP: {
         'test file count CRIT'
     );
 
-    $node->psql('postgres', 'DROP TABLE rand3;');
-
     $t0 = [gettimeofday];
 
     # unit test based on the file size => Returns OK
-    $node->psql('postgres', 'CREATE TABLE rand4 AS SELECT random() * x FROM generate_series(1,1000000) AS F(x) ORDER BY 1;');
+    $node->psql('postgres', 'SELECT count(*) FROM (SELECT random() * x FROM generate_series(1,1000000) AS F(x) ORDER BY 1) q;');
 
     usleep(100_000) while tv_interval($t0) < 1.01;
     $node->command_checks_all( [
@@ -200,12 +194,10 @@ SKIP: {
         'test file size OK'
     );
 
-    $node->psql('postgres', 'DROP TABLE rand4;');
-
     $t0 = [gettimeofday];
 
     # unit test based on the file size => Returns WARN
-    $node->psql('postgres', 'CREATE TABLE rand5 AS SELECT random() * x FROM generate_series(1,1000000) AS F(x) ORDER BY 1;');
+    $node->psql('postgres', 'SELECT count(*) FROM (SELECT random() * x FROM generate_series(1,1000000) AS F(x) ORDER BY 1) q;');
 
     usleep(100_000) while tv_interval($t0) < 1.01;
     $node->command_checks_all( [
@@ -233,12 +225,10 @@ SKIP: {
         'test file size WARN'
     );
 
-    $node->psql('postgres', 'DROP TABLE rand5;');
-
     $t0 = [gettimeofday];
 
     # unit test based on the file size => Returns CRIT
-    $node->psql('postgres', 'CREATE TABLE rand6 AS SELECT random() * x FROM generate_series(1,1000000) AS F(x) ORDER BY 1;');
+    $node->psql('postgres', 'SELECT count(*) FROM (SELECT random() * x FROM generate_series(1,1000000) AS F(x) ORDER BY 1) q;');
 
     usleep(100_000) while tv_interval($t0) < 1.01;
     $node->command_checks_all( [
@@ -266,12 +256,10 @@ SKIP: {
         'test file count CRIT'
     );
 
-    $node->psql('postgres', 'DROP TABLE rand6;');
-
     $t0 = [gettimeofday];
 
     # unit test based on the file size and count => Returns OK
-    $node->psql('postgres', 'CREATE TABLE rand7 AS SELECT random() * x FROM generate_series(1,1000000) AS F(x) ORDER BY 1;');
+    $node->psql('postgres', 'SELECT count(*) FROM (SELECT random() * x FROM generate_series(1,1000000) AS F(x) ORDER BY 1) q;');
 
     usleep(100_000) while tv_interval($t0) < 1.01;
     $node->command_checks_all( [
@@ -299,12 +287,10 @@ SKIP: {
         'test file size and count OK '
     );
 
-    $node->psql('postgres', 'DROP TABLE rand7;');
-
     $t0 = [gettimeofday];
 
     # unit test based on the file size and count => Returns WARN
-    $node->psql('postgres', 'CREATE TABLE rand8 AS SELECT random() * x FROM generate_series(1,1000000) AS F(x) ORDER BY 1;');
+    $node->psql('postgres', 'SELECT count(*) FROM (SELECT random() * x FROM generate_series(1,1000000) AS F(x) ORDER BY 1) q;');
 
     usleep(100_000) while tv_interval($t0) < 1.01;
     $node->command_checks_all( [
@@ -332,12 +318,10 @@ SKIP: {
         'test file size and count WARN'
     );
 
-    $node->psql('postgres', 'DROP TABLE rand8;');
-
     $t0 = [gettimeofday];
 
     # unit test based on the file size and count => Returns CRIT
-    $node->psql('postgres', 'CREATE TABLE rand9 AS SELECT random() * x FROM generate_series(1,1000000) AS F(x) ORDER BY 1;');
+    $node->psql('postgres', 'SELECT count(*) FROM (SELECT random() * x FROM generate_series(1,1000000) AS F(x) ORDER BY 1) q;');
 
     usleep(100_000) while tv_interval($t0) < 1.01;
     $node->command_checks_all( [
@@ -364,8 +348,6 @@ SKIP: {
         [ qr/^$/ ],
         'test file size and count CRIT'
     );
-
-    $node->psql('postgres', 'DROP TABLE rand9;');
 
     $t0 = [gettimeofday];
 
@@ -402,7 +384,7 @@ SKIP: {
 
     $node->psql('postgres', q{
       SET temp_tablespaces TO myts2;
-      CREATE TABLE rand10 AS SELECT random() * x FROM generate_series(1,1000000) AS F(x) ORDER BY 1;
+      SELECT count(*) FROM (SELECT random() * x FROM generate_series(1,1000000) AS F(x) ORDER BY 1) q;
     });
 
     ok(-f "$tbsp2_tmp/pgsql_tmp1.1", "temp file pgsql_tmp1.1 exists in tablespace myts2");
