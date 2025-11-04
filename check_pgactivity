@@ -2107,15 +2107,10 @@ sub check_archiver {
                     (pg_stat_file('pg_wal/'||pg_walfile_name(
                         (to_hex((last_archived_off+1)/4294967296)
                         ||'/'||to_hex((last_archived_off+1)%4294967296))::pg_lsn
-<<<<<<< HEAD
-                    ))).modification )
+                    ), true)).modification )
 		)
                ELSE NULL
                END AS oldest
-=======
-                    ), true)).modification )
-                ) AS oldest
->>>>>>> master
         FROM (
             SELECT last_archived_wal, last_archived_time, last_failed_wal,
                 walsegsize,
