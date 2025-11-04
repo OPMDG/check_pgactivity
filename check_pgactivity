@@ -295,6 +295,10 @@ my %services = (
         'sub'  => \&check_uptime,
         'desc' => 'Time since postmaster start or configurtion reload.'
     },
+    'pgss_dealloc' => {
+        'sub'  => \&check_pg_stat_statements_dealloc,
+        'desc' => 'Check rate of pg_stat_statements dealloc.'
+    },
 );
 
 
@@ -1931,7 +1935,7 @@ process did not archive the oldest waiting WAL to be archived since last call.
 Required privileges: superuser (<v10),
 <v10: superuser,
 v10: nonsuper user but output will lack perfdata oldest_ready_wal or superuser,
-v11+: grant execute on function pg_stat_file(text).
+v10+: grant execute on function pg_stat_file(text, bool).
 
 =cut
 
@@ -2035,7 +2039,7 @@ sub check_archiver {
                         (pg_stat_file('pg_wal/'||pg_walfile_name(
                            (to_hex((last_archived_off+1)/4294967296)
                            ||'/'||to_hex((last_archived_off+1)%4294967296))::pg_lsn
-                      ))).modification ))
+                      ), true)).modification ))
                  WHERE (current_setting('is_superuser')::bool AND current_setting('archive_mode') <> 'off')
                 ) AS oldest
         FROM (
@@ -2103,10 +2107,15 @@ sub check_archiver {
                     (pg_stat_file('pg_wal/'||pg_walfile_name(
                         (to_hex((last_archived_off+1)/4294967296)
                         ||'/'||to_hex((last_archived_off+1)%4294967296))::pg_lsn
+<<<<<<< HEAD
                     ))).modification )
 		)
                ELSE NULL
                END AS oldest
+=======
+                    ), true)).modification )
+                ) AS oldest
+>>>>>>> master
         FROM (
             SELECT last_archived_wal, last_archived_time, last_failed_wal,
                 walsegsize,
@@ -2836,7 +2845,7 @@ sub check_checksum_errors {
     @hosts = @{ parse_hosts %args };
 
     pod2usage(
-        -message => 'FATAL: you must give only one host with service "database_size".',
+        -message => 'FATAL: you must give only one host with service "checksum_errors".',
         -exitval => 127
     ) if @hosts != 1;
 
@@ -5061,7 +5070,7 @@ sub check_last_maintenance {
     my %queries    = (
         # 1st field: oldest known maintenance on a table
         #            -inf if a table never had maintenance
-        #             NaN if nothing found
+        #             NaN if nothing found or secondary
         # 2nd field: total number of maintenance
         # 3nd field: total number of auto-maintenance
         # 4th field: hash(insert||update||delete||thresholds) to avoid
@@ -5071,7 +5080,9 @@ sub check_last_maintenance {
         # 8.2 does not have per-database activity stats. We must aggregate
         # from pg_stat_user_tables
         $PG_VERSION_82 => qq{
-            SELECT coalesce(max(
+            SELECT
+                false AS is_in_recovery,
+                coalesce(max(
                        coalesce(extract(epoch FROM
                          current_timestamp -
                                  greatest(last_${type}, last_auto${type})),
@@ -5088,7 +5099,9 @@ sub check_last_maintenance {
         # Starting with 8.3, we can check database activity from
         # pg_stat_database
         $PG_VERSION_83 => qq{
-            SELECT coalesce(max(
+            SELECT
+                false AS is_in_recovery,
+                coalesce(max(
                        coalesce(extract(epoch FROM
                          current_timestamp -
                                  greatest(last_${type}, last_auto${type})),
@@ -5104,22 +5117,57 @@ sub check_last_maintenance {
             WHERE schemaname NOT LIKE 'pg_temp_%'
               AND schemaname NOT LIKE 'pg_toast_temp_%'
         },
+        # Starting with 9.0, we can check database status
+        # (primary or secondary)
+        $PG_VERSION_90 => qq{
+            SELECT
+                pg_is_in_recovery()::int AS is_in_recovery,
+                CASE WHEN NOT pg_is_in_recovery() THEN
+                  coalesce(max(
+                       coalesce(extract(epoch FROM
+                         current_timestamp -
+                                 greatest(last_${type}, last_auto${type})),
+                         'infinity'::float)),
+                    'NaN'::float)
+                  ELSE 'NaN'::float END,
+                NULL, NULL,
+                (
+                  SELECT md5(tup_inserted::text||tup_updated::text||tup_deleted::text||'$c_limit $w_limit'))
+                  FROM pg_catalog.pg_stat_database
+                  WHERE datname = current_database()
+                )
+            FROM pg_stat_user_tables
+            WHERE schemaname NOT LIKE 'pg_temp_%'
+              AND schemaname NOT LIKE 'pg_toast_temp_%'
+        },
         # Starting with 9.1, we can add the analyze/vacuum counts
         $PG_VERSION_91 => qq{
-            SELECT coalesce(max(
+            SELECT
+                pg_is_in_recovery()::int AS is_in_recovery,
+                CASE WHEN NOT pg_is_in_recovery() THEN
+                  coalesce(max(
                        coalesce(extract(epoch FROM
                          current_timestamp -
                                  greatest(last_${type}, last_auto${type})),
                         'infinity'::float)),
-                   'NaN'::float),
-                coalesce(sum(${type}_count), 0) AS ${type}_count,
-                coalesce(sum(auto${type}_count), 0) AS auto${type}_count,
-                (
-                  SELECT md5(tup_inserted::text||tup_updated::text||tup_deleted::text||'$c_limit $w_limit'
+                   'NaN'::float)
+                  ELSE 'NaN'::float END,
+                CASE WHEN NOT pg_is_in_recovery() THEN
+                  coalesce(sum(${type}_count), 0)
+                  ELSE 0 END
+                  AS ${type}_count,
+                CASE WHEN NOT pg_is_in_recovery() THEN
+                  coalesce(sum(auto${type}_count), 0)
+                  ELSE 0 END
+                  AS auto${type}_count,
+                CASE WHEN NOT pg_is_in_recovery() THEN
+                  (
+                    SELECT md5(tup_inserted::text||tup_updated::text||tup_deleted::text||'$c_limit $w_limit'
+                    )
+                    FROM pg_catalog.pg_stat_database
+                    WHERE datname = current_database()
                   )
-                  FROM pg_catalog.pg_stat_database
-                  WHERE datname = current_database()
-                )
+                  ELSE '' END
             FROM pg_stat_user_tables a
             JOIN pg_class b on a.relid = b.oid
             WHERE schemaname NOT LIKE 'pg_temp_%'
@@ -5161,17 +5209,22 @@ LOOP_DB: foreach my $db (@all_db) {
         $dbchecked++;
 
         $rs = query_ver( $hosts[0], %queries, $db )->[0];
+
         $db =~ s/=//g;
 
-        push @perfdata => [ $db, $rs->[0], 's', $w_limit, $c_limit ];
+        return status_unknown( $me,
+            [ "Server is no primary." ]
+        ) if $rs->[0];
 
-        $new_counts{$db} = [ $rs->[1], $rs->[2] ];
+        push @perfdata => [ $db, $rs->[1], 's', $w_limit, $c_limit ];
+
+        $new_counts{$db} = [ $rs->[2], $rs->[3] ];
 
         if ( exists $counts{$db} ) {
 
             if ($hosts[0]->{'version_num'} >= $PG_VERSION_91 ) {
-                my $delta      = $rs->[1] - $counts{$db}[0];
-                my $delta_auto = $rs->[2] - $counts{$db}[1];
+                my $delta      = $rs->[2] - $counts{$db}[0];
+                my $delta_auto = $rs->[3] - $counts{$db}[1];
 
                 push @perfdata => (
                     [ "$db $type", $delta ],
@@ -5187,18 +5240,18 @@ LOOP_DB: foreach my $db (@all_db) {
             }
         }
 
-        if ( $rs->[0] >= $c_limit ) {
-            push @msg_crit => "$db: " . to_interval($rs->[0]);
+        if ( $rs->[1] >= $c_limit ) {
+            push @msg_crit => "$db: " . to_interval($rs->[1]);
             next LOOP_DB;
         }
 
-        if ( $rs->[0] >= $w_limit ) {
-            push @msg_warn => "$db: " . to_interval($rs->[0]);
+        if ( $rs->[1] >= $w_limit ) {
+            push @msg_warn => "$db: " . to_interval($rs->[1]);
             next LOOP_DB;
         }
 
         # iif everything is OK, save the current hashed status for this database
-        $new_counts{$db}[2] = $rs->[3];
+        $new_counts{$db}[2] = $rs->[4];
     }
 
     save $hosts[0], "${type}_counts", \%new_counts, $args{'status-file'};
@@ -6115,6 +6168,7 @@ sub check_oldest_idlexact {
     my $oldest_idle = 0;
     my $nb_idle     = 0;
     my %stats       = ( );
+    my $exclude_filter = "";
     my %queries     = (
         $PG_VERSION_83 => q{SELECT d.datname,
             coalesce(extract('epoch' FROM
@@ -6128,12 +6182,22 @@ sub check_oldest_idlexact {
                 ), -1)
             FROM pg_database AS d
             LEFT JOIN pg_stat_activity AS a ON (a.datid = d.oid AND state='idle in transaction')
+        },
+        $PG_VERSION_94 => q{SELECT d.datname,
+            coalesce(extract('epoch' FROM
+                    date_trunc('second', current_timestamp-state_change)
+                ), -1)
+            FROM pg_database AS d
+            LEFT JOIN pg_stat_activity AS a ON (a.datid = d.oid AND a.state='idle in transaction'
+	            AND NOT (a.backend_xid IS NULL AND a.backend_xmin IS NULL))
         }
     );
 
     # Exclude some apps
     if(defined $args{'exclude'}[0]){
-        $queries{$PG_VERSION_92}.=" WHERE a.application_name NOT IN ('".join("','", split(',', $args{'exclude'}[0]))."')";
+        $exclude_filter = " WHERE a.application_name NOT IN ('".join("','", split(',', $args{'exclude'}[0]))."')";
+        $queries{$PG_VERSION_92} .= $exclude_filter;
+        $queries{$PG_VERSION_94} .= $exclude_filter;
     }
 
     # Warning and critical are mandatory.
@@ -6457,7 +6521,6 @@ sub check_oldest_xmin {
 
     return status_ok( $me, \@msg, \@perfdata );
 }
-
 
 =item B<pg_dump_backup>
 
@@ -6785,6 +6848,133 @@ sub check_pg_dump_backup {
         if scalar @msg_warn;
 
     return status_ok( $me, [], \@perfdata );
+}
+
+=item B<pgss_dealloc>
+
+Check number of pg_stat_statements deallocations.
+
+Too many deallocations can have a negative performance impact. This could be due to:
+  * an application performing many different queries (ORM, lists of varying length, ...)
+  * some utility statements (SET application_name...).
+    In this case, try to disable pg_stat_statements.track_utility.
+  * pg_stat_statements.max is too low
+
+This service uses the status file (see C<--status-file> parameter).
+
+The C<--critical> and C<--warning> thresholds are optional.
+Warning or critical will be raised if the number of deallocations
+since the previous check exceeds the thresholds.
+
+Perfdata returns a counter of deallocs since last call.
+
+Required privileges: unprivileged role able to log in to any database in
+which the pg_stat_statements extension has been installed.
+
+=cut
+
+sub check_pg_stat_statements_dealloc {
+
+    my @rs;
+    my @perfdata;
+    my @perf_limits;
+    my @hosts;
+    my %dealloc;
+    my %new_dealloc;
+    my $dealloc_delta;
+    my $crit;
+    my $warn;
+    my %args    = %{ $_[0] };
+    my $me      = 'POSTGRES_PG_STAT_STATEMENTS_DEALLOC';
+    my $pgss_version;
+    my $pgss_version_query = q{
+    SELECT
+        extversion,
+        current_setting('shared_preload_libraries') like '%pg_stat_statements%'
+    FROM pg_extension
+    WHERE extname = 'pg_stat_statements'
+    };
+
+    my $sql = q{
+    SELECT dealloc
+    FROM pg_stat_statements_info
+    };
+
+    @hosts = @{ parse_hosts %args };
+
+    pod2usage(
+    -message => 'FATAL: you must give only one host with service "pgss_dealloc".',
+    -exitval => 127
+    ) if @hosts != 1;
+
+    pod2usage(
+    -message => 'FATAL: you must give one database with service "pgss_dealloc".',
+    -exitval => 127
+    ) if not defined $hosts[0]->{'db'};
+
+    is_compat $hosts[0], 'check_pg_stat_statements_dealloc', $PG_VERSION_140 or exit 1;
+
+    @rs = @{ query( $hosts[0], $pgss_version_query ) };
+
+    # No row:
+    return status_unknown( $me, [ "Ensure that the pg_stat_statements extension has been created on the target database (currently $hosts[0]->{'db'})" ] ) if (not defined $rs[0]);
+
+    $pgss_version = $rs[0][0];
+    $pgss_version =~  /(\d+).(\d+)/;
+    return status_unknown( $me, [ 'pg_stat_statements version must be above or equal 1.9' ] ) if (not ($1 >=1 and $2 >= 9));
+
+    return status_unknown( $me, [ 'Ensure that the pg_stat_statements has been loaded in shared_preload_libraries.' ] ) if ($rs[0][1] ne 't');
+
+    # Warning and critical are optional
+    pod2usage(
+        -message => "FATAL: you must specify both critical and warning thresholds.",
+        -exitval => 127
+    ) if ((defined $args{'warning'} and not defined $args{'critical'})
+      or (not defined $args{'warning'} and defined $args{'critical'})) ;
+
+    if (defined $args{'warning'} and defined $args{'critical'}) {
+        pod2usage(
+            -message => "FATAL: warning or critical threshold must be integer.",
+            -exitval => 127
+        ) if ($args{'warning'} !~ m/^([0-9]+)/) or ($args{'critical'} !~ m/^([0-9]+)/) ;
+
+        $warn = $args{'warning'};
+        $crit = $args{'critical'};
+        @perf_limits  = ( $warn, $crit );
+    }
+
+    %dealloc = %{ load( $hosts[0], 'pgss_dealloc', $args{'status-file'} ) || {} };
+
+    @rs = @{ query( $hosts[0], $sql ) };
+
+    %new_dealloc = (
+        'dealloc' => $rs[0][0]
+    );
+
+    save $hosts[0], 'pgss_dealloc', \%new_dealloc, $args{'status-file'};
+
+    return status_ok( $me, ['First call'] ) unless %dealloc;
+
+    $dealloc_delta = $new_dealloc{'dealloc'} - $dealloc{'dealloc'};
+
+    push @perfdata => (
+        # Return number of deallocs. The unit is "c" as a continuous counter
+        [ "pgss_deallocs",  $new_dealloc{'dealloc'} , 'c', @perf_limits]
+    );
+
+    if ( $dealloc_delta < 0) {
+        return status_unknown( $me, [ sprintf "Negative dealloc delta; did you call pg_stat_statements_reset()?: %d deallocs",$dealloc_delta], \@perfdata)
+    }
+
+    if ( $crit and $dealloc_delta > $crit) {
+        return status_critical( $me, [ sprintf "Deallocs delta: %d deallocs",$dealloc_delta], \@perfdata)
+    }
+
+    if ( $warn and $dealloc_delta > $warn) {
+        return status_warning( $me, [ sprintf "Deallocs delta: %d deallocs",$dealloc_delta], \@perfdata)
+    }
+
+    return status_ok( $me, [sprintf "Deallocs delta: %d deallocs",$dealloc_delta], \@perfdata);
 }
 
 =item B<pga_version>

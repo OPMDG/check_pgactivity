@@ -127,7 +127,7 @@ SKIP: {
 
     $node->psql('postgres', 'create role check_pga login');
     $node->psql('postgres', 'grant pg_monitor to check_pga');
-    $node->psql('postgres', 'grant execute on function pg_catalog.pg_stat_file(text) to check_pga');
+    $node->psql('postgres', 'grant execute on function pg_catalog.pg_stat_file(text,boolean) to check_pga');
 
     # With pg10, the perfdata oldest_ready_wal cannot be computed, thus is not
     # present in the perfdata.
