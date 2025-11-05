@@ -161,7 +161,7 @@ SKIP: {
 # Covers issue #358 and #384
 SKIP: {
     skip "checking with non superuser role is not supported before v10", 4
-        if $node->version < '9.4';
+        if $node->version < '10';
 
     # repair archiving
     $node->append_conf('postgresql.conf', "archive_command = 'true'");
