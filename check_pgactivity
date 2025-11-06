@@ -2034,13 +2034,13 @@ sub check_archiver {
                 ELSE 0
                 END, last_archived_wal, last_failed_wal,
                 /* mod time of the next wal to archive
-                * executed only if superuser */
+                * executed only if superuser and archiving is on */
                 (SELECT extract('epoch' from (current_timestamp -
                         (pg_stat_file('pg_wal/'||pg_walfile_name(
                            (to_hex((last_archived_off+1)/4294967296)
                            ||'/'||to_hex((last_archived_off+1)%4294967296))::pg_lsn
                       ), true)).modification ))
-                 WHERE current_setting('is_superuser')::bool
+                 WHERE (current_setting('is_superuser')::bool AND current_setting('archive_mode') <> 'off')
                 ) AS oldest
         FROM (
             SELECT last_archived_wal, last_archived_time, last_failed_wal,
@@ -2102,12 +2102,15 @@ sub check_archiver {
                 ELSE 0
                 END, last_archived_wal, last_failed_wal,
                 /* mod time of the next wal to archive */
-                extract('epoch' from (current_timestamp -
+		CASE WHEN current_setting('archive_mode')::bool IS TRUE
+                THEN extract('epoch' from (current_timestamp -
                     (pg_stat_file('pg_wal/'||pg_walfile_name(
                         (to_hex((last_archived_off+1)/4294967296)
                         ||'/'||to_hex((last_archived_off+1)%4294967296))::pg_lsn
                     ), true)).modification )
-                ) AS oldest
+		)
+               ELSE NULL
+               END AS oldest
         FROM (
             SELECT last_archived_wal, last_archived_time, last_failed_wal,
                 walsegsize,
