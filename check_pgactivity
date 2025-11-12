@@ -870,7 +870,7 @@ LOOP_TS: while ( my $val = shift @date ) {
 =item B<Size>
 
 If THRESHOLD is a size, the following units are accepted (not case sensitive):
-b (Byte), k (KB), m (MB), g (GB), t (TB), p (PB), e (EB) or Z (ZB). Only
+b (Byte), kb (KB), mb (MB), gb (GB), tb (TB), pb (PB), eb (EB) or Zb (ZB). Only
 integers are accepted. Eg. C<1.5MB> will be refused, use C<1500kB>.
 
 The factor between units is 1024 bytes. Eg. C<1g = 1G = 1024*1024*1024.>
