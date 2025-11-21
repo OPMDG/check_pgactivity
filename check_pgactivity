@@ -729,7 +729,6 @@ sub dump_status_file {
 sub to_size($) {
     my $val  = shift;
     my @units = qw{B kB MB GB TB PB EB};
-    my $size = '';
     my $i;
 
     return $val if $val =~ /^(-?inf)|(NaN$)/i;
