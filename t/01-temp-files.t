@@ -278,11 +278,11 @@ SKIP: {
           qr/^Perfdata *: postgres=[1-9][.0-9]*Fpm$/m,
           qr/^Perfdata *: postgres=[1-9][.0-9]*[kMGTPE]*Bpm$/m,
           qr/^Perfdata *: postgres=[1-9][0-9]*Files warn=3 crit=4$/m,
-          qr/^Perfdata *: postgres=[1-9][.0-9]*[kMGTPE]*B warn=48.102MB crit=64.102MB$/m,
+          qr/^Perfdata *: postgres=[1-9][.0-9]*[kMGTPE]*B warn=48.099609375MB crit=64.099609375MB$/m,
           qr/^Perfdata *: template1=[1-9][.0-9]*Fpm$/m,
           qr/^Perfdata *: template1=[1-9][.0-9]*[kMGTPE]*Bpm$/m,
           qr/^Perfdata *: template1=[1-9][0-9]*Files warn=3 crit=4$/m,
-          qr/^Perfdata *: template1=[1-9][.0-9]*[kMGTPE]*B warn=48.102MB crit=64.102MB$/m,
+          qr/^Perfdata *: template1=[1-9][.0-9]*[kMGTPE]*B warn=48.099609375MB crit=64.099609375MB$/m,
         ],
         [ qr/^$/ ],
         'test file size and count OK '
@@ -375,7 +375,7 @@ SKIP: {
     $tbsp2_tmp = "$tbsp2/$tbsp2_tmp/pgsql_tmp";
     close $dh;
 
-    mkdir $tbsp2_tmp || die "Can't openmkdir $tbsp2_tmp: $!";;
+    mkdir $tbsp2_tmp || die "Can't openmkdir $tbsp2_tmp: $!";
     open my $fh, ">", "$tbsp2_tmp/pgsql_tmp1.1" || die "Can't open $tbsp2_tmp/pgsql_tmp1.1: $!";
     print $fh "DATA"x1024;
     close $fh;

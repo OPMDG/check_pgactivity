@@ -729,20 +729,13 @@ sub dump_status_file {
 sub to_size($) {
     my $val  = shift;
     my @units = qw{B kB MB GB TB PB EB};
-    my $size = '';
-    my $mod = 0;
     my $i;
 
     return $val if $val =~ /^(-?inf)|(NaN$)/i;
 
-    $val = int($val);
-
     for ( $i=0; $i < 6 and abs($val) > 1024; $i++ ) {
-        $mod = $val%1024;
-        $val = int( $val/1024 );
+        $val = $val / 1024;
     }
-
-    $val = "$val.$mod" unless $mod == 0;
 
     return "${val}$units[$i]";
 }
