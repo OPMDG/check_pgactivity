@@ -512,7 +512,7 @@ my %args = (
     'dump-bin-file'         => undef,
     'format'                => 'nagios',
     'uid'                   => undef,
-    'with-hugepages'        => undef
+    'with-hugepages'        => undef,
     'schexclude'            => undef,
     'relexclude'            => undef
 );
@@ -5353,9 +5353,10 @@ LOOP_DB: foreach my $db (@all_db) {
         @rs = @{ query_ver( $hosts[0], %queries, $db ) };
         $db =~ s/=//g;
 
+        # Note: if @rs is empty $rs[0][0] is undef and the boolean test is false
         return status_unknown( $me,
             [ "Server is no primary." ]
-        ) if $rs->[0];
+        ) if $rs[0][0];
 
     MAINTENANCE_LOOP: foreach my $maintenance (@rs) {
 
