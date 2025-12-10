@@ -5279,7 +5279,7 @@ sub check_last_maintenance {
                 pg_is_in_recovery()::int AS is_in_recovery,
                 current_database(),
                 schemaname,
-                relname,
+                a.relname,
                 CASE WHEN NOT pg_is_in_recovery() THEN
                   coalesce(max(
                        coalesce(extract(epoch FROM
@@ -5310,7 +5310,7 @@ sub check_last_maintenance {
               AND schemaname NOT LIKE 'pg_toast_temp_%'
               AND (('${type}' = 'vacuum' AND relkind <> 'p') -- partitioned table do not have last_* information
                 OR  ('${type}' = 'analyze'))
-            GROUP BY schemaname,relname
+            GROUP BY schemaname, a.relname
         }
     );
 
@@ -5354,20 +5354,22 @@ LOOP_DB: foreach my $db (@all_db) {
         $db =~ s/=//g;
 
         # Note: if @rs is empty $rs[0][0] is undef and the boolean test is false
+        #       we check if scalar as lines otherwise $rs[0][0] will create it
         return status_unknown( $me,
             [ "Server is no primary." ]
-        ) if $rs[0][0];
+        ) if scalar @rs and $rs[0][0];
 
     MAINTENANCE_LOOP: foreach my $maintenance (@rs) {
 
             foreach my $exclude_re ( @{ $args{'exclude'} } )  {
-                next MAINTENANCE_LOOP if "$maintenance->[0].$maintenance->[1].$maintenance->[2]" =~ m/$exclude_re/;
+                next MAINTENANCE_LOOP if "$maintenance->[1].$maintenance->[2].$maintenance->[3]" =~ m/$exclude_re/;
             }
-            $maintenance_count += $maintenance->[4];
-            $maintenance_count_auto += $maintenance->[5];
-            $maintenance_hash = $maintenance->[6];
-            if ( $maintenance->[3] gt $maintenance_max ) {
-                $maintenance_max = $maintenance->[3];
+
+            $maintenance_count += $maintenance->[5];
+            $maintenance_count_auto += $maintenance->[6];
+            $maintenance_hash = $maintenance->[7];
+            if ( $maintenance->[4] gt $maintenance_max ) {
+                $maintenance_max = $maintenance->[4];
             }
 
         }
