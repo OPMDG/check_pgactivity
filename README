@@ -725,6 +725,15 @@ COMPATIBILITY
         This service supports both "--dbexclude" and "--dbinclude"
         parameters. The 'postgres' database and templates are always
         excluded.
+       
+        It also supports a "--exclude REGEX" parameter to exclude relations
+        matching a regular expression. The regular expression applies to
+        "database.schema_name.relation_name". This enables you to filter
+        either on a relation name for all schemas and databases, on a
+        qualified named relation (schema + relation) for all databases or on
+        a qualified named relation in only one database.
+
+        You can use multiple "--exclude REGEX" parameters.
 
         Required privileges: unprivileged role able to log in all databases.
 
@@ -755,6 +764,15 @@ COMPATIBILITY
         This service supports both "--dbexclude" and "--dbinclude"
         parameters. The 'postgres' database and templates are always
         excluded.
+
+        It also supports a "--exclude REGEX" parameter to exclude relations
+        matching a regular expression. The regular expression applies to
+        "database.schema_name.relation_name". This enables you to filter
+        either on a relation name for all schemas and databases, on a
+        qualified named relation (schema + relation) for all databases or on
+        a qualified named relation in only one database.
+
+        You can use multiple "--exclude REGEX" parameters.
 
         Required privileges: unprivileged role able to log in all databases.
 
