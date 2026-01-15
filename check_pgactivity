@@ -7680,13 +7680,19 @@ Required privileges: unprivileged role.
 
 sub check_settings {
     my $me  = 'POSTGRES_SETTINGS';
+    my $this_msg;
+    my $now = gettimeofday();
+    my $diag = 0; # Ok
     my @long_msg;
     my @hosts;
     my @rs;
     my %settings;
+    my $settings_lastemsg;
+    my $settings_lastedate;
     my %new_settings;
     my $pending_count = 0;
     my %args  = %{ $_[0] };
+    my $w_limit;
     my %queries = (
         $PG_VERSION_90 => q{
         SELECT coalesce(r.rolname, '*'), coalesce(d.datname, '*'),
@@ -7713,12 +7719,15 @@ sub check_settings {
     );
 
     @hosts = @{ parse_hosts %args };
+    $w_limit = get_time $args{'warning'}  if (defined $args{'warning'});
 
     is_compat $hosts[0], 'settings', $PG_VERSION_90 or exit 1;
 
     @rs = @{ query_ver( $hosts[0], %queries ) };
 
     %settings = %{ load( $hosts[0], 'settings', $args{'status-file'} ) || {} };
+    $settings_lastemsg = load( $hosts[0], 'settings_lastemsg', $args{'status-file'} ) || undef;
+    $settings_lastedate = load( $hosts[0], 'settings_lastedate', $args{'status-file'} ) || undef;
 
     # Save settings on the very first call
     $args{'save'} = 1 unless %settings;
@@ -7756,16 +7765,42 @@ PARAM_LOOP: foreach my $row (@rs) {
         }
     }
 
+    $diag = 2 if scalar @long_msg;   # Regular warning
+    $diag = 1 if $pending_count > 0; # Pending restart
+
+    $this_msg = join('\0', @long_msg);
+    if ( not defined $settings_lastemsg || not defined $settings_lastedate ) {
+        $settings_lastemsg = "";
+        $settings_lastedate = $now;
+    }
+
+    if ( $this_msg ne $settings_lastemsg ) {
+        $settings_lastedate = $now;
+        $settings_lastemsg = $this_msg;
+        #FIXME: probably nad since we multiply writes to the state file maybe use a hash after
+        save $hosts[0], 'settings_lastemsg', $settings_lastemsg, $args{'status-file'};
+        save $hosts[0], 'settings_lastedate', $settings_lastedate, $args{'status-file'};
+    } else {
+        my $duration = $now - $settings_lastedate;
+
+        if ( defined $w_limit && $diag eq 2 && $duration >= $w_limit ) {
+            # Should have been a warning but the warning treshold has expired.
+            # Pending restart changes are not subject to this expiration.
+            $diag = 0;
+            $args{'save'} = 1;
+        }
+    }
+
     if ( $args{'save'} ) {
         save $hosts[0], 'settings', \%new_settings, $args{'status-file'};
         return status_ok( $me, [ "Setting saved" ] )
     }
 
     return status_warning( $me, [ 'Setting changed and pending restart!' ], undef, \@long_msg )
-        if $pending_count > 0;
+        if $diag == 1;
 
     return status_warning( $me, [ 'Setting changed!' ], undef, \@long_msg )
-        if scalar @long_msg;
+        if $diag == 2;
 
     return status_ok( $me, [ "Setting OK" ] );
 }
@@ -9763,7 +9798,7 @@ pod2usage(
 pod2usage(
     -message => 'FATAL: you must provide both warning and critical thresholds.',
     -exitval => 127
-) if $args{'service'} !~ m/^(pga_version|minor_version|uptime)$/ and (
+) if $args{'service'} !~ m/^(pga_version|minor_version|uptime|settings)$/ and (
     ( defined $args{'critical'} and not defined $args{'warning'} )
     or ( not defined $args{'critical'} and defined $args{'warning'} ));
 
