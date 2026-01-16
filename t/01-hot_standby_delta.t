@@ -2,7 +2,7 @@
 # This program is open source, licensed under the PostgreSQL License.
 # For license terms, see the LICENSE file.
 #
-# Copyright (C) 2012-2025: Open PostgreSQL Monitoring Development Group
+# Copyright (C) 2012-2026: Open PostgreSQL Monitoring Development Group
 
 use strict;
 use warnings;
@@ -63,8 +63,8 @@ SKIP: {
         './check_pgactivity', '--service'  => 'hot_standby_delta',
                               '--username' => $ENV{'USER'} || 'postgres',
                               '--format'   => 'human',
-                              '--host'     => $prim->host . ',' . $stb1->host, 
-                              '--port'     => $prim->port . ',' . $stb1->port, 
+                              '--host'     => $prim->host . ',' . $stb1->host,
+                              '--port'     => $prim->port . ',' . $stb1->port,
         ],
         0,
         [
