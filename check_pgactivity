@@ -7670,9 +7670,12 @@ again with the argument C<--save>.
 
 No perfdata.
 
-Critical and Warning thresholds are ignored.
+The Critical thresholds is ignored.
 
-A Critical is raised if at least one parameter changed.
+Warning is raised when the time since configuration change is less than the
+warning threshold. Obviously these alerts will disappear from themselves
+once enough time has passed. This doesn't apply for configuration changes with
+pending restart warnings.
 
 Required privileges: unprivileged role.
 
