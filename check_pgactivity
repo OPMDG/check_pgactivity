@@ -7682,11 +7682,12 @@ sub check_settings {
     my $me  = 'POSTGRES_SETTINGS';
     my $this_msg;
     my $now = gettimeofday();
-    my $diag = 0; # Ok
+    my $expected_result = 0; # Ok
     my @long_msg;
     my @hosts;
     my @rs;
     my %settings;
+    my %settings_laste;
     my $settings_lastemsg;
     my $settings_lastedate;
     my %new_settings;
@@ -7726,8 +7727,7 @@ sub check_settings {
     @rs = @{ query_ver( $hosts[0], %queries ) };
 
     %settings = %{ load( $hosts[0], 'settings', $args{'status-file'} ) || {} };
-    $settings_lastemsg = load( $hosts[0], 'settings_lastemsg', $args{'status-file'} ) || undef;
-    $settings_lastedate = load( $hosts[0], 'settings_lastedate', $args{'status-file'} ) || undef;
+    %settings_laste = %{ load( $hosts[0], 'settings_laste', $args{'status-file'} ) || {} };
 
     # Save settings on the very first call
     $args{'save'} = 1 unless %settings;
@@ -7765,28 +7765,25 @@ PARAM_LOOP: foreach my $row (@rs) {
         }
     }
 
-    $diag = 2 if scalar @long_msg;   # Regular warning
-    $diag = 1 if $pending_count > 0; # Pending restart
-
+    $expected_result = 2 if scalar @long_msg;   # Regular warning
+    $expected_result = 1 if $pending_count > 0; # Pending restart
     $this_msg = join('\0', @long_msg);
-    if ( not defined $settings_lastemsg || not defined $settings_lastedate ) {
-        $settings_lastemsg = "";
-        $settings_lastedate = $now;
+    if ( not defined $settings_laste{'date'} || not defined $settings_laste{'msg'}  ) {
+        $settings_laste{'msg'} = "";
+        $settings_laste{'date'} = $now;
     }
 
-    if ( $this_msg ne $settings_lastemsg ) {
-        $settings_lastedate = $now;
-        $settings_lastemsg = $this_msg;
-        #FIXME: probably nad since we multiply writes to the state file maybe use a hash after
-        save $hosts[0], 'settings_lastemsg', $settings_lastemsg, $args{'status-file'};
-        save $hosts[0], 'settings_lastedate', $settings_lastedate, $args{'status-file'};
+    if ( $this_msg ne $settings_laste{'msg'} ) {
+        $settings_laste{'msg'} = $this_msg;
+        $settings_laste{'date'} = $now;
+        save $hosts[0], 'settings_laste', \%settings_laste, $args{'status-file'};
     } else {
-        my $duration = $now - $settings_lastedate;
+        my $duration = $now - $settings_laste{'date'};
 
-        if ( defined $w_limit && $diag eq 2 && $duration >= $w_limit ) {
+        if ( defined $w_limit && $expected_result eq 2 && $duration >= $w_limit ) {
             # Should have been a warning but the warning treshold has expired.
             # Pending restart changes are not subject to this expiration.
-            $diag = 0;
+            $expected_result = 0;
             $args{'save'} = 1;
         }
     }
@@ -7797,10 +7794,10 @@ PARAM_LOOP: foreach my $row (@rs) {
     }
 
     return status_warning( $me, [ 'Setting changed and pending restart!' ], undef, \@long_msg )
-        if $diag == 1;
+        if $expected_result == 1;
 
     return status_warning( $me, [ 'Setting changed!' ], undef, \@long_msg )
-        if $diag == 2;
+        if $expected_result == 2;
 
     return status_ok( $me, [ "Setting OK" ] );
 }
