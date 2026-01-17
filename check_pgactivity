@@ -7771,17 +7771,15 @@ PARAM_LOOP: foreach my $row (@rs) {
     $expected_result = 2 if scalar @long_msg;   # Regular warning
     $expected_result = 1 if $pending_count > 0; # Pending restart
     $this_msg = join('\0', @long_msg);
-    if ( not defined $settings_laste{'date'} || not defined $settings_laste{'msg'}  ) {
-        $settings_laste{'msg'} = "";
-        $settings_laste{'date'} = $now;
-    }
+    $settings_lastemsg = $settings_laste{'msg'} // "";
+    $settings_lastedate = $settings_laste{'date'} // $now;
 
-    if ( $this_msg ne $settings_laste{'msg'} ) {
+    if ( $this_msg ne $settings_lastemsg ) {
         $settings_laste{'msg'} = $this_msg;
         $settings_laste{'date'} = $now;
         save $hosts[0], 'settings_laste', \%settings_laste, $args{'status-file'};
     } else {
-        my $duration = $now - $settings_laste{'date'};
+        my $duration = $now - $settings_lastedate;
 
         if ( defined $w_limit && $expected_result eq 2 && $duration >= $w_limit ) {
             # Should have been a warning but the warning treshold has expired.
