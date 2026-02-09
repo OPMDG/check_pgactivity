@@ -37,6 +37,8 @@ $node->command_checks_all( [
     'first basic check'
 );
 
+sleep 1;
+
 # Second check. Returns perfdata
 $node->command_checks_all( [
     './check_pgactivity', '--service'     => 'bgwriter',

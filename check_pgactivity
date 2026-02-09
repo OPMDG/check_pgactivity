@@ -49,6 +49,7 @@ use Pod::Usage;
 use Scalar::Util qw(looks_like_number);
 use Fcntl qw(:flock);
 use Storable qw(retrieve store);
+use Time::HiRes qw(gettimeofday tv_interval);
 
 use Config;
 use FindBin;
