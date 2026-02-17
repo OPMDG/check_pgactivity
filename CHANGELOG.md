@@ -1,6 +1,21 @@
 Changelog
 =========
 
+2026-02-17 v2.9:
+
+* add: compatibility with PostgreSQL 18 compatibility (Guillaume Lelarge)
+* add: new service pgss_dealloc (Adrien Nayrat)
+* add: new slru_hit_ratio service (Guillaume Lelarge)
+* add: allow warnings from the settings service to expire (Benoît Lobréau)
+* add: add github action to run tests across several Postgres versions (Adrien Nayrat)
+* fix: ignore partition table in check_last_maintenance (Adrien Nayrat)
+* fix: check if server is primary for last_maintenance (Guillaume Lelarge)
+* fix: annoying race condition in archiver service (Jehan-Guillaume de Rorthais)
+* fix: documentation for check_archiver service (Thomas Reiss)
+* fix: filter out xact with no backend_xid or no backend_xmin for oldest_idlexact service (Frédéric Yhuel)
+* fix: make archiver to not bail out when archiving is off (Thomas Reiss)
+* fix: fix to_size buggy unit conversion (Jehan-Guillaume de Rorthais)
+
 2025-10-10 v2.8:
 
 * add: compatibility with PostgreSQL 16 and 17, basic v18 compatibility (Thomas Reiss)

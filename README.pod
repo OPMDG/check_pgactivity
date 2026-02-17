@@ -1,3 +1,16 @@
+
+ * Waiting in queue... 
+ * Loading list of packages.... 
+The following packages have to be installed:
+ perl-Pod-Parser-1.67-6.fc43.noarch	Basic perl modules for handling Plain Old Documentation (POD)
+
+ * Waiting in queue... 
+ * Waiting for authentication... 
+ * Waiting in queue... 
+ * Downloading packages... 
+ * Requesting data... 
+ * Testing changes... 
+ * Installing packages... 
 =head1 NAME
 
 check_pgactivity - PostgreSQL plugin for Nagios
@@ -207,7 +220,7 @@ For instance: "1h 55m 6" = "1h55m6s".
 =item B<Size>
 
 If THRESHOLD is a size, the following units are accepted (not case sensitive):
-b (Byte), k (KB), m (MB), g (GB), t (TB), p (PB), e (EB) or Z (ZB). Only
+b (Byte), kb (KB), mb (MB), gb (GB), tb (TB), pb (PB), eb (EB) or Zb (ZB). Only
 integers are accepted. Eg. C<1.5MB> will be refused, use C<1500kB>.
 
 The factor between units is 1024 bytes. Eg. C<1g = 1G = 1024*1024*1024.>
@@ -358,7 +371,7 @@ process did not archive the oldest waiting WAL to be archived since last call.
 Required privileges: superuser (<v10),
 <v10: superuser,
 v10: nonsuper user but output will lack perfdata oldest_ready_wal or superuser,
-v11+: grant execute on function pg_stat_file(text).
+v10+: grant execute on function pg_stat_file(text, bool).
 
 =item B<autovacuum> (8.1+)
 
@@ -648,6 +661,18 @@ databases which have never been accessed.
 Critical and Warning thresholds are optional. They only accept a percentage.
 
 This service supports both C<--dbexclude> and C<--dbinclude> parameters.
+
+Required privileges: unprivileged role.
+
+=item B<slru_hit_ratio> (all)
+
+Check the cache SLRU ratio on the cluster.
+
+This service uses the status file (see C<--status-file> parameter).
+
+Perfdata returns the cache SLRU ratio for one cluster.
+
+Critical and Warning thresholds are optional. They only accept a percentage.
 
 Required privileges: unprivileged role.
 
@@ -1030,6 +1055,27 @@ of the newest backups.
 Required privileges: unprivileged role; the system user needs read access
 on the directory containing the dumps (but not on the dumps themselves).
 
+=item B<pgss_dealloc>
+
+Check number of pg_stat_statements deallocations.
+
+Too many deallocations can have a negative performance impact. This could be due to:
+  * an application performing many different queries (ORM, lists of varying length, ...)
+  * some utility statements (SET application_name...).
+    In this case, try to disable pg_stat_statements.track_utility.
+  * pg_stat_statements.max is too low
+
+This service uses the status file (see C<--status-file> parameter).
+
+The C<--critical> and C<--warning> thresholds are optional.
+Warning or critical will be raised if the number of deallocations
+since the previous check exceeds the thresholds.
+
+Perfdata returns a counter of deallocs since last call.
+
+Required privileges: unprivileged role able to log in to any database in
+which the pg_stat_statements extension has been installed.
+
 =item B<pga_version>
 
 Check if this script is running the given version of check_pgactivity.
@@ -1102,9 +1148,12 @@ again with the argument C<--save>.
 
 No perfdata.
 
-Critical and Warning thresholds are ignored.
+The Critical thresholds is ignored.
 
-A Critical is raised if at least one parameter changed.
+Warning is raised when the time since configuration change is less than the
+warning threshold. Obviously these alerts will disappear from themselves
+once enough time has passed. This doesn't apply for configuration changes with
+pending restart warnings.
 
 Required privileges: unprivileged role.
 
@@ -1371,7 +1420,7 @@ pg_ls_waldir
 
 =head1 VERSION
 
-check_pgactivity version 2.8, released on Tue Oct 14 2025.
+check_pgactivity version 2.9, released on Tue Feb 17 2026.
 
 =head1 LICENSING
 
@@ -1382,4 +1431,5 @@ For license terms, see the LICENSE provided with the sources.
 
 S<Author: Open PostgreSQL Monitoring Development Group>
 S<Copyright: (C) 2012-2026 Open PostgreSQL Monitoring Development Group>
+
 

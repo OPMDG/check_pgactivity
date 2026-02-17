@@ -1,7 +1,7 @@
-%global _tag REL2_8
+%global _tag REL2_9
 
 Name: nagios-plugins-pgactivity
-Version: 2.8
+Version: 2.9
 Release: 1
 Summary: PostgreSQL monitoring plugin for Nagios
 License: PostgreSQL
@@ -32,6 +32,9 @@ install -D -p -m 0755 check_pgactivity %{buildroot}/%{_libdir}/nagios/plugins/ch
 %doc README LICENSE
 
 %changelog
+* Tue Feb 17 2026 Guillaume Lelarge <guillaume.lelarge@dalibo.com> 2.9-1
+- new major release 2.9
+
 * Tue Oct 14 2025 Christophe Courtois <christophe.courtois@dalibo.com> 2.8-1
 - new major release 2.8
 

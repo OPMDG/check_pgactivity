@@ -175,9 +175,9 @@ COMPATIBILITY
 
     Size
         If THRESHOLD is a size, the following units are accepted (not case
-        sensitive): b (Byte), k (KB), m (MB), g (GB), t (TB), p (PB), e (EB)
-        or Z (ZB). Only integers are accepted. Eg. "1.5MB" will be refused,
-        use "1500kB".
+        sensitive): b (Byte), kb (KB), mb (MB), gb (GB), tb (TB), pb (PB),
+        eb (EB) or Zb (ZB). Only integers are accepted. Eg. "1.5MB" will be
+        refused, use "1500kB".
 
         The factor between units is 1024 bytes. Eg. "1g = 1G =
         1024*1024*1024."
@@ -320,7 +320,7 @@ COMPATIBILITY
 
         Required privileges: superuser (<v10), <v10: superuser, v10:
         nonsuper user but output will lack perfdata oldest_ready_wal or
-        superuser, v11+: grant execute on function pg_stat_file(text).
+        superuser, v10+: grant execute on function pg_stat_file(text, bool).
 
     autovacuum (8.1+)
         Check the autovacuum activity on the cluster.
@@ -612,6 +612,18 @@ COMPATIBILITY
 
         This service supports both "--dbexclude" and "--dbinclude"
         parameters.
+
+        Required privileges: unprivileged role.
+
+    slru_hit_ratio (all)
+        Check the cache SLRU ratio on the cluster.
+
+        This service uses the status file (see "--status-file" parameter).
+
+        Perfdata returns the cache SLRU ratio for one cluster.
+
+        Critical and Warning thresholds are optional. They only accept a
+        percentage.
 
         Required privileges: unprivileged role.
 
@@ -998,6 +1010,28 @@ COMPATIBILITY
         access on the directory containing the dumps (but not on the dumps
         themselves).
 
+    pgss_dealloc
+        Check number of pg_stat_statements deallocations.
+
+        Too many deallocations can have a negative performance impact. This
+        could be due to: * an application performing many different queries
+        (ORM, lists of varying length, ...) * some utility statements (SET
+        application_name...). In this case, try to disable
+        pg_stat_statements.track_utility. * pg_stat_statements.max is too
+        low
+
+        This service uses the status file (see "--status-file" parameter).
+
+        The "--critical" and "--warning" thresholds are optional. Warning or
+        critical will be raised if the number of deallocations since the
+        previous check exceeds the thresholds.
+
+        Perfdata returns a counter of deallocs since last call.
+
+        Required privileges: unprivileged role able to log in to any
+        database in which the pg_stat_statements extension has been
+        installed.
+
     pga_version
         Check if this script is running the given version of
         check_pgactivity. You must provide the expected version using either
@@ -1068,9 +1102,12 @@ COMPATIBILITY
 
         No perfdata.
 
-        Critical and Warning thresholds are ignored.
+        The Critical thresholds is ignored.
 
-        A Critical is raised if at least one parameter changed.
+        Warning is raised when the time since configuration change is less
+        than the warning threshold. Obviously these alerts will disappear
+        from themselves once enough time has passed. This doesn't apply for
+        configuration changes with pending restart warnings.
 
         Required privileges: unprivileged role.
 
@@ -1333,7 +1370,7 @@ COMPATIBILITY
           check_pgactivity -p 5433 -h slave --service hit_ratio --dbinclude importantone -w 90% -c 80%
 
 VERSION
-    check_pgactivity version 2.8, released on Tue Oct 14 2025.
+    check_pgactivity version 2.9, released on Tue Feb 17 2026.
 
 LICENSING
     This program is open source, licensed under the PostgreSQL license. For
