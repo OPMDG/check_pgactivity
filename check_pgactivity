@@ -6961,7 +6961,7 @@ sub check_pg_dump_backup {
     return status_ok( $me, [], \@perfdata );
 }
 
-=item B<pgss_dealloc>
+=item B<pgss_dealloc> (14+)
 
 Check number of pg_stat_statements deallocations.
 
