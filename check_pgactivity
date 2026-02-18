@@ -4536,7 +4536,7 @@ sub check_hit_ratio {
 }
 
 
-=item B<slru_hit_ratio> (all)
+=item B<slru_hit_ratio> (13+)
 
 Check the cache SLRU ratio on the cluster.
 
@@ -4577,7 +4577,6 @@ sub check_slru_hit_ratio {
         $args{'critical'} = substr $args{'critical'}, 0, -1;
     }
 
-
     @hosts = @{ parse_hosts %args };
 
     pod2usage(
@@ -4585,6 +4584,7 @@ sub check_slru_hit_ratio {
         -exitval => 127
     ) if @hosts != 1;
 
+    is_compat $hosts[0], 'check_slru_hit_ratio', $PG_VERSION_130 or exit 1;
 
     %slru_hitratio = %{ load( $hosts[0], 'slru_hitratio', $args{'status-file'} ) || {} };
 
