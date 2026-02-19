@@ -6979,6 +6979,10 @@ since the previous check exceeds the thresholds.
 
 Perfdata returns a counter of deallocs since last call.
 
+The pg_stat_statements extension must be installed
+in the database you're connecting into
+(including shared_preload_libraries setup).
+
 Required privileges: unprivileged role able to log in to any database in
 which the pg_stat_statements extension has been installed.
 
@@ -7021,14 +7025,14 @@ sub check_pg_stat_statements_dealloc {
     pod2usage(
     -message => 'FATAL: you must give one database with service "pgss_dealloc".',
     -exitval => 127
-    ) if not defined $hosts[0]->{'db'};
+    ) if ( not defined $hosts[0]->{'db'} and not defined $hosts[0]->{'dbservice'} );
 
     is_compat $hosts[0], 'check_pg_stat_statements_dealloc', $PG_VERSION_140 or exit 1;
 
     @rs = @{ query( $hosts[0], $pgss_version_query ) };
 
     # No row:
-    return status_unknown( $me, [ "Ensure that the pg_stat_statements extension has been created on the target database (currently $hosts[0]->{'db'})" ] ) if (not defined $rs[0]);
+    return status_unknown( $me, [ "Ensure that the pg_stat_statements extension has been created on the target database (currently " . ($hosts[0]->{'db'} // "the service " . $hosts[0]->{'dbservice'}) . ")\n" ] ) if (not defined $rs[0]);
 
     $pgss_version = $rs[0][0];
     $pgss_version =~  /(\d+).(\d+)/;
