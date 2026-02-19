@@ -744,6 +744,8 @@ sub to_size($) {
         $val = $val / 1024;
     }
 
+    $val = sprintf("%.2f", $val);
+
     return "${val}$units[$i]";
 }
 
