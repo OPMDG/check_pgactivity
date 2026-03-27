@@ -71,8 +71,8 @@ SKIP: {
             qr/Service  *: POSTGRES_HOT_STANDBY_DELTA$/m,
             qr/Returns  *: 0 \(OK\)$/m,
             qr/Message  *: 1 Hot standby checked$/m,
-            qr/Perfdata *: receive delta host:.* port:[1-9][0-9]+ db:postgres=0B$/m,
-            qr/Perfdata *: replay delta host:.* port:[1-9][0-9]+ db:postgres=0B$/m,
+            qr/Perfdata *: receive delta host:.* port:[1-9][0-9]+ db:postgres=0.00B$/m,
+            qr/Perfdata *: replay delta host:.* port:[1-9][0-9]+ db:postgres=0.00B$/m,
         ],
         [ qr/^$/ ],
         'two standbys streaming'
@@ -92,8 +92,8 @@ SKIP: {
             qr/Service  *: POSTGRES_HOT_STANDBY_DELTA$/m,
             qr/Returns  *: 0 \(OK\)$/m,
             qr/Message  *: 2 Hot standby checked$/m,
-            qr/Perfdata *: receive delta host:.* port:[1-9][0-9]+ db:postgres=0B$/m,
-            qr/Perfdata *: replay delta host:.* port:[1-9][0-9]+ db:postgres=0B$/m,
+            qr/Perfdata *: receive delta host:.* port:[1-9][0-9]+ db:postgres=0.00B$/m,
+            qr/Perfdata *: replay delta host:.* port:[1-9][0-9]+ db:postgres=0.00B$/m,
         ],
         [ qr/^$/ ],
         'two standbys streaming'
