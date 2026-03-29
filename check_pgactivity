@@ -4971,7 +4971,6 @@ sub check_invalid_indexes {
             join pg_index idx on idx.indexrelid = cls.oid
         WHERE
             cls.relkind = 'i'
-        AND nsp.nspname not like 'pg_toast%'
         AND nsp.nspname NOT IN ('information_schema', 'pg_catalog');
     };
 
