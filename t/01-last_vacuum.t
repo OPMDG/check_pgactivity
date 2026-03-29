@@ -43,8 +43,10 @@ TestLib::system_or_bail('createdb',
     '--port' => $node->port,
     'testdb'
 );
+$node->psql('testdb', 'VACUUM ANALYZE');
+sleep(1);
 
-# test database with no tables
+# new vacuumed database with no user tables
 
 $node->command_checks_all( [
     './check_pgactivity', '--service'  => 'last_vacuum',
@@ -59,7 +61,7 @@ $node->command_checks_all( [
     [ qr/^Service  *: POSTGRES_LAST_VACUUM$/m,
       qr/^Returns  *: 0 \(OK\)$/m,
       qr/^Message  *: .*$/m,
-      qr/^Perfdata *: testdb=(NaN|-\d+)s warn=3600 crit=864000$/m,
+      qr/^Perfdata *: testdb=.*s warn=3600 crit=864000$/m,
     ],
     [ qr/^$/ ],
     'database with no tables'

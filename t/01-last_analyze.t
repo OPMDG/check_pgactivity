@@ -43,14 +43,16 @@ TestLib::system_or_bail('createdb',
     '--port' => $node->port,
     'testdb'
 );
+$node->psql('testdb', 'VACUUM ANALYZE');
+sleep(1);
 
-# test database with no tables
+# new analyzed database with no user tables
 
 $node->command_checks_all( [
     './check_pgactivity', '--service'  => 'last_analyze',
                           '--username' => $ENV{'USER'} || 'postgres',
                           '--format'   => 'human',
-                          '--dbname'   => 'template1',
+                          '--dbname'   => 'testdb',
                           '--status-file' => $pga_data,
                           '--warning'  => '1h',
                           '--critical' => '10d'
@@ -59,7 +61,7 @@ $node->command_checks_all( [
     [ qr/^Service  *: POSTGRES_LAST_ANALYZE$/m,
       qr/^Returns  *: 0 \(OK\)$/m,
       qr/^Message  *: 1 database\(s\) checked$/m,
-      qr/^Perfdata *: testdb=(NaN|-\d+)s warn=3600 crit=864000$/m,
+      qr/^Perfdata *: testdb=.*s warn=3600 crit=864000$/m,
     ],
     [ qr/^$/ ],
     'database with no tables'

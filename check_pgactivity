@@ -2,7 +2,7 @@
 # This program is open source, licensed under the PostgreSQL License.
 # For license terms, see the LICENSE file.
 #
-# Copyright (C) 2012-2026: Open PostgreSQL Monitoring Development Group
+#  Copyright (C) 2012-2026: Open PostgreSQL Monitoring Development Group
 
 =head1 NAME
 
@@ -5198,7 +5198,7 @@ sub check_last_maintenance {
         #            thresholds do not change)
         #
         # 8.2 does not have per-database activity stats. We must aggregate
-        # from pg_stat_user_tables
+        # from pg_stat_all_tables
         $PG_VERSION_82 => qq{
             SELECT
                 false AS is_in_recovery,
@@ -5216,8 +5216,13 @@ sub check_last_maintenance {
                     ||n_tup_upd::text
                     ||n_tup_del::text
                     ||'$c_limit $w_limit'))
-            FROM pg_stat_user_tables
+            FROM pg_stat_all_tables a
             WHERE schemaname NOT LIKE 'pg_temp_%'
+              AND schemaname NOT LIKE 'information_schema'
+              AND (('${type}' = 'analyze' AND schemaname NOT LIKE 'pg_toast') -- TOAST tables aren't ANALYZEd
+                OR  ('${type}' = 'vacuum'))
+              AND (('${type}' = 'analyze' AND a.relname NOT LIKE 'pg_statistic') -- pg_statistic never gets ANALYZEd
+                OR  ('${type}' = 'vacuum'))
             GROUP BY schemaname,relname
         },
         # Starting with 8.3, we can check database activity from
@@ -5240,9 +5245,14 @@ sub check_last_maintenance {
                   FROM pg_catalog.pg_stat_database
                   WHERE datname = current_database()
                 )
-            FROM pg_stat_user_tables
+            FROM pg_stat_all_tables a
             WHERE schemaname NOT LIKE 'pg_temp_%'
               AND schemaname NOT LIKE 'pg_toast_temp_%'
+              AND schemaname NOT LIKE 'information_schema'
+              AND (('${type}' = 'analyze' AND schemaname NOT LIKE 'pg_toast') -- TOAST tables aren't ANALYZEd
+                OR  ('${type}' = 'vacuum'))
+              AND (('${type}' = 'analyze' AND a.relname NOT LIKE 'pg_statistic') -- pg_statistic never gets ANALYZEd
+                OR  ('${type}' = 'vacuum'))
             GROUP BY schemaname,relname
         },
         # Starting with 9.0, we can check database status
@@ -5267,9 +5277,14 @@ sub check_last_maintenance {
                   FROM pg_catalog.pg_stat_database
                   WHERE datname = current_database()
                 )
-            FROM pg_stat_user_tables
+            FROM pg_stat_all_tables a
             WHERE schemaname NOT LIKE 'pg_temp_%'
               AND schemaname NOT LIKE 'pg_toast_temp_%'
+              AND schemaname NOT LIKE 'information_schema'
+              AND (('${type}' = 'analyze' AND schemaname NOT LIKE 'pg_toast') -- TOAST tables aren't ANALYZEd
+                OR  ('${type}' = 'vacuum'))
+              AND (('${type}' = 'analyze' AND a.relname NOT LIKE 'pg_statistic') -- pg_statistic never gets ANALYZEd
+                OR  ('${type}' = 'vacuum'))
             GROUP BY schemaname,relname
         },
         # Starting with 9.1, we can add the analyze/vacuum counts
@@ -5303,10 +5318,15 @@ sub check_last_maintenance {
                     WHERE datname = current_database()
                   )
                   ELSE '' END
-            FROM pg_stat_user_tables a
+            FROM pg_stat_all_tables a
             JOIN pg_class b on a.relid = b.oid
             WHERE schemaname NOT LIKE 'pg_temp_%'
               AND schemaname NOT LIKE 'pg_toast_temp_%'
+              AND schemaname NOT LIKE 'information_schema'
+              AND (('${type}' = 'analyze' AND schemaname NOT LIKE 'pg_toast') -- TOAST tables aren't ANALYZEd
+                OR  ('${type}' = 'vacuum'))
+              AND (('${type}' = 'analyze' AND a.relname NOT LIKE 'pg_statistic') -- pg_statistic never gets ANALYZEd
+                OR  ('${type}' = 'vacuum'))
               AND relkind <> 'p' -- partitioned table do not have last_* information
             GROUP BY schemaname, a.relname
         }
