@@ -5307,8 +5307,7 @@ sub check_last_maintenance {
             JOIN pg_class b on a.relid = b.oid
             WHERE schemaname NOT LIKE 'pg_temp_%'
               AND schemaname NOT LIKE 'pg_toast_temp_%'
-              AND (('${type}' = 'vacuum' AND relkind <> 'p') -- partitioned table do not have last_* information
-                OR  ('${type}' = 'analyze'))
+              AND relkind <> 'p' -- partitioned table do not have last_* information
             GROUP BY schemaname, a.relname
         }
     );
