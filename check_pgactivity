@@ -149,6 +149,10 @@ my %services = (
         'sub'  => \&check_table_unlogged,
         'desc' => 'Check unlogged tables'
     },
+    'relation_size' => {
+        'sub'  => \&check_relation_size,
+        'desc' => 'Check relations\' sizes'
+    },
     'wal_files' => {
         'sub'  => \&check_wal_files,
         'desc' => 'Total number of WAL files.',
@@ -8522,6 +8526,128 @@ sub check_table_unlogged {
     return status_ok( $me, [ "No unlogged table" ], \@perfdata, \@longmsg );
 }
 
+=item B<relation_size> (9.0+)
+
+Check relations' size.
+
+Without C<--critical>  or C<--warning> parameters, this service attempts to
+fetch all relations' size.
+
+An alert is raised if an relation's size is above the warning or critical level.
+
+This service supports both C<--dbexclude>  and C<--dbinclude> parameters.
+The 'postgres' database and templates are always excluded.
+
+This service supports a C<--exclude REGEX>  parameter to exclude relations
+matching a regular expression. The regular expression applies to
+"database.schema_name.relation_name". This enables you to filter either on a
+relation name for all schemas and databases, on a qualified named relation
+(schema + relation) for all databases or on a qualified named relation in
+only one database.
+
+You can use multiple C<--exclude REGEX>  parameters.
+
+Perfdata will return the number of relations per database.
+
+A list of the relations and their sizes will be returned after the
+perfdata. This list contains the fully qualified relation name. If
+C<--exclude REGEX> is set, the number of excluded relations is returned.
+
+Required privileges: unprivileged role able to log in all databases,
+or at least those in C<--dbinclude>.
+
+=cut
+sub check_relation_size {
+    my @perfdata;
+    my @longmsg;
+    my @rs;
+    my @hosts;
+    my @all_db;
+    my $total_rel   = 0; # num of relations checked, without excluded ones
+    my $total_exrel = 0; # num of excluded relations
+    my $w_count     = 0;
+    my $c_count     = 0;
+    my %args        = %{ $_[0] };
+    my @dbinclude   = @{ $args{'dbinclude'} };
+    my @dbexclude   = @{ $args{'dbexclude'} };
+    my $me          = 'POSTGRES_RELATION_SIZE';
+    my $query       = q{
+        SELECT current_database(), nsp.nspname AS schemaname, cls.relname,
+               cls.relkind,
+               pg_table_size(cls.oid) AS size
+        FROM pg_class cls
+            join pg_namespace nsp on nsp.oid = cls.relnamespace
+        WHERE
+            cls.relkind IN ('r', 'i', 'm', 'p')
+            AND nsp.nspname not like 'pg_toast%'
+            AND nsp.nspname NOT IN ('information_schema', 'pg_catalog')
+    };
+
+    @hosts = @{ parse_hosts %args };
+
+    pod2usage(
+        -message => 'FATAL: you must give one (and only one) host with service "relation_size".',
+        -exitval => 127
+    ) if @hosts != 1;
+
+    is_compat $hosts[0], 'relation_size', $PG_VERSION_90 or exit 1;
+
+    @all_db = @{ get_all_dbname( $hosts[0] ) };
+
+    # Iterate over all db
+    ALLDB_LOOP: foreach my $db (sort @all_db) {
+        my @rc;
+
+        my $nb_rel       = 0;
+        my $rel_relation = 0;
+
+        next ALLDB_LOOP if grep { $db =~ /$_/ } @dbexclude;
+        next ALLDB_LOOP if @dbinclude and not grep { $db =~ /$_/ } @dbinclude;
+
+        @rc = @{ query( $hosts[0], $query, $db ) };
+
+        RELATIONS_LOOP: foreach my $relation (@rc) {
+
+            foreach my $exclude_re ( @{ $args{'exclude'} } ) {
+                if ("$relation->[0].$relation->[1].$relation->[2]" =~ m/$exclude_re/){
+                    $total_exrel++;
+                    next RELATIONS_LOOP ;
+                }
+            }
+
+            # long message info :
+            push @longmsg => sprintf "%s.%s.%s (%s);",
+                 $relation->[0], $relation->[1], $relation->[2], to_size($relation->[4]);
+
+            $w_count += 1 if defined $args{'warning'} and $relation->[4] > get_size($args{'warning'})
+                                                      and $relation->[4] < get_size($args{'critical'});
+            $c_count += 1 if defined $args{'critical'} and $relation->[4] > get_size($args{'critical'});
+
+            $nb_rel++;
+        }
+
+        $total_rel += $nb_rel;
+        push @perfdata => [ "relation(s) $db", $nb_rel ];
+    }
+
+    push @longmsg => sprintf "%i excluded relation(s) from check", $total_exrel
+        if $total_exrel > 0;
+
+    # we use the critical count for the **total** number of relations
+    return status_critical( $me,
+        [ "$c_count/$total_rel oversized relation(s)" ],
+        \@perfdata, \@longmsg
+    ) if $c_count > 0;
+
+    # we use the warning count for the **total** number of relations
+    return status_warning( $me,
+        [ "$w_count/$total_rel oversized relation(s)" ],
+        \@perfdata, \@longmsg
+    ) if $w_count > 0;
+
+    return status_ok( $me, [ "$total_rel relations" ], \@perfdata, \@longmsg );
+}
+
 =item B<table_bloat>
 
 Estimate bloat on tables.
@@ -9863,8 +9989,7 @@ pod2usage(
 ) if not -d $args{'tmpdir'} or not -x $args{'tmpdir'};
 
 # Both critical and warning must be given is optional,
-# but for pga_version, minor_version and uptime which use only one of them or
-# none
+# but for pga_version, minor_version, settings, and uptime which use only one of them or none
 pod2usage(
     -message => 'FATAL: you must provide both warning and critical thresholds.',
     -exitval => 127
