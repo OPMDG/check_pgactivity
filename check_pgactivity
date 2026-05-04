@@ -1139,6 +1139,7 @@ sub query($$;$$$) {
     delete $ENV{PGUSER};
     delete $ENV{PGOPTIONS};
 
+    $ENV{PGAPPNAME}  = $PROGRAM."[".$args{'service'}."]";
     $ENV{PGDATABASE} = $host->{'db'}        if defined $host->{'db'};
     $ENV{PGSERVICE}  = $host->{'dbservice'} if defined $host->{'dbservice'};
     $ENV{PGHOST}     = $host->{'host'}      if defined $host->{'host'};
