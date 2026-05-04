@@ -1173,7 +1173,10 @@ sub query($$;$$$) {
     dprint( sprintf( "  stderr (%u): «%s»\n", length $res, $res ) )
         if $rc;
 
-    exit $onfail->('CHECK_PGACTIVITY', [ "Query failed !\n" . $res ] ) unless $rc == 0;
+    if ($rc != 0) {
+        exit $onfail->('CHECK_PGACTIVITY', [ "Query failed on $db !\n" . $res ] ) if defined $db;
+        exit $onfail->('CHECK_PGACTIVITY', [ "Query failed !\n" . $res ] ) unless $rc == 0;
+    }
 
     if (defined $res) {
         chop $res;
