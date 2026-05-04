@@ -5916,7 +5916,7 @@ sub check_longest_query {
             ) AS s ON (d.datname=s.datname)
             WHERE d.datallowconn
         },
-	$PG_VERSION_100 => q{SELECT d.datname,
+    $PG_VERSION_100 => q{SELECT d.datname,
                 COALESCE(elapsed, 0),
                 COALESCE(query, ''),
                 application_name
@@ -5929,7 +5929,7 @@ sub check_longest_query {
                     application_name
                 FROM pg_stat_activity
                 WHERE state = 'active'
-		  AND backend_type IN ('client backend', 'background worker')
+                  AND backend_type IN ('client backend', 'background worker')
             ) AS s ON (d.datname=s.datname)
             WHERE d.datallowconn
         },
@@ -5977,6 +5977,7 @@ sub check_longest_query {
             'num' => 0,
             'max' => -1,
             'avg' => 0,
+            'appname' => '',
         } unless exists $stats{$r->[0]};
 
         next REC_LOOP unless $r->[2] ne '';
@@ -5985,7 +5986,10 @@ sub check_longest_query {
         $nb_query++;
 
         $stats{$r->[0]}{'num'}++;
-        $stats{$r->[0]}{'max'} = $r->[1] if $stats{$r->[0]}{'max'} < $r->[1];
+        if ($stats{$r->[0]}{'max'} < $r->[1]) {
+            $stats{$r->[0]}{'max'} = $r->[1];
+            $stats{$r->[0]}{'appname'} = $r->[3];
+        }
         $stats{$r->[0]}{'avg'} = (
             $stats{$r->[0]}{'avg'} * ($stats{$r->[0]}{'num'} -1) + $r->[1])
             / $stats{$r->[0]}{'num'};
@@ -6005,12 +6009,12 @@ sub check_longest_query {
         );
 
         if ( $stats{$db}{'max'} > $c_limit ) {
-            push @msg => "$db: ". to_interval($stats{$db}{'max'});
+            push @msg => "$db ($stats{$db}{'appname'}): ". to_interval($stats{$db}{'max'});
             next DB_LOOP;
         }
 
         if ( $stats{$db}{'max'} > $w_limit ) {
-            push @msg => "$db: ". to_interval($stats{$db}{'max'});
+            push @msg => "$db ($stats{$db}{'appname'}): ". to_interval($stats{$db}{'max'});
         }
     }
 

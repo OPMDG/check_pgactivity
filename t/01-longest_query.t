@@ -88,7 +88,7 @@ $node->command_checks_all( [
     1,
     [ qr/^Service  *: POSTGRES_LONGEST_QUERY$/m,
       qr/^Returns  *: 1 \(WARNING\)$/m,
-      qr/^Message  *: testdb: 10s$/m,
+      qr/^Message  *: testdb \(.*\): 10s$/m,
       qr/^Perfdata *: testdb max=10[.0-9]*s warn=4 crit=20$/m,
       qr/^Perfdata *: testdb avg=10s warn=4 crit=20$/m,
       qr/^Perfdata *: testdb #queries=1$/m,
