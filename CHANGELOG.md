@@ -3,19 +3,19 @@ Changelog
 
 2026-05-18 v2.10:
 
-add: new unused_indexes service (Guillaume Lelarge)
-add: new relation_size service (Guillaume Lelarge)
-change: pgss_dealloc service now handles --dbservice (Christophe Courtois)
-change: invalid_indexes now also gets TOAST invalid indexes (Guillaume Lelarge)
-change: add the database name to a query error message (Guillaume Lelarge)
-change: set application_name to the program and service names (Guillaume Lelarge)
-change: add application_name of the offending query in the msg (Guillaume Lelarge)
-change: various enhancements to check_last_maintenance (Guillaume Lelarge)
-change: exclude partitioned table for last_analyze service (Adrien Nayrat)
-change: add exclude option for last_vauum and last_analyze services (Guillaume Armede)
-fix: keep only three integers after the comma (Guillaume Lelarge)
-fix: pgss_dealloc service is only PG14+ (doc) (Christophe Courtois)
-fix: slru_hit_ratio is only PG13+ (doc) (Christophe Courtois)
+* add: new unused_indexes service (Guillaume Lelarge)
+* add: new relation_size service (Guillaume Lelarge)
+* change: pgss_dealloc service now handles --dbservice (Christophe Courtois)
+* change: invalid_indexes now also gets TOAST invalid indexes (Guillaume Lelarge)
+* change: add the database name to a query error message (Guillaume Lelarge)
+* change: set application_name to the program and service names (Guillaume Lelarge)
+* change: add application_name of the offending query in the msg (Guillaume Lelarge)
+* change: various enhancements to check_last_maintenance (Guillaume Lelarge)
+* change: exclude partitioned table for last_analyze service (Adrien Nayrat)
+* change: add exclude option for last_vauum and last_analyze services (Guillaume Armede)
+* fix: keep only three integers after the comma (Guillaume Lelarge)
+* fix: pgss_dealloc service is only PG14+ (doc) (Christophe Courtois)
+* fix: slru_hit_ratio is only PG13+ (doc) (Christophe Courtois)
 
 2026-02-17 v2.9:
 
