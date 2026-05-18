@@ -615,7 +615,7 @@ COMPATIBILITY
 
         Required privileges: unprivileged role.
 
-    slru_hit_ratio (all)
+    slru_hit_ratio (13+)
         Check the cache SLRU ratio on the cluster.
 
         This service uses the status file (see "--status-file" parameter).
@@ -691,6 +691,32 @@ COMPATIBILITY
 
         Required privileges: unprivileged role able to log in all databases.
 
+    unused_indexes (8.2+)
+        Check if there are unused indexes in a database.
+
+        A warning alert is raised if an unused index is detected.
+
+        This service supports both "--dbexclude" and "--dbinclude"
+        parameters. The 'postgres' database and templates are always
+        excluded.
+
+        This service supports a "--exclude REGEX" parameter to exclude
+        indexes matching a regular expression. The regular expression
+        applies to "database.schema_name.index_name". This enables you to
+        filter either on a relation name for all schemas and databases, on a
+        qualified named index (schema + index) for all databases or on a
+        qualified named index in only one database.
+
+        You can use multiple "--exclude REGEX" parameters.
+
+        Perfdata will return the number of unused indexes per database.
+
+        A list of unused indexes will be returned after the perfdata. This
+        list contains the fully qualified index name. If excluded index is
+        set, the number of excluded indexes is returned.
+
+        Required privileges: unprivileged role able to log in all databases.
+
     is_replay_paused (9.1+)
         Checks if the replication is paused. The service will return UNKNOWN
         if executed on a master server.
@@ -737,11 +763,11 @@ COMPATIBILITY
         This service supports both "--dbexclude" and "--dbinclude"
         parameters. The 'postgres' database and templates are always
         excluded.
-       
-        It also supports a "--exclude REGEX" parameter to exclude relations
-        matching a regular expression. The regular expression applies to
-        "database.schema_name.relation_name". This enables you to filter
-        either on a relation name for all schemas and databases, on a
+
+        This service supports a "--exclude REGEX" parameter to exclude
+        relations matching a regular expression. The regular expression
+        applies to "database.schema_name.relation_name". This enables you to
+        filter either on a relation name for all schemas and databases, on a
         qualified named relation (schema + relation) for all databases or on
         a qualified named relation in only one database.
 
@@ -777,10 +803,10 @@ COMPATIBILITY
         parameters. The 'postgres' database and templates are always
         excluded.
 
-        It also supports a "--exclude REGEX" parameter to exclude relations
-        matching a regular expression. The regular expression applies to
-        "database.schema_name.relation_name". This enables you to filter
-        either on a relation name for all schemas and databases, on a
+        This service supports a "--exclude REGEX" parameter to exclude
+        relations matching a regular expression. The regular expression
+        applies to "database.schema_name.relation_name". This enables you to
+        filter either on a relation name for all schemas and databases, on a
         qualified named relation (schema + relation) for all databases or on
         a qualified named relation in only one database.
 
@@ -1028,7 +1054,7 @@ COMPATIBILITY
         access on the directory containing the dumps (but not on the dumps
         themselves).
 
-    pgss_dealloc
+    pgss_dealloc (14+)
         Check number of pg_stat_statements deallocations.
 
         Too many deallocations can have a negative performance impact. This
@@ -1045,6 +1071,9 @@ COMPATIBILITY
         previous check exceeds the thresholds.
 
         Perfdata returns a counter of deallocs since last call.
+
+        The pg_stat_statements extension must be installed in the database
+        you're connecting into (including shared_preload_libraries setup).
 
         Required privileges: unprivileged role able to log in to any
         database in which the pg_stat_statements extension has been
@@ -1223,6 +1252,38 @@ COMPATIBILITY
         Required privileges: unprivileged role able to log in all databases,
         or at least those in "--dbinclude".
 
+    relation_size (9.0+)
+        Check relations' size.
+
+        Without "--critical" or "--warning" parameters, this service
+        attempts to fetch all relations' size.
+
+        An alert is raised if an relation's size is above the warning or
+        critical level.
+
+        This service supports both "--dbexclude" and "--dbinclude"
+        parameters. The 'postgres' database and templates are always
+        excluded.
+
+        This service supports a "--exclude REGEX" parameter to exclude
+        relations matching a regular expression. The regular expression
+        applies to "database.schema_name.relation_name". This enables you to
+        filter either on a relation name for all schemas and databases, on a
+        qualified named relation (schema + relation) for all databases or on
+        a qualified named relation in only one database.
+
+        You can use multiple "--exclude REGEX" parameters.
+
+        Perfdata will return the number of relations per database.
+
+        A list of the relations and their sizes will be returned after the
+        perfdata. This list contains the fully qualified relation name. If
+        "--exclude REGEX" is set, the number of excluded relations is
+        returned.
+
+        Required privileges: unprivileged role able to log in all databases,
+        or at least those in "--dbinclude".
+
     table_bloat
         Estimate bloat on tables.
 
@@ -1388,7 +1449,7 @@ COMPATIBILITY
           check_pgactivity -p 5433 -h slave --service hit_ratio --dbinclude importantone -w 90% -c 80%
 
 VERSION
-    check_pgactivity version 2.9, released on Tue Feb 17 2026.
+    check_pgactivity version 2.10, released on Mon May 18 2026.
 
 LICENSING
     This program is open source, licensed under the PostgreSQL license. For

@@ -1,16 +1,3 @@
-
- * Waiting in queue... 
- * Loading list of packages.... 
-The following packages have to be installed:
- perl-Pod-Parser-1.67-6.fc43.noarch	Basic perl modules for handling Plain Old Documentation (POD)
-
- * Waiting in queue... 
- * Waiting for authentication... 
- * Waiting in queue... 
- * Downloading packages... 
- * Requesting data... 
- * Testing changes... 
- * Installing packages... 
 =head1 NAME
 
 check_pgactivity - PostgreSQL plugin for Nagios
@@ -88,6 +75,7 @@ Repeat this option as many time as needed.
 
 See C<--dbinclude> as well. If a database match both dbexclude and
 dbinclude arguments, it is excluded.
+
 
 =item B<--dbinclude> REGEXP
 
@@ -664,7 +652,7 @@ This service supports both C<--dbexclude> and C<--dbinclude> parameters.
 
 Required privileges: unprivileged role.
 
-=item B<slru_hit_ratio> (all)
+=item B<slru_hit_ratio> (13+)
 
 Check the cache SLRU ratio on the cluster.
 
@@ -743,6 +731,32 @@ excluded index is set, the number of exclude indexes is returned.
 
 Required privileges: unprivileged role able to log in all databases.
 
+=item B<unused_indexes> (8.2+)
+
+Check if there are unused indexes in a database.
+
+A warning alert is raised if an unused index is detected.
+
+This service supports both C<--dbexclude>  and C<--dbinclude> parameters.
+The 'postgres' database and templates are always excluded.
+
+This service supports a C<--exclude REGEX>  parameter to exclude indexes
+matching a regular expression. The regular expression applies to
+"database.schema_name.index_name". This enables you to filter either on a
+relation name for all schemas and databases, on a qualified named
+index (schema + index) for all databases or on a qualified named
+index in only one database.
+
+You can use multiple C<--exclude REGEX>  parameters.
+
+Perfdata will return the number of unused indexes per database.
+
+A list of unused indexes will be returned after the
+perfdata. This list contains the fully qualified index name. If
+excluded index is set, the number of excluded indexes is returned.
+
+Required privileges: unprivileged role able to log in all databases.
+
 =item B<is_replay_paused> (9.1+)
 
 Checks if the replication is paused. The service will return UNKNOWN if
@@ -792,6 +806,15 @@ raise any alerts, unless you change a threshold.
 This service supports both C<--dbexclude> and C<--dbinclude> parameters.
 The 'postgres' database and templates are always excluded.
 
+This service supports a C<--exclude REGEX>  parameter to exclude relations
+matching a regular expression. The regular expression applies to
+"database.schema_name.relation_name". This enables you to filter either on a
+relation name for all schemas and databases, on a qualified named relation
+(schema + relation) for all databases or on a qualified named relation in
+only one database.
+
+You can use multiple C<--exclude REGEX>  parameters.
+
 Required privileges: unprivileged role able to log in all databases.
 
 =item B<last_vacuum> (8.2+)
@@ -820,6 +843,15 @@ raise any alerts, unless you change a threshold.
 
 This service supports both C<--dbexclude> and C<--dbinclude> parameters.
 The 'postgres' database and templates are always excluded.
+
+This service supports a C<--exclude REGEX>  parameter to exclude relations
+matching a regular expression. The regular expression applies to
+"database.schema_name.relation_name". This enables you to filter either on a
+relation name for all schemas and databases, on a qualified named relation
+(schema + relation) for all databases or on a qualified named relation in
+only one database.
+
+You can use multiple C<--exclude REGEX>  parameters.
 
 Required privileges: unprivileged role able to log in all databases.
 
@@ -1055,7 +1087,7 @@ of the newest backups.
 Required privileges: unprivileged role; the system user needs read access
 on the directory containing the dumps (but not on the dumps themselves).
 
-=item B<pgss_dealloc>
+=item B<pgss_dealloc> (14+)
 
 Check number of pg_stat_statements deallocations.
 
@@ -1072,6 +1104,10 @@ Warning or critical will be raised if the number of deallocations
 since the previous check exceeds the thresholds.
 
 Perfdata returns a counter of deallocs since last call.
+
+The pg_stat_statements extension must be installed
+in the database you're connecting into
+(including shared_preload_libraries setup).
 
 Required privileges: unprivileged role able to log in to any database in
 which the pg_stat_statements extension has been installed.
@@ -1242,6 +1278,36 @@ Perfdata will return the number of unlogged tables per database.
 A list of the unlogged tables will be returned after the
 perfdata. This list contains the fully qualified table name. If
 C<--exclude REGEX> is set, the number of excluded tables is returned.
+
+Required privileges: unprivileged role able to log in all databases,
+or at least those in C<--dbinclude>.
+
+=item B<relation_size> (9.0+)
+
+Check relations' size.
+
+Without C<--critical>  or C<--warning> parameters, this service attempts to
+fetch all relations' size.
+
+An alert is raised if an relation's size is above the warning or critical level.
+
+This service supports both C<--dbexclude>  and C<--dbinclude> parameters.
+The 'postgres' database and templates are always excluded.
+
+This service supports a C<--exclude REGEX>  parameter to exclude relations
+matching a regular expression. The regular expression applies to
+"database.schema_name.relation_name". This enables you to filter either on a
+relation name for all schemas and databases, on a qualified named relation
+(schema + relation) for all databases or on a qualified named relation in
+only one database.
+
+You can use multiple C<--exclude REGEX>  parameters.
+
+Perfdata will return the number of relations per database.
+
+A list of the relations and their sizes will be returned after the
+perfdata. This list contains the fully qualified relation name. If
+C<--exclude REGEX> is set, the number of excluded relations is returned.
 
 Required privileges: unprivileged role able to log in all databases,
 or at least those in C<--dbinclude>.
@@ -1420,7 +1486,7 @@ pg_ls_waldir
 
 =head1 VERSION
 
-check_pgactivity version 2.9, released on Tue Feb 17 2026.
+check_pgactivity version 2.10, released on Mon May 18 2026.
 
 =head1 LICENSING
 
@@ -1431,5 +1497,4 @@ For license terms, see the LICENSE provided with the sources.
 
 S<Author: Open PostgreSQL Monitoring Development Group>
 S<Copyright: (C) 2012-2026 Open PostgreSQL Monitoring Development Group>
-
 
