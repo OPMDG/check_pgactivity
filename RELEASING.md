@@ -66,7 +66,7 @@ git archive --prefix=check_pgactivity-$TAG/ -o /tmp/check_pgactivity-$TAG.tgz $T
   - Here is the format of the release node itself:
     ~~~
     YYYY-MM-DD -  Version X.Y
-    
+
     Changelog:
       * item 1
       * item 2
@@ -132,24 +132,24 @@ Ask Thomas (frost242) Reiss or Jehan-Guillaume (ioguix) de Rorthais for credenti
 * organisation: check_pgactivity project
 * Title: "Release: check_pgactivity 2.4"
 * Content:
-  
+
   ~~~
   check_pgactivity version 2.4 released
   ========================
-  
+
   check\_pgactivity is a PostgreSQL plugin for Nagios. This plugin is written with a focus
   on a rich perfdata set. Every new features of PostgreSQL can be easily monitored with
   check\_pgactivity.
-  
+
   Changelog :
-  
+
   * ...
   * ...
   * ...
-  
-  
+
+
   Here are some useful links:
-  
+
   * github repo: [https://github.com/OPMDG/check_pgactivity](https://github.com/OPMDG/check_pgactivity)
   * reporting issues: [https://github.com/OPMDG/check_pgactivity/issues](https://github.com/OPMDG/check_pgactivity/issues)
   * latest release: [https://github.com/OPMDG/check_pgactivity/releases/latest](https://github.com/OPMDG/check_pgactivity/releases/latest)
@@ -157,39 +157,10 @@ Ask Thomas (frost242) Reiss or Jehan-Guillaume (ioguix) de Rorthais for credenti
 
   Thanks to all the contributors!
   ~~~
-  
+
 * check "Related Open Source"
 * click on submit
 * wait for moderators...
-
-## pgsql-announce
-
-Send a mail to the pgsql-announce mailing list. Eg.:
-
-~~~
-check_pgactivity v2.4 has been released on January 30th 2019 under PostgreSQL
-licence.
-
-check_pgactivity is a PostgreSQL plugin for Nagios. This plugin is written
-with a focus on a rich perfdata set. Every new features of PostgreSQL can be
-easily monitored with check_pgactivity.
-
-Changelog :
-
-* ...
-* ...
-* ...
-
-Here are some useful links:
-
-* github repo: https://github.com/OPMDG/check_pgactivity
-* reporting issues: https://github.com/OPMDG/check_pgactivity/issues
-* latest release: https://github.com/OPMDG/check_pgactivity/releases/latest
-* contributors:
-  https://github.com/OPMDG/check_pgactivity/blob/master/contributors
-
-Thanks to all the contributors!
-~~~
 
 ## Tweets & blogs
 
