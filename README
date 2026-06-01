@@ -738,8 +738,7 @@ COMPATIBILITY
 
     last_analyze (8.2+)
         Check on each databases that the oldest "analyze" (from autovacuum
-        or not) is not older than the given threshold. This is to check that
-        a scheduled ANALYZE is working correctly.
+        or not) is not older than the given threshold.
 
         This service uses the status file (see "--status-file" parameter)
         with PostgreSQL 9.1+.
@@ -777,8 +776,7 @@ COMPATIBILITY
 
     last_vacuum (8.2+)
         Check that the oldest vacuum (from autovacuum or otherwise) in each
-        database in the cluster is not older than the given threshold. This
-        is to check that a scheduled VACUUM is working correctly.
+        database in the cluster is not older than the given threshold.
 
         This service uses the status file (see "--status-file" parameter)
         with PostgreSQL 9.1+.
