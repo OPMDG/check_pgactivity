@@ -503,6 +503,8 @@ my %args = (
     'wal_buffers'           => undef,
     'checkpoint_segments'   => undef,
     'effective_cache_size'  => undef,
+    'vacuum_table_min_size' => 10 * 1024,
+    'analyze_table_min_size' => 1024,
     'no_check_autovacuum'   => 0,
     'no_check_fsync'        => 0,
     'no_check_enable'       => 0,
@@ -5270,6 +5272,7 @@ sub check_last_maintenance {
     my @rs;
     my $c_limit;
     my $w_limit;
+    my $table_min_size;
     my @perfdata;
     my @msg_crit;
     my @msg_warn;
@@ -5284,6 +5287,8 @@ sub check_last_maintenance {
     my @dbinclude  = @{ $args{'dbinclude'} };
     my @dbexclude  = @{ $args{'dbexclude'} };
     my $me         = 'POSTGRES_LAST_' . uc($type);
+
+    $table_min_size = $args{$type . "_table_min_size"} * 1024;
 
     # warning and critical are mandatory.
     pod2usage(
@@ -5334,6 +5339,7 @@ sub check_last_maintenance {
                     ||'$c_limit $w_limit'))
             FROM pg_stat_all_tables a
             WHERE schemaname NOT LIKE 'pg_temp_%'
+              AND pg_relation_size(relid) > $table_min_size
               AND schemaname NOT LIKE 'information_schema'
               AND (('${type}' = 'analyze' AND schemaname NOT LIKE 'pg_toast') -- TOAST tables aren't ANALYZEd
                 OR  ('${type}' = 'vacuum'))
@@ -5364,6 +5370,7 @@ sub check_last_maintenance {
             FROM pg_stat_all_tables a
             WHERE schemaname NOT LIKE 'pg_temp_%'
               AND schemaname NOT LIKE 'pg_toast_temp_%'
+              AND pg_relation_size(relid) > $table_min_size
               AND schemaname NOT LIKE 'information_schema'
               AND (('${type}' = 'analyze' AND schemaname NOT LIKE 'pg_toast') -- TOAST tables aren't ANALYZEd
                 OR  ('${type}' = 'vacuum'))
@@ -5396,6 +5403,7 @@ sub check_last_maintenance {
             FROM pg_stat_all_tables a
             WHERE schemaname NOT LIKE 'pg_temp_%'
               AND schemaname NOT LIKE 'pg_toast_temp_%'
+              AND pg_relation_size(relid) > $table_min_size
               AND schemaname NOT LIKE 'information_schema'
               AND (('${type}' = 'analyze' AND schemaname NOT LIKE 'pg_toast') -- TOAST tables aren't ANALYZEd
                 OR  ('${type}' = 'vacuum'))
@@ -5438,6 +5446,7 @@ sub check_last_maintenance {
             JOIN pg_class b on a.relid = b.oid
             WHERE schemaname NOT LIKE 'pg_temp_%'
               AND schemaname NOT LIKE 'pg_toast_temp_%'
+              AND pg_relation_size(relid) > $table_min_size
               AND schemaname NOT LIKE 'information_schema'
               AND (('${type}' = 'analyze' AND schemaname NOT LIKE 'pg_toast') -- TOAST tables aren't ANALYZEd
                 OR  ('${type}' = 'vacuum'))
@@ -10035,6 +10044,8 @@ GetOptions(
         'dump-status-file!',
         'dump-bin-file:s',
         'effective_cache_size=i',
+        'vacuum_table_min_size=i',
+        'analyze_table_min_size=i',
         'exclude=s',
         'format|F=s',
         'global-pattern=s',

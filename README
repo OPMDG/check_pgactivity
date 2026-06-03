@@ -772,6 +772,11 @@ COMPATIBILITY
 
         You can use multiple "--exclude REGEX" parameters.
 
+        This service supports a "--analyze_table_min_size" parameter to
+        exclude small relations. The value must be a positive integer
+        representing the threshold in kilobytes below which the relation
+        is excluded. This defaults to 1024 (1MB).
+
         Required privileges: unprivileged role able to log in all databases.
 
     last_vacuum (8.2+)
@@ -809,6 +814,11 @@ COMPATIBILITY
         a qualified named relation in only one database.
 
         You can use multiple "--exclude REGEX" parameters.
+
+        This service supports a "--vacuum_table_min_size" parameter to
+        exclude small relations. The value must be a positive integer
+        representing the threshold in kilobytes below which the relation
+        is excluded. This defaults to 10240 (10MB).
 
         Required privileges: unprivileged role able to log in all databases.
 
