@@ -10,7 +10,7 @@ use warnings;
 use lib 't/lib';
 use pgNode;
 use TestLib ();
-use Test::More tests => 33;
+use Test::More tests => 39;
 
 my $node = pgNode->get_new_node('prod');
 my $pga_data = "$TestLib::tmp_check/pga.data";
@@ -50,6 +50,7 @@ sleep(1);
 
 $node->command_checks_all( [
     './check_pgactivity', '--service'  => 'last_vacuum',
+                          '--vacuum_table_min_size' => 0,
                           '--username' => $ENV{'USER'} || 'postgres',
                           '--format'   => 'human',
                           '--dbname'   => 'template1',
@@ -107,6 +108,7 @@ SKIP: {
 
 $node->command_checks_all( [
     './check_pgactivity', '--service'  => 'last_vacuum',
+                          '--vacuum_table_min_size' => 0,
                           '--username' => $ENV{'USER'} || 'postgres',
                           '--format'   => 'human',
                           '--dbname'   => 'testdb',
@@ -146,6 +148,7 @@ push @stdout, (
 
 $node->command_checks_all( [
     './check_pgactivity', '--service'  => 'last_vacuum',
+                          '--vacuum_table_min_size' => 0,
                           '--username' => $ENV{'USER'} || 'postgres',
                           '--format'   => 'human',
                           '--dbname'   => 'testdb',
@@ -183,6 +186,7 @@ push @stdout, (
 
 $node->command_checks_all( [
     './check_pgactivity', '--service'  => 'last_vacuum',
+                          '--vacuum_table_min_size' => 0,
                           '--username' => $ENV{'USER'} || 'postgres',
                           '--format'   => 'human',
                           '--dbname'   => 'testdb',
@@ -194,6 +198,50 @@ $node->command_checks_all( [
     \@stdout,
     [ qr/^$/ ],
     'test database with two tables, both vacuumed'
+);
+
+# test database with three tables, only one never vacuumed, filtering out small tables
+
+# we must track the stat activity on pg_class to make sure there was some stat
+# activity to avoid the check_pga shortcut when no activity.
+($stdout) = $node->psql('testdb', q{
+    SELECT n_tup_ins
+    FROM pg_stat_sys_tables
+    WHERE relname = 'pg_class'
+});
+
+$node->psql('testdb', 'CREATE TABLE boo (bar INT)');
+
+$node->poll_query_until('testdb', qq{
+    SELECT n_tup_ins > $stdout
+    FROM pg_stat_sys_tables
+    WHERE relname = 'pg_class'
+});
+
+@stdout = (
+    qr/^Service  *: POSTGRES_LAST_VACUUM$/m,
+    qr/^Returns  *: 0 \(OK\)$/m,
+    qr/^Message  *: 1 database\(s\) checked$/m,
+    qr/^Perfdata *: testdb=.*s warn=3600 crit=864000$/m
+);
+
+# we don't check the [auto][vacuum,analyze]_count here, because we are filtering out
+# system tables which were accounted for in the previous test.
+
+$node->command_checks_all( [
+    './check_pgactivity', '--service'  => 'last_vacuum',
+                          '--vacuum_table_min_size' => 10,
+                          '--username' => $ENV{'USER'} || 'postgres',
+                          '--format'   => 'human',
+                          '--dbname'   => 'testdb',
+                          '--status-file' => $pga_data,
+                          '--warning'  => '1h',
+                          '--critical' => '10d'
+    ],
+    0,
+    \@stdout,
+    [ qr/^$/ ],
+    'database with two tables, one never vacuumed, filtering out small tables'
 );
 
 ### End of tests ###

@@ -5339,7 +5339,7 @@ sub check_last_maintenance {
                     ||'$c_limit $w_limit'))
             FROM pg_stat_all_tables a
             WHERE schemaname NOT LIKE 'pg_temp_%'
-              AND pg_relation_size(relid) > $table_min_size
+              AND pg_relation_size(relid) >= $table_min_size
               AND schemaname NOT LIKE 'information_schema'
               AND (('${type}' = 'analyze' AND schemaname NOT LIKE 'pg_toast') -- TOAST tables aren't ANALYZEd
                 OR  ('${type}' = 'vacuum'))
@@ -5370,7 +5370,7 @@ sub check_last_maintenance {
             FROM pg_stat_all_tables a
             WHERE schemaname NOT LIKE 'pg_temp_%'
               AND schemaname NOT LIKE 'pg_toast_temp_%'
-              AND pg_relation_size(relid) > $table_min_size
+              AND pg_relation_size(relid) >= $table_min_size
               AND schemaname NOT LIKE 'information_schema'
               AND (('${type}' = 'analyze' AND schemaname NOT LIKE 'pg_toast') -- TOAST tables aren't ANALYZEd
                 OR  ('${type}' = 'vacuum'))
@@ -5403,7 +5403,7 @@ sub check_last_maintenance {
             FROM pg_stat_all_tables a
             WHERE schemaname NOT LIKE 'pg_temp_%'
               AND schemaname NOT LIKE 'pg_toast_temp_%'
-              AND pg_relation_size(relid) > $table_min_size
+              AND pg_relation_size(relid) >= $table_min_size
               AND schemaname NOT LIKE 'information_schema'
               AND (('${type}' = 'analyze' AND schemaname NOT LIKE 'pg_toast') -- TOAST tables aren't ANALYZEd
                 OR  ('${type}' = 'vacuum'))
@@ -5446,7 +5446,7 @@ sub check_last_maintenance {
             JOIN pg_class b on a.relid = b.oid
             WHERE schemaname NOT LIKE 'pg_temp_%'
               AND schemaname NOT LIKE 'pg_toast_temp_%'
-              AND pg_relation_size(relid) > $table_min_size
+              AND pg_relation_size(relid) >= $table_min_size
               AND schemaname NOT LIKE 'information_schema'
               AND (('${type}' = 'analyze' AND schemaname NOT LIKE 'pg_toast') -- TOAST tables aren't ANALYZEd
                 OR  ('${type}' = 'vacuum'))
