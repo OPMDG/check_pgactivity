@@ -772,6 +772,12 @@ COMPATIBILITY
 
         You can use multiple "--exclude REGEX" parameters.
 
+        This service supports a "--analyze-table-min-size" parameter to
+        exclude small relations. We use the `pg_relation_size()` function
+        to filter out those relations that are smaller than this value,
+        because the tables and their associated toast tables are processed
+        separately by autovacuum, and by this probe. This defaults to 1MB.
+
         Required privileges: unprivileged role able to log in all databases.
 
     last_vacuum (8.2+)
@@ -809,6 +815,12 @@ COMPATIBILITY
         a qualified named relation in only one database.
 
         You can use multiple "--exclude REGEX" parameters.
+
+        This service supports a "--vacuum-table-min-size" parameter to
+        exclude small relations. We use the `pg_relation_size()` function
+        to filter out those relations that are smaller than this value,
+        because the tables and their associated toast tables are processed
+        separately by autovacuum, and by this probe. This defaults to 2MB.
 
         Required privileges: unprivileged role able to log in all databases.
 
