@@ -773,9 +773,10 @@ COMPATIBILITY
         You can use multiple "--exclude REGEX" parameters.
 
         This service supports a "--analyze_table_min_size" parameter to
-        exclude small relations. The value must be a positive integer
-        representing the threshold in kilobytes below which the relation
-        is excluded. This defaults to 1024 (1MB).
+        exclude small relations. We use the `pg_relation_size()` function
+        to filter out those relations that are smaller than this value,
+        because the tables and their associated toast tables are processed
+        separately by autovacuum, and by this probe. This defaults to 1MB.
 
         Required privileges: unprivileged role able to log in all databases.
 
@@ -816,9 +817,10 @@ COMPATIBILITY
         You can use multiple "--exclude REGEX" parameters.
 
         This service supports a "--vacuum_table_min_size" parameter to
-        exclude small relations. The value must be a positive integer
-        representing the threshold in kilobytes below which the relation
-        is excluded. This defaults to 10240 (10MB).
+        exclude small relations. We use the `pg_relation_size()` function
+        to filter out those relations that are smaller than this value,
+        because the tables and their associated toast tables are processed
+        separately by autovacuum, and by this probe. This defaults to 2MB.
 
         Required privileges: unprivileged role able to log in all databases.
 
