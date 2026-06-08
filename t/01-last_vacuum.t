@@ -230,7 +230,7 @@ $node->poll_query_until('testdb', qq{
 
 $node->command_checks_all( [
     './check_pgactivity', '--service'  => 'last_vacuum',
-                          '--vacuum_table_min_size' => 10,
+                          '--vacuum_table_min_size' => '10kb',
                           '--username' => $ENV{'USER'} || 'postgres',
                           '--format'   => 'human',
                           '--dbname'   => 'testdb',
