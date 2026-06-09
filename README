@@ -772,7 +772,7 @@ COMPATIBILITY
 
         You can use multiple "--exclude REGEX" parameters.
 
-        This service supports a "--analyze_table_min_size" parameter to
+        This service supports a "--analyze-table-min-size" parameter to
         exclude small relations. We use the `pg_relation_size()` function
         to filter out those relations that are smaller than this value,
         because the tables and their associated toast tables are processed
@@ -816,7 +816,7 @@ COMPATIBILITY
 
         You can use multiple "--exclude REGEX" parameters.
 
-        This service supports a "--vacuum_table_min_size" parameter to
+        This service supports a "--vacuum-table-min-size" parameter to
         exclude small relations. We use the `pg_relation_size()` function
         to filter out those relations that are smaller than this value,
         because the tables and their associated toast tables are processed

@@ -50,7 +50,7 @@ sleep(1);
 
 $node->command_checks_all( [
     './check_pgactivity', '--service'  => 'last_vacuum',
-                          '--vacuum_table_min_size' => 0,
+                          '--vacuum-table-min-size' => 0,
                           '--username' => $ENV{'USER'} || 'postgres',
                           '--format'   => 'human',
                           '--dbname'   => 'template1',
@@ -108,7 +108,7 @@ SKIP: {
 
 $node->command_checks_all( [
     './check_pgactivity', '--service'  => 'last_vacuum',
-                          '--vacuum_table_min_size' => 0,
+                          '--vacuum-table-min-size' => 0,
                           '--username' => $ENV{'USER'} || 'postgres',
                           '--format'   => 'human',
                           '--dbname'   => 'testdb',
@@ -148,7 +148,7 @@ push @stdout, (
 
 $node->command_checks_all( [
     './check_pgactivity', '--service'  => 'last_vacuum',
-                          '--vacuum_table_min_size' => 0,
+                          '--vacuum-table-min-size' => 0,
                           '--username' => $ENV{'USER'} || 'postgres',
                           '--format'   => 'human',
                           '--dbname'   => 'testdb',
@@ -186,7 +186,7 @@ push @stdout, (
 
 $node->command_checks_all( [
     './check_pgactivity', '--service'  => 'last_vacuum',
-                          '--vacuum_table_min_size' => 0,
+                          '--vacuum-table-min-size' => 0,
                           '--username' => $ENV{'USER'} || 'postgres',
                           '--format'   => 'human',
                           '--dbname'   => 'testdb',
@@ -230,7 +230,7 @@ $node->poll_query_until('testdb', qq{
 
 $node->command_checks_all( [
     './check_pgactivity', '--service'  => 'last_vacuum',
-                          '--vacuum_table_min_size' => '10kb',
+                          '--vacuum-table-min-size' => '10kb',
                           '--username' => $ENV{'USER'} || 'postgres',
                           '--format'   => 'human',
                           '--dbname'   => 'testdb',

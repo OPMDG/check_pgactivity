@@ -503,8 +503,8 @@ my %args = (
     'wal_buffers'           => undef,
     'checkpoint_segments'   => undef,
     'effective_cache_size'  => undef,
-    'vacuum_table_min_size' => '2mb',
-    'analyze_table_min_size'=> '1mb',
+    'vacuum-table-min-size' => '2mb',
+    'analyze-table-min-size'=> '1mb',
     'no_check_autovacuum'   => 0,
     'no_check_fsync'        => 0,
     'no_check_enable'       => 0,
@@ -5288,7 +5288,7 @@ sub check_last_maintenance {
     my @dbexclude  = @{ $args{'dbexclude'} };
     my $me         = 'POSTGRES_LAST_' . uc($type);
 
-    $table_min_size = get_size($args{$type . "_table_min_size"});
+    $table_min_size = get_size($args{$type . "-table-min-size"});
 
     # warning and critical are mandatory.
     pod2usage(
@@ -10044,8 +10044,8 @@ GetOptions(
         'dump-status-file!',
         'dump-bin-file:s',
         'effective_cache_size=i',
-        'vacuum_table_min_size=s',
-        'analyze_table_min_size=s',
+        'vacuum-table-min-size=s',
+        'analyze-table-min-size=s',
         'exclude=s',
         'format|F=s',
         'global-pattern=s',

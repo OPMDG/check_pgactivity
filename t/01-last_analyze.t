@@ -50,7 +50,7 @@ sleep(1);
 
 $node->command_checks_all( [
     './check_pgactivity', '--service'  => 'last_analyze',
-                          '--analyze_table_min_size' => 0,
+                          '--analyze-table-min-size' => 0,
                           '--username' => $ENV{'USER'} || 'postgres',
                           '--format'   => 'human',
                           '--dbname'   => 'testdb',
@@ -107,7 +107,7 @@ SKIP: {
 
 $node->command_checks_all( [
     './check_pgactivity', '--service'  => 'last_analyze',
-                          '--analyze_table_min_size' => 0,
+                          '--analyze-table-min-size' => 0,
                           '--username' => $ENV{'USER'} || 'postgres',
                           '--format'   => 'human',
                           '--dbname'   => 'testdb',
@@ -147,7 +147,7 @@ push @stdout, (
 
 $node->command_checks_all( [
     './check_pgactivity', '--service'  => 'last_analyze',
-                          '--analyze_table_min_size' => 0,
+                          '--analyze-table-min-size' => 0,
                           '--username' => $ENV{'USER'} || 'postgres',
                           '--format'   => 'human',
                           '--dbname'   => 'testdb',
@@ -185,7 +185,7 @@ push @stdout, (
 
 $node->command_checks_all( [
     './check_pgactivity', '--service'  => 'last_analyze',
-                          '--analyze_table_min_size' => 0,
+                          '--analyze-table-min-size' => 0,
                           '--username' => $ENV{'USER'} || 'postgres',
                           '--format'   => 'human',
                           '--dbname'   => 'testdb',
