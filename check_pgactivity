@@ -8670,8 +8670,9 @@ only one database.
 You can use multiple C<--exclude REGEX> parameters.
 
 Perfdata returns the size of all relations per database. This list use the
-fully qualified of each relation name. If C<--exclude REGEX> is set, the number
-of excluded relations is returned in the long text field of the plugin.
+fully qualified name of each relation. If C<--exclude REGEX> is set, the
+number of excluded relations is returned in the long text field of the
+plugin.
 
 Required privileges: unprivileged role able to log in all databases,
 or at least those in C<--dbinclude>.
