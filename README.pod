@@ -1286,28 +1286,26 @@ or at least those in C<--dbinclude>.
 
 Check relations' size.
 
-Without C<--critical>  or C<--warning> parameters, this service attempts to
-fetch all relations' size.
+Critical and Warning thresholds are optional. An alert is raised if a
+relation's size is above the warning or critical level. They only accept a
+raw number or a size.
 
-An alert is raised if an relation's size is above the warning or critical level.
+This service supports both C<--dbexclude> and C<--dbinclude> parameters.
+The "postgres" database and templates are always excluded.
 
-This service supports both C<--dbexclude>  and C<--dbinclude> parameters.
-The 'postgres' database and templates are always excluded.
-
-This service supports a C<--exclude REGEX>  parameter to exclude relations
+This service supports a C<--exclude REGEX> parameter to exclude relations
 matching a regular expression. The regular expression applies to
 "database.schema_name.relation_name". This enables you to filter either on a
 relation name for all schemas and databases, on a qualified named relation
 (schema + relation) for all databases or on a qualified named relation in
 only one database.
 
-You can use multiple C<--exclude REGEX>  parameters.
+You can use multiple C<--exclude REGEX> parameters.
 
-Perfdata will return the number of relations per database.
-
-A list of the relations and their sizes will be returned after the
-perfdata. This list contains the fully qualified relation name. If
-C<--exclude REGEX> is set, the number of excluded relations is returned.
+Perfdata returns the size of all relations per database. This list use the
+fully qualified name of each relation. If C<--exclude REGEX> is set, the
+number of excluded relations is returned in the long text field of the
+plugin.
 
 Required privileges: unprivileged role able to log in all databases,
 or at least those in C<--dbinclude>.
@@ -1486,7 +1484,7 @@ pg_ls_waldir
 
 =head1 VERSION
 
-check_pgactivity version 2.10, released on Mon May 18 2026.
+check_pgactivity version 2.11, released on Mon Aug 17 2026.
 
 =head1 LICENSING
 

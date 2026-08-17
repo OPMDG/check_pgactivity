@@ -738,7 +738,8 @@ COMPATIBILITY
 
     last_analyze (8.2+)
         Check on each databases that the oldest "analyze" (from autovacuum
-        or not) is not older than the given threshold.
+        or not) is not older than the given threshold. This is to check that
+        a scheduled ANALYZE is working correctly.
 
         This service uses the status file (see "--status-file" parameter)
         with PostgreSQL 9.1+.
@@ -772,17 +773,12 @@ COMPATIBILITY
 
         You can use multiple "--exclude REGEX" parameters.
 
-        This service supports a "--analyze-table-min-size" parameter to
-        exclude small relations. We use the `pg_relation_size()` function
-        to filter out those relations that are smaller than this value,
-        because the tables and their associated toast tables are processed
-        separately by autovacuum, and by this probe. This defaults to 1MB.
-
         Required privileges: unprivileged role able to log in all databases.
 
     last_vacuum (8.2+)
         Check that the oldest vacuum (from autovacuum or otherwise) in each
-        database in the cluster is not older than the given threshold.
+        database in the cluster is not older than the given threshold. This
+        is to check that a scheduled VACUUM is working correctly.
 
         This service uses the status file (see "--status-file" parameter)
         with PostgreSQL 9.1+.
@@ -815,12 +811,6 @@ COMPATIBILITY
         a qualified named relation in only one database.
 
         You can use multiple "--exclude REGEX" parameters.
-
-        This service supports a "--vacuum-table-min-size" parameter to
-        exclude small relations. We use the `pg_relation_size()` function
-        to filter out those relations that are smaller than this value,
-        because the tables and their associated toast tables are processed
-        separately by autovacuum, and by this probe. This defaults to 2MB.
 
         Required privileges: unprivileged role able to log in all databases.
 
@@ -1265,14 +1255,12 @@ COMPATIBILITY
     relation_size (9.0+)
         Check relations' size.
 
-        Without "--critical" or "--warning" parameters, this service
-        attempts to fetch all relations' size.
-
-        An alert is raised if an relation's size is above the warning or
-        critical level.
+        Critical and Warning thresholds are optional. An alert is raised if
+        a relation's size is above the warning or critical level. They only
+        accept a raw number or a size.
 
         This service supports both "--dbexclude" and "--dbinclude"
-        parameters. The 'postgres' database and templates are always
+        parameters. The "postgres" database and templates are always
         excluded.
 
         This service supports a "--exclude REGEX" parameter to exclude
@@ -1284,12 +1272,10 @@ COMPATIBILITY
 
         You can use multiple "--exclude REGEX" parameters.
 
-        Perfdata will return the number of relations per database.
-
-        A list of the relations and their sizes will be returned after the
-        perfdata. This list contains the fully qualified relation name. If
-        "--exclude REGEX" is set, the number of excluded relations is
-        returned.
+        Perfdata returns the size of all relations per database. This list
+        use the fully qualified name of each relation. If "--exclude REGEX"
+        is set, the number of excluded relations is returned in the long
+        text field of the plugin.
 
         Required privileges: unprivileged role able to log in all databases,
         or at least those in "--dbinclude".
@@ -1459,7 +1445,7 @@ COMPATIBILITY
           check_pgactivity -p 5433 -h slave --service hit_ratio --dbinclude importantone -w 90% -c 80%
 
 VERSION
-    check_pgactivity version 2.10, released on Mon May 18 2026.
+    check_pgactivity version 2.11, released on Mon Aug 17 2026.
 
 LICENSING
     This program is open source, licensed under the PostgreSQL license. For

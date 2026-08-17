@@ -1,6 +1,13 @@
 Changelog
 =========
 
+2026-08-17 v2.11:
+
+* add: basic v19 compatibility
+* change: filter out small tables in check_last_maintenance
+* fix: review of relation_size documentation
+* fix: review of last_maintenance documentation
+
 2026-05-18 v2.10:
 
 * add: new unused_indexes service (Guillaume Lelarge)
