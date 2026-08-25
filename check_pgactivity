@@ -7644,7 +7644,7 @@ sub check_pgdata_permission {
 
     $mode    = $stat[2];
     $dir_uid = $stat[4];
-    $perm = sprintf( "%04o", $mode & 07777 );
+    $perm = sprintf( "%04o", $mode & 07777 ) unless (not defined ($mode));
 
     if ( not defined ($dir_uid) ) {
         if ( $hosts[0]{'version_num'} >= $PG_VERSION_110 ) {
