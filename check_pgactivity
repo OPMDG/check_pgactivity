@@ -503,6 +503,7 @@ my %args = (
     'shared_buffers'        => undef,
     'wal_buffers'           => undef,
     'checkpoint_segments'   => undef,
+    'max_wal_size'          => undef,
     'effective_cache_size'  => undef,
     'vacuum-table-min-size' => '2mb',
     'analyze-table-min-size'=> '1mb',
@@ -3867,22 +3868,35 @@ sub check_commit_ratio {
 
 =item B<configuration> (8.0+)
 
-Check the most important settings.
+Check the most important settings (according to pg_settings).
+
+Raises a Critical for dangerous settings,
+or a Warning if some parameters do not follow common guidelines
+(although some of them are still shipped by default).
 
 Warning and Critical thresholds are ignored.
 
-Specific parameters are :
+The thresholds for some parameters may be modified with:
 C<--work_mem>, C<--maintenance_work_mem>, C<--shared_buffers>,C<--wal_buffers>,
-C<--checkpoint_segments>, C<--effective_cache_size>, C<--no_check_autovacuum>,
-C<--no_check_fsync>, C<--no_check_enable>, C<--no_check_track_counts>.
+C<--checkpoint_segments>, C<--max_wal_size>, C<--effective_cache_size>
 
-Required privileges: unprivileged role.
+Use one or more C<--exclude REGEX> parameters
+to exclude some checks matching a regular expression.
+Some checks may be disabled directly with:
+C<--no_check_autovacuum>, C<--no_check_fsync>, C<--no_check_enable>,
+C<--no_check_track_counts> (kept for compatibility).
+
+No perfdata.
+
+Required privileges: unprivileged role,
+preferable without custom parameters.
 
 =cut
 
 sub check_configuration {
     my @hosts;
     my @msg_crit;
+    my @msg_warn;
     my %args = %{ $_[0] };
     my $me   = 'POSTGRES_CONFIGURATION';
     # This service is based on a probe by Marc Cousin (cousinmarc@gmail.com)
@@ -3892,6 +3906,7 @@ sub check_configuration {
     my $shared_buffers       = $args{'shared_buffers'} || 16384; # At least 128MB
     my $wal_buffers          = $args{'wal_buffers'} || 64; # At least 512k. Or -1 for 9.1
     my $checkpoint_segments  = $args{'checkpoint_segments'} || 10;
+    my $max_wal_size         = $args{'max_wal_size'} || 1024;
     # At least 1GB. No way a modern server has less than 2GB of ram
     my $effective_cache_size = $args{'effective_cache_size'} || 131072;
     # These will be checked to verify they are still the default values (no
@@ -3902,21 +3917,41 @@ sub check_configuration {
     my $no_check_enable       = $args{'no_check_enable'} || 0;
     my $no_check_track_counts = $args{'no_check_track_counts'} || 0;
 
-    my $sql = "SELECT name,setting FROM pg_settings
-        WHERE ( ( name='work_mem' and setting::bigint < $work_mem )
-            or ( name='maintenance_work_mem' and setting::bigint < $maintenance_work_mem )
-            or ( name='shared_buffers' and setting::bigint < $shared_buffers )
-            or ( name='wal_buffers' and ( setting::bigint < $wal_buffers or setting = '-1') )
-            or ( name='checkpoint_segments' and setting::bigint < $checkpoint_segments )
-            or ( name='effective_cache_size' and setting::bigint < $effective_cache_size )
-            or ( name='autovacuum' and setting='off' and $no_check_autovacuum = 0)
-            or ( name='fsync' and setting='off' and $no_check_fsync=0  )
-            or ( name~'^enable.*' and setting='off' and $no_check_enable=0 and name not in ('enable_partitionwise_aggregate', 'enable_partitionwise_join'))
-            or (name='stats_row_level' and setting='off' and $no_check_track_counts=0)
-            or (name='track_counts' and setting='off' and $no_check_track_counts=0)
-        )";
-
-    # FIXME make one parameter --ignore to rules 'em all.
+    my $sql = "
+        -- critical
+        SELECT name,setting, 2 as criticity FROM pg_settings
+        WHERE  ( name='allow_system_table_mods' and setting='on' )
+            OR ( name='autovacuum' and setting='off' and $no_check_autovacuum=0 )
+            OR ( name='data_checksums' and setting='off' )
+            OR ( name='data_sync_retry' and setting='on' )
+            OR ( name='debug_assertions' and setting='on' )
+            OR ( name='fsync' and setting='off' and $no_check_fsync=0  )
+            OR ( name='full_page_writes' and setting='off' )
+            OR ( name='remove_temp_files_after_crash' and setting='off' )
+            OR ( name='zero_damaged_pages' and setting='on' )
+        UNION ALL
+        -- warning
+        SELECT name,setting, 1 FROM pg_settings
+        WHERE  ( name='checkpoint_completion_target' and setting::numeric<0.8 )
+            OR ( name='checkpoint_segments' and setting::bigint<$checkpoint_segments )
+            OR ( name='checkpoint_timeout' and setting::bigint<300 )
+            OR ( name='default_statistics_target' and setting::bigint>=1000 )
+            OR ( name='default_toast_compression' and setting='pglz' )
+            OR ( name='effective_cache_size' and setting::bigint<$effective_cache_size )
+            OR ( name='effective_io_concurrency' and setting::bigint<=1 )
+            OR ( name~'^enable.*' and setting='off' and $no_check_enable=0 and name not in ('enable_partitionwise_aggregate', 'enable_partitionwise_join') )
+            OR ( name='lc_messages' and (setting <> 'C' and setting not like 'en%') )
+            OR ( name='maintenance_work_mem' and setting::bigint<$maintenance_work_mem )
+            OR ( name='max_wal_size' and setting::bigint<$max_wal_size )
+            OR ( name='password_encryption' and setting='md5' )
+            OR ( name='server_encoding' and setting<>'UTF8' )
+            OR ( name='shared_buffers' and setting::bigint<$shared_buffers )
+            OR ( name='stats_row_level' and setting='off' and $no_check_track_counts=0 )
+            OR ( name='track_counts' and setting='off' and $no_check_track_counts=0 )
+            OR ( name='wal_buffers' and ( setting::bigint<$wal_buffers or setting='-1') )
+            OR ( name='wal_compression' and setting='off' )
+            OR ( name='work_mem' and setting::bigint < $work_mem )
+        ";
 
     @hosts = @{ parse_hosts %args };
 
@@ -3929,14 +3964,18 @@ sub check_configuration {
 
     my @rc = @{ query( $hosts[0], $sql ) };
 
-DB_LOOP:    foreach my $setting (@rc) {
-        push @msg_crit => ( $setting->[0] . "=" . $setting->[1] );
+LOOP: foreach my $setting (@rc) {
+        foreach my $exclude_re ( @{ $args{'exclude'} } ) {
+            next LOOP if $setting->[0] =~ /$exclude_re/;
+        }
+        push @msg_crit => ( $setting->[0] . "=" . $setting->[1] ) if $setting->[2] == 2 ;
+        push @msg_warn => ( $setting->[0] . "=" . $setting->[1] ) if $setting->[2] == 1 ;
     }
 
-    # All the entries in $result are an error. If the array isn't empty, we
-    # return ERROR, and the list of errors
     return status_critical( $me, \@msg_crit )
         if ( @msg_crit > 0 );
+    return status_warning ( $me, \@msg_warn )
+        if ( @msg_warn > 0 );
 
     return status_ok( $me, [ "PostgreSQL configuration ok" ] );
 }
@@ -10105,6 +10144,7 @@ Getopt::Long::Configure('bundling');
 GetOptions(
     \%args,
         'checkpoint_segments=i',
+        'max_wal_size=i',
         'critical|c=s',
         'dbexclude=s',
         'dbinclude=s',
@@ -10213,10 +10253,11 @@ pod2usage(
 
 # Check "configuration" specific arg
 pod2usage(
-    -message => 'FATAL: work_mem, maintenance_work_mem, shared_buffers, wal_buffers, checkpoint_segments, effective_cache_size, no_check_autovacuum, no_check_fsync, no_check_enable, no_check_track_counts are only allowed with "configuration" service.',
+    -message => 'FATAL: work_mem, maintenance_work_mem, shared_buffers, wal_buffers, checkpoint_segments, effective_cache_size, max_wal_size, no_check_autovacuum, no_check_fsync, no_check_enable, no_check_track_counts are only allowed with "configuration" service.',
     -exitval => 127
 ) if ( (defined $args{'work_mem'} or defined $args{'maintenance_work_mem'} or defined $args{'shared_buffers'}
     or defined $args{'wal_buffers'} or defined $args{'checkpoint_segments'} or defined $args{'effective_cache_size'}
+    or defined $args{'max_wal_size'}
     or $args{'no_check_autovacuum'} == 1 or $args{'no_check_fsync'} == 1 or $args{'no_check_enable'} ==1
     or $args{'no_check_track_counts'} == 1) and ( $args{'service'} ne 'configuration' ) );
 
