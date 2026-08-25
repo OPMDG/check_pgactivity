@@ -7598,6 +7598,10 @@ Checking the user only works on Linux systems (it uses /proc to avoid
 dependencies). Before 9.3, you need to provide the expected owner using the
 C<--uid> argument, or the owner will not be checked.
 
+After 11, if the user running the script doesn't have the right to use stats,
+it will check the mode with the data_directory_mode GUC. It won't be able to
+check the owner though.
+
 Required privileges:
  <11:superuser
  v11: user with pg_monitor or pg_read_all_setting
