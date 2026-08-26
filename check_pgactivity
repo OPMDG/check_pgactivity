@@ -5050,6 +5050,9 @@ Check if there are unused indexes in a database.
 
 A warning alert is raised if an unused index is detected.
 
+Critical and Warning define the interval since the last usage of an index
+(eg. 5m or 300s ).
+
 This service supports both C<--dbexclude>  and C<--dbinclude> parameters.
 The 'postgres' database and templates are always excluded.
 
@@ -5080,13 +5083,19 @@ sub check_unused_indexes {
     my @all_db;
     my $total_idx   = 0; # num of indexes checked, without excluded ones
     my $total_exidx = 0; # num of excluded indexes
+    my $count       = 0;
+    my $w_count     = 0;
     my $c_count     = 0;
+    my $w_limit     = -1;
+    my $c_limit     = -1;
     my %args        = %{ $_[0] };
     my @dbinclude   = @{ $args{'dbinclude'} };
     my @dbexclude   = @{ $args{'dbexclude'} };
     my $me          = 'POSTGRES_UNUSED_INDEXES';
-    my $query       = q{
-    SELECT current_database(), nsp.nspname AS schemaname, cls.relname, pg_stat_get_numscans(cls.oid)=0
+    my %queries = (
+        $PG_VERSION_82 => q{
+        SELECT current_database(), nsp.nspname AS schemaname, cls.relname, pg_stat_get_numscans(cls.oid)=0,
+            extract('epoch' FROM now())::int
         FROM pg_class cls
             JOIN pg_namespace nsp ON nsp.oid = cls.relnamespace
             JOIN pg_index idx ON idx.indexrelid = cls.oid
@@ -5094,7 +5103,19 @@ sub check_unused_indexes {
             cls.relkind = 'i'
         AND nsp.nspname NOT IN ('information_schema', 'pg_catalog', 'pg_toast')
         AND NOT indisunique AND NOT indisprimary;
-    };
+        },
+        $PG_VERSION_160 => q{
+        SELECT current_database(), nsp.nspname AS schemaname, cls.relname, pg_stat_get_numscans(cls.oid)=0,
+            extract('epoch' FROM now()-pg_stat_get_lastscan(cls.oid))::int
+        FROM pg_class cls
+            JOIN pg_namespace nsp ON nsp.oid = cls.relnamespace
+            JOIN pg_index idx ON idx.indexrelid = cls.oid
+        WHERE
+            cls.relkind = 'i'
+        AND nsp.nspname NOT IN ('information_schema', 'pg_catalog', 'pg_toast')
+        AND NOT indisunique AND NOT indisprimary;
+        }
+    );
 
     @hosts = @{ parse_hosts %args };
 
@@ -5102,6 +5123,29 @@ sub check_unused_indexes {
         -message => 'FATAL: you must give one (and only one) host with service "unused_indexes".',
         -exitval => 127
     ) if @hosts != 1;
+
+    if ( defined $args{'warning'} ) {
+        # warning must be interval if provided.
+        pod2usage(
+            -message => "FATAL: warning threshold only accept interval.",
+            -exitval => 127
+        ) unless ( is_time( $args{'warning'} ) );
+
+        $w_limit = get_time $args{'warning'};
+    }
+    if ( defined $args{'critical'} ) {
+        # critical must be interval if provided.
+        pod2usage(
+            -message => "FATAL: critical threshold only accept interval.",
+            -exitval => 127
+        ) unless ( is_time( $args{'critical'} ) );
+
+        $c_limit = get_time $args{'critical'};
+    }
+
+    if ( defined $args{'warning'} or defined $args{'critical'} ) {
+        is_compat $hosts[0], "unused_indexes", $PG_VERSION_160 or exit 1;
+    }
 
     @all_db = @{ get_all_dbname( $hosts[0] ) };
 
@@ -5115,7 +5159,7 @@ sub check_unused_indexes {
         next ALLDB_LOOP if grep { $db =~ /$_/ } @dbexclude;
         next ALLDB_LOOP if @dbinclude and not grep { $db =~ /$_/ } @dbinclude;
 
-        @rc = @{ query( $hosts[0], $query, $db ) };
+        @rc = @{ query_ver( $hosts[0], %queries, $db ) };
 
         UNUSEDIDX_LOOP: foreach my $unused (@rc) {
             foreach my $exclude_re ( @{ $args{'exclude'} } ) {
@@ -5126,24 +5170,40 @@ sub check_unused_indexes {
             }
             if ($unused->[3] eq "t") {
                 # long message info :
-                push @longmsg => sprintf "Unused index = %s.%s.%s ; ",
+                push @longmsg => sprintf "Unused index = %s.%s.%s; ",
                     $unused->[0], $unused->[1], $unused->[2];
                 $idx_unused++;
+            }
+            elsif ( $c_limit != -1 and $unused->[4] > $c_limit ) {
+                push @longmsg => sprintf "Unused index = %s.%s.%s; ",
+                    $unused->[0], $unused->[1], $unused->[2];
+                $idx_unused++;
+                $c_count++;
+            }
+            elsif ( $w_limit != -1 and $unused->[4] > $w_limit ) {
+                push @longmsg => sprintf "Unused index = %s.%s.%s; ",
+                    $unused->[0], $unused->[1], $unused->[2];
+                $idx_unused++;
+                $w_count++;
             }
             $nb_idx++;
         }
         $total_idx += $nb_idx;
-        $c_count += $idx_unused;
+        $count += $idx_unused;
         push @perfdata => ["unused index in $db", $idx_unused ];
     }
     push @longmsg => sprintf "%i index(es) exclude from check", $total_exidx
         if $total_exidx > 0;
 
     # we use the critical count for the **total** number of invalid index
-    return status_warning( $me,
-        [ "$c_count/$total_idx index(es) unused" ],
+    return status_critical( $me,
+        [ "$count/$total_idx index(es) unused" ],
         \@perfdata, \@longmsg
     ) if $c_count > 0;
+    return status_warning( $me,
+        [ "$count/$total_idx index(es) unused" ],
+        \@perfdata, \@longmsg
+    ) if $w_count > 0 or $count > 0;
 
     return status_ok( $me, [ "No unused index" ], \@perfdata, \@longmsg );
 }
@@ -10140,7 +10200,7 @@ pod2usage(
 pod2usage(
     -message => 'FATAL: you must provide both warning and critical thresholds.',
     -exitval => 127
-) if $args{'service'} !~ m/^(pga_version|minor_version|uptime|settings)$/ and (
+) if $args{'service'} !~ m/^(pga_version|minor_version|uptime|settings|unused_indexes)$/ and (
     ( defined $args{'critical'} and not defined $args{'warning'} )
     or ( not defined $args{'critical'} and defined $args{'warning'} ));
 
