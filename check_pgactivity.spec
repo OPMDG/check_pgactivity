@@ -13,7 +13,6 @@ BuildArch: noarch
 BuildRoot: %{_tmppath}/%{name}-%{version}-%{release}-root-%(%{__id_u} -n)
 Requires: postgresql
 Requires: nagios-plugins
-Requires: perl-FindBin
 Provides: check_pgactivity = %{version}
 
 %description
