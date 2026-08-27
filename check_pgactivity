@@ -7898,7 +7898,7 @@ Required privileges: unprivileged role.
 sub check_settings {
     my $me  = 'POSTGRES_SETTINGS';
     my $this_msg;
-    my $now = gettimeofday();
+    my $now = time();
     my $expected_result = 0; # Ok
     my @long_msg;
     my @hosts;
