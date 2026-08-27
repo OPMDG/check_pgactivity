@@ -10,14 +10,14 @@ use warnings;
 use lib 't/lib';
 use pgNode;
 use TestLib ();
-use Test::More tests => 39;
+use Test::More tests => 49;
 
 my $node = pgNode->get_new_node('prod');
 my $pga_data = "$TestLib::tmp_check/pga.data";
 my $stdout;
 my @stdout;
 
-$node->init;
+$node->init(allows_streaming => 1);
 
 $node->append_conf('postgresql.conf', 'stats_row_level = on')
     if $node->version < 8.3;
@@ -243,6 +243,70 @@ $node->command_checks_all( [
     [ qr/^$/ ],
     'database with two tables, one never vacuumed, filtering out small tables'
 );
+
+# Tests for the new --ok-on-standby option
+
+$node->psql('testdb', 'INSERT INTO titi SELECT generate_series(1001,1000000)');
+
+my $stb   = pgNode->get_new_node('sec1');
+my $backup = 'backup'; # backup name
+
+# create backup
+$node->backup($backup);
+note("backup done");
+
+# create standby from backup and start it
+$stb->init_from_backup($node, $backup, has_streaming => 1);
+$stb->start;
+note("standby 1 started");
+
+# checkpoint to avoid waiting long time for the standby to catchup
+$node->safe_psql('template1', 'checkpoint');
+
+# wait for standby to catchup
+$node->wait_for_catchup($stb, 'replay', $node->lsn('insert'));
+note("standby caught up");
+
+# check on standby without --ok-on-standby
+$stb->command_checks_all( [
+    './check_pgactivity', '--service'  => 'last_vacuum',
+                          '--username' => $ENV{'USER'} || 'postgres',
+                          '--format'   => 'human',
+                          '--dbname'   => 'template1',
+                          '--status-file' => $pga_data,
+                          '--warning'  => '1h',
+                          '--critical' => '10d'
+    ],
+    3,
+    [ qr/^Service  *: POSTGRES_LAST_VACUUM$/m,
+      qr/^Returns  *: 3 \(UNKNOWN\)$/m,
+      qr/^Message  *: Server is no primary.$/m,
+    ],
+    [ qr/^$/ ],
+    'check on standby without --ok-on-standby'
+);
+
+# check on standby with --ok-on-standby
+$stb->command_checks_all( [
+    './check_pgactivity', '--service'  => 'last_vacuum',
+                          '--username' => $ENV{'USER'} || 'postgres',
+                          '--format'   => 'human',
+                          '--dbname'   => 'template1',
+                          '--status-file' => $pga_data,
+                          '--warning'  => '1h',
+                          '--critical' => '10d',
+                          '--ok-on-standby'
+    ],
+    0,
+    [ qr/^Service  *: POSTGRES_LAST_VACUUM$/m,
+      qr/^Returns  *: 0 \(OK\)$/m,
+      qr/^Message  *: Server is no primary.$/m,
+    ],
+    [ qr/^$/ ],
+    'check on standby with --ok-on-standby'
+);
+
+$stb->stop( 'immediate' );
 
 ### End of tests ###
 
