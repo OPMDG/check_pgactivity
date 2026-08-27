@@ -2120,7 +2120,7 @@ sub check_archiver {
                 ELSE 0
                 END, last_archived_wal, last_failed_wal,
                 /* mod time of the next wal to archive */
-		CASE WHEN current_setting('archive_mode')::bool IS TRUE
+		CASE WHEN current_setting('archive_mode')='on'
                 THEN extract('epoch' from (current_timestamp -
                     (pg_stat_file('pg_wal/'||pg_walfile_name(
                         (to_hex((last_archived_off+1)/4294967296)
