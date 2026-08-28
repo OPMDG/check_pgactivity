@@ -156,6 +156,10 @@ my %services = (
         'sub'  => \&check_configuration,
         'desc' => 'Check the most important settings.',
     },
+    'configuration_difference' => {
+        'sub'  => \&check_configuration_difference,
+        'desc' => 'Detect difference in cluster configuration.',
+    },
     'connection' => {
         'sub'  => \&check_connection,
         'desc' => 'Perform a simple connection test.'
@@ -242,6 +246,7 @@ my %services = (
         'sub'  => \&check_oldest_xmin,
         'desc' => 'Check the xmin horizon from distinct sources of xmin retention.'
     },
+
     'pga_version' => {
         'sub'  => \&check_pga_version,
         'desc' => 'Check the version of this check_pgactivity script.'
@@ -3982,6 +3987,114 @@ LOOP: foreach my $setting (@rc) {
     return status_ok( $me, [ "PostgreSQL configuration ok" ] );
 }
 
+
+=item B<configuration_difference>
+
+Check that the configuration is the same between two servers (according to pg_settings)
+By default, checks that the 1st server is a primary
+and the next one secondary that must be fully identical.
+
+Give the connection parameters with 2 or more services,
+eg. with --dbservices=pg1,pg2
+The first one is taken as the reference (usually a primary).
+
+By default it ignores archive_mode,primary_conninfo,primary_slot_name.
+Force the check with C<--identical>.
+
+This service supports the argument C<--exclude REGEX> to exclude parameters
+matching the expression. You can use multiple C<--exclude REGEX> arguments.
+Eg : --exclude '(.*parallel.*|cluster_name|auto_explain.*|pg_stat_statements.*|work_mem)'
+
+No perfdata
+
+Returns a Warning if some parameters are different.
+
+Required privileges: unprivileged role
+
+Known issues: roles configuration is ignored ;
+the connection role may hide the real configuration ;
+custom parameters (eg. demo.toto) are ignored if not declared by their extension.
+
+=cut
+
+sub check_configuration_difference {
+    my @perfdata;
+    my @msg;
+    my @msg_crit;
+    my @msg_warn;
+    my @hosts;
+    my @cfg;
+    my %refserver;
+    my %ignored;
+    my $nbdiff          = 0;
+    my %args            = %{ $_[0] };
+    my $num_clusters    = 0;
+    my $mess            = "";
+    my $setting_ref     = "";
+    my @exclude_regexes = @{ $args{'exclude'} };
+    # will probably or always different on a primary & its secondary
+    my @ignored_if_secondary = ( 'archive_mode', 'in_hot_standby', 'primary_conninfo', 'primary_slot_name', '(transaction_read_only' ) ;
+    my $me              = 'POSTGRES_CONFIGURATION_DIFFERENCE';
+    my %queries = (
+        $PG_VERSION_74 => q{
+        SELECT name, setting
+        FROM pg_settings
+        ORDER BY 1
+        }
+        );
+
+    @hosts = @{ parse_hosts %args };
+
+    pod2usage(
+        -message => 'FATAL: you must give two or more hosts with service "configuration_difference".',
+        -exitval => 127
+    ) if @hosts < 2;
+
+    # ignored parameters hash
+    %ignored = map { $_ => 1 } ( @ignored_if_secondary) ;
+    #if $args{'debug'} { foreach my $key (keys %ignored) { dprint "IGNORED: $key \n"; } };
+
+    # Fetch configuration for each host ; compare each parameter to the one on the 1st host a reference
+    foreach my $host (@hosts) {
+        $num_clusters ++;
+        dprint ("Cluster $num_clusters : $host->{'dbservice'} \n" );
+        # Fetch PG configuration from each host
+        $host->{'rs'} = \@{ query_ver( $host, %queries ) };
+        if ( $num_clusters == 1 ) {
+            # a hash table is more useful as the number of lines may in pg_settings may be different
+            %refserver = map { $_->[0] => $_->[1] } @{ $host->{'rs'} };
+        } else {
+            # Compare each setting with the setting from the first host
+            $nbdiff = 0;
+            REC_PARAM: foreach my $cfg ( @{$host->{'rs'}} ) {
+                my ($name, $setting) = @$cfg;
+                dprint ("$host->{'dbservice'} : $name, $setting \n" ) ;
+                $setting_ref = ($refserver{$name}//'ABSENT') ;
+                if ( ( $setting ne $setting_ref) and not exists $ignored{$name} ) {
+                    foreach my $exclude_regex ( @exclude_regexes ) {
+                        next REC_PARAM if $name =~ /$exclude_regex/;
+                    }
+                    dprint ("DIFF : $name : $setting vs: $setting_ref", "\n") ;
+                    $nbdiff ++ ; $mess = "" ;
+                    $mess = "[$host->{'dbservice'}] : " if $nbdiff == 1 ;
+                    if ( not defined $refserver{$name} ) {
+                        $mess = $mess."$name=$setting (ABSENT from $hosts[0]->{'dbservice'})";
+                    } else {
+                        $mess = $mess."$name=$setting (≠ $setting_ref)";
+                    }
+                    push @msg, $mess ;
+                }
+            }
+        }
+    }
+
+    return status_critical( $me, ['You need at least two cluster to compare their configurations.'] )
+        if $num_clusters < 2;
+
+    return status_warning( $me, \@msg) if @msg > 0;
+
+    return status_ok( $me, [ "$num_clusters Configurations checked :".join(' ', map { $_->{'dbservice'} } @hosts) ]);
+}
 
 =item B<connection> (all)
 
