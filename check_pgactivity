@@ -6796,6 +6796,8 @@ sub check_oldest_idlexact {
 
         $stats{$r->[0]} = {
             'num' => 0,
+            'numw' => 0,
+            'numc' => 0,
             'max' => -1,
             'avg' => 0,
         } unless exists $stats{$r->[0]};
@@ -6803,6 +6805,11 @@ sub check_oldest_idlexact {
         $oldest_idle = $r->[1] if $r->[1] > $oldest_idle;
 
         $stats{$r->[0]}{'num'}++ if $r->[1] > -1;
+        if ( $r->[1] > $c_limit ) {
+            $stats{$r->[0]}{'numc'}++;
+        } elsif ( $r->[1] > $w_limit ) {
+            $stats{$r->[0]}{'numw'}++;
+        }
         $stats{$r->[0]}{'max'} = $r->[1] if $stats{$r->[0]}{'max'} < $r->[1];
         $stats{$r->[0]}{'avg'} = (
             $stats{$r->[0]}{'avg'} * ($stats{$r->[0]}{'num'} -1) + $r->[1])
@@ -6824,16 +6831,18 @@ sub check_oldest_idlexact {
         push @perfdata, (
             [ "$db max", $stats{$db}{'max'}, 's', $w_limit, $c_limit ],
             [ "$db avg", $stats{$db}{'avg'}, 's', $w_limit, $c_limit ],
-            [ "$db # idle xact", $stats{$db}{'num'} ]
+            [ "$db # idle xact", $stats{$db}{'num'} ],
+            [ "$db # idle xact above warning", $stats{$db}{'numw'} ],
+            [ "$db # idle xact above critical", $stats{$db}{'numc'} ]
         );
 
         if ( $stats{$db}{'max'} > $c_limit ) {
-            push @msg => "oldest idle xact on $db: ". to_interval($stats{$db}{'max'});
+            push @msg => $stats{$db}{'numc'} ." above critical value, oldest idle xact on $db: ". to_interval($stats{$db}{'max'});
             next DB_LOOP;
         }
 
         if ( $stats{$db}{'max'} > $w_limit ) {
-            push @msg => "oldest idle xact on $db: ". to_interval($stats{$db}{'max'});
+            push @msg => $stats{$db}{'numw'} ." above warning value, oldest idle xact on $db: ". to_interval($stats{$db}{'max'});
         }
     }
 
