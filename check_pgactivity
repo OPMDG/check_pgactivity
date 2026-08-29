@@ -519,6 +519,7 @@ my %args = (
     'no_check_enable'       => 0,
     'no_check_track_counts' => 0,
     'ignore-wal-size'       => 0,
+    'ignore-paths'          => 0,
     'unarchiver'            => '',
     'save'                  => 0,
     'suffix'                => '',
@@ -536,6 +537,7 @@ my %args = (
     'relexclude'            => undef,
     'ok-on-standby'         => 0,
     'identical'             => 0,
+    'ignore-paths'          => 0
 );
 
 # Set name of the program without path*
@@ -4003,6 +4005,8 @@ By default it ignores a few parameters that will differ on a secondary:
 archive_mode,primary_conninfo,primary_slot_name.
 Force the check of all parameters with C<--identical>.
 
+C<--ignore-paths> ignore all differences in paths (data_directory, config_file, PID file, etc.)
+
 This service supports the argument C<--exclude REGEX> to exclude parameters
 matching the expression. You can use multiple C<--exclude REGEX> arguments.
 Eg : --exclude '(.*parallel.*|cluster_name|auto_explain.*|pg_stat_statements.*|work_mem)'
@@ -4033,9 +4037,18 @@ sub check_configuration_difference {
     my $setting_ref     = "";
     my @exclude_regexes = @{ $args{'exclude'} };
     my $identical       = $args{'identical'} ;
+    my $ignore_paths    = $args{'ignore-paths'} ;
     # will probably or always different on a primary & its secondary
-    my @ignored_if_secondary = ( 'archive_mode', 'in_hot_standby', 'primary_conninfo', 'primary_slot_name', 'transaction_read_only' ) ;
-    my $me              = 'POSTGRES_CONFIGURATION_DIFFERENCE';
+    my @ignored_if_secondary = ( 'archive_mode', 'in_hot_standby',
+                                 'primary_conninfo', 'primary_slot_name',
+                                 'transaction_read_only' ) ;
+    # the parameters contain paths that may differ on two different servers
+    # used by --ignore-paths
+    my @ignored_paths = ( 'config_file','data_directory','external_pid_file',
+                          'hba_file','ident_file', 'stats_temp_directory' ) ;
+    # always ignored
+    my @ignored_all = ('effective_wal_level');
+    my $me          = 'POSTGRES_CONFIGURATION_DIFFERENCE';
     my %queries = (
         $PG_VERSION_74 => q{
         SELECT name, setting
@@ -4051,9 +4064,11 @@ sub check_configuration_difference {
         -exitval => 127
     ) if @hosts < 2;
 
-    # ignored parameters hash
-    if ( $identical ne 1 ) { %ignored = map { $_ => 1 } ( @ignored_if_secondary) } ;
-    foreach my $key (keys %ignored) { dprint "IGNORED: $key \n"; };
+    # Compile the ignored parameters into a hash
+    if ( $identical ne 1 )     { @ignored_all = (@ignored_all, @ignored_if_secondary) } ;
+    if ( $ignore_paths eq 1 )  { @ignored_all = (@ignored_all, @ignored_paths) } ;
+    %ignored = map { $_ => 1 } ( @ignored_all) ;
+    # foreach my $key (keys %ignored) { print "IGNORED: $key \n"; };
 
     # Fetch configuration for each host ; compare each parameter to the one on the 1st host a reference
     foreach my $host (@hosts) {
@@ -10283,6 +10298,7 @@ GetOptions(
         'dbname|d=s',
         'dbservice|S=s',
         'identical!',
+        'ignore-paths!',
         'list|l!',
         'maintenance_work_mem=i',
         'no_check_autovacuum!',
@@ -10401,11 +10417,16 @@ pod2usage(
     -exitval => 127
 ) if scalar $args{'detailed'} and $args{'service'} ne 'oldest_xmin';
 
-# Check "check_difference" specific args --identical
+# Check specific args
 pod2usage(
     -message => 'FATAL: "identical" argument is only allowed with "configuration_difference" service.',
     -exitval => 127
 ) if scalar $args{'identical'} and $args{'service'} ne 'configuration_difference';
+
+pod2usage(
+    -message => 'FATAL: "ignore-paths" argument is only allowed with "configuration_difference" service.',
+    -exitval => 127
+) if scalar $args{'ignore-paths'} and $args{'service'} ne 'configuration_difference';
 
 
 # Set psql absolute path
