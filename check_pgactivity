@@ -535,6 +535,7 @@ my %args = (
     'schexclude'            => undef,
     'relexclude'            => undef,
     'ok-on-standby'         => 0,
+    'identical'             => 0,
 );
 
 # Set name of the program without path*
@@ -3991,15 +3992,16 @@ LOOP: foreach my $setting (@rc) {
 =item B<configuration_difference>
 
 Check that the configuration is the same between two servers (according to pg_settings)
-By default, checks that the 1st server is a primary
-and the next one secondary that must be fully identical.
+By default, assumes that the 1st server is a primary
+and the others are secondaries that must be fully identical.
 
-Give the connection parameters with 2 or more services,
+Give the connections parameters with 2 or more services,
 eg. with --dbservices=pg1,pg2
 The first one is taken as the reference (usually a primary).
 
-By default it ignores archive_mode,primary_conninfo,primary_slot_name.
-Force the check with C<--identical>.
+By default it ignores a few parameters that will differ on a secondary:
+archive_mode,primary_conninfo,primary_slot_name.
+Force the check of all parameters with C<--identical>.
 
 This service supports the argument C<--exclude REGEX> to exclude parameters
 matching the expression. You can use multiple C<--exclude REGEX> arguments.
@@ -4007,21 +4009,19 @@ Eg : --exclude '(.*parallel.*|cluster_name|auto_explain.*|pg_stat_statements.*|w
 
 No perfdata
 
-Returns a Warning if some parameters are different.
+Returns a Warning if some parameters are different
 
 Required privileges: unprivileged role
 
-Known issues: roles configuration is ignored ;
-the connection role may hide the real configuration ;
-custom parameters (eg. demo.toto) are ignored if not declared by their extension.
+Known issues: roles configurations are ignored ;
+the connection role may hide the "real" configuration ;
+custom parameters (eg. demo.toto) cannot be checkd if not declared by their extension.
 
 =cut
 
 sub check_configuration_difference {
     my @perfdata;
     my @msg;
-    my @msg_crit;
-    my @msg_warn;
     my @hosts;
     my @cfg;
     my %refserver;
@@ -4032,8 +4032,9 @@ sub check_configuration_difference {
     my $mess            = "";
     my $setting_ref     = "";
     my @exclude_regexes = @{ $args{'exclude'} };
+    my $identical       = $args{'identical'} ;
     # will probably or always different on a primary & its secondary
-    my @ignored_if_secondary = ( 'archive_mode', 'in_hot_standby', 'primary_conninfo', 'primary_slot_name', '(transaction_read_only' ) ;
+    my @ignored_if_secondary = ( 'archive_mode', 'in_hot_standby', 'primary_conninfo', 'primary_slot_name', 'transaction_read_only' ) ;
     my $me              = 'POSTGRES_CONFIGURATION_DIFFERENCE';
     my %queries = (
         $PG_VERSION_74 => q{
@@ -4051,8 +4052,8 @@ sub check_configuration_difference {
     ) if @hosts < 2;
 
     # ignored parameters hash
-    %ignored = map { $_ => 1 } ( @ignored_if_secondary) ;
-    #if $args{'debug'} { foreach my $key (keys %ignored) { dprint "IGNORED: $key \n"; } };
+    if ( $identical ne 1 ) { %ignored = map { $_ => 1 } ( @ignored_if_secondary) } ;
+    foreach my $key (keys %ignored) { dprint "IGNORED: $key \n"; };
 
     # Fetch configuration for each host ; compare each parameter to the one on the 1st host a reference
     foreach my $host (@hosts) {
@@ -4070,6 +4071,7 @@ sub check_configuration_difference {
                 my ($name, $setting) = @$cfg;
                 dprint ("$host->{'dbservice'} : $name, $setting \n" ) ;
                 $setting_ref = ($refserver{$name}//'ABSENT') ;
+                # Parameter is different, not ignored, and not excluded by --exclude
                 if ( ( $setting ne $setting_ref) and not exists $ignored{$name} ) {
                     foreach my $exclude_regex ( @exclude_regexes ) {
                         next REC_PARAM if $name =~ /$exclude_regex/;
@@ -10280,6 +10282,7 @@ GetOptions(
         'unarchiver=s',
         'dbname|d=s',
         'dbservice|S=s',
+        'identical!',
         'list|l!',
         'maintenance_work_mem=i',
         'no_check_autovacuum!',
@@ -10397,6 +10400,12 @@ pod2usage(
     -message => 'FATAL: "detailed" argument is only allowed with "oldest_xmin" service.',
     -exitval => 127
 ) if scalar $args{'detailed'} and $args{'service'} ne 'oldest_xmin';
+
+# Check "check_difference" specific args --identical
+pod2usage(
+    -message => 'FATAL: "identical" argument is only allowed with "configuration_difference" service.',
+    -exitval => 127
+) if scalar $args{'identical'} and $args{'service'} ne 'configuration_difference';
 
 
 # Set psql absolute path
