@@ -2899,14 +2899,23 @@ sub check_checksum_errors {
 
 =item B<backup_label_age> (8.1+)
 
-Check the age of the backup label file.
+Check the presence of backup label file (≥ PG15),
+or raise an alarm if it's too old (≤ PG14).
+
+Until PostgreSQL 14, a backup_label appears while a concurrent physical
+backup is running.
+Critical or Warning are raised if the age is above the thresholds
+(only intervals, eg. 1h30m25s).
+
+Threshold are ignored on PostgreSQL 15 and above :
+the presence of a backup_label is an immediate failure (Critical),
+as this file should never be present on a running system
+and will prevent a restart.
 
 Perfdata returns the age of the backup_label file, -1 if not present.
 
-Critical and Warning thresholds only accept an interval (eg. 1h30m25s).
-
 Required privileges:
-grant execute on function pg_stat_file(text, boolean) (pg12+);
+GRANT EXECUTE ON FUNCTION pg_stat_file(text, boolean) (≥ PG 12);
 unprivileged role (9.3+); superuser (<9.3)
 
 =cut
@@ -2936,7 +2945,17 @@ sub check_backup_label_age {
         },
     );
 
-    # warning and critical are mandatory.
+    @hosts = @{ parse_hosts %args };
+
+    pod2usage(
+        -message => 'FATAL: you must give only one host with service "backup_label_age".',
+        -exitval => 127
+    ) if @hosts != 1;
+
+    is_compat $hosts[0], 'backup_label_age', $PG_VERSION_81 or exit 1;
+
+    if ( $hosts[0]->{'version_num'} < $PG_VERSION_150 ) {
+    # warning and critical are mandatory on ≤ PG14
     pod2usage(
         -message => "FATAL: you must specify critical and warning thresholds.",
         -exitval => 127
@@ -2950,15 +2969,6 @@ sub check_backup_label_age {
     $c_limit = get_time( $args{'critical'} );
     $w_limit = get_time( $args{'warning'} );
 
-    @hosts = @{ parse_hosts %args };
-
-    pod2usage(
-        -message => 'FATAL: you must give only one host with service "backup_label_age".',
-        -exitval => 127
-    ) if @hosts != 1;
-
-    is_compat $hosts[0], 'backup_label_age', $PG_VERSION_81 or exit 1;
-
     $rs = @{ query_ver( $hosts[0], %queries )->[0] }[0];
 
     push @perfdata, [ 'age', $rs, 's', $w_limit, $c_limit ];
@@ -2968,9 +2978,18 @@ sub check_backup_label_age {
 
     return status_warning( $me, [ "age: ".to_interval($rs) ], \@perfdata )
         if $rs > $w_limit;
+    }
+    else {
+            # PG15+ : backup_label must not exist
+            $rs = @{ query_ver( $hosts[0], %queries )->[0] }[0];
+            return status_critical( $me, [ "age: ".to_interval($rs) ], \@perfdata )
+                if $rs > 0;
+            return status_ok( $me, [ "backup_label file absent" ], \@perfdata );
+    }
 
     return status_ok( $me, [ "backup_label file ".( $rs == 0 ? "absent":"present (age: ".to_interval($rs).")") ], \@perfdata );
 }
+
 
 
 =item B<bgwriter> (8.3+)
