@@ -11,14 +11,14 @@ CentOS 7:
 # yum install -y git perl-core "perl(IPC::Run)" "perl(Test::More)"
 ~~~
 
-CentOS 8:
+CentOS/Rocky 8+:
 
 ~~~console
 # dnf install -y perl-core "perl(Test::More)"
 # dnf install -y --enablerepo=PowerTools "perl(IPC::Run)"
 ~~~
 
-Debian 9 & 10:
+Debian:
 
 ~~~console
 # apt install -y libipc-run-perl
@@ -29,8 +29,11 @@ Debian 9 & 10:
 The tests must be run from the root folder of the project using `perl` or
 `prove`.
 
-The tests are run against the PostgreSQL version available in your `PATH` and
-reported by `pg_config --version`.
+The tests are run against a single PostgreSQL version,
+the one found in your `PATH` and reported by `pg_config --version`.
+It will create, run and destroy an instance in the `tmp_check/` subdirectory.
+
+To run a single test:
 
 ~~~console
 check_pgactivity$ export PATH="/usr/pgsql-13/bin:$PATH"
