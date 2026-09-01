@@ -3683,7 +3683,7 @@ sub check_ident_settings {
     push @perfdata, [ 'errors', $errors ];
 
     if ($errors > 0) {
-        push @msg, "$errors errors";
+        push @msg, "$errors error(s)";
         return status_critical( $me, \@msg , \@perfdata, \@longmsg );
     }
 
