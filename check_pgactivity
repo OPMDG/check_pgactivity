@@ -3991,7 +3991,7 @@ LOOP: foreach my $setting (@rc) {
 }
 
 
-=item B<configuration_difference>
+=item B<configuration_difference> (8.0+)
 
 Check that the configuration is the same between two servers (according to pg_settings)
 By default, assumes that the 1st server is a primary
@@ -4017,9 +4017,12 @@ Returns a Warning if some parameters are different
 
 Required privileges: unprivileged role
 
-Known issues: roles configurations are ignored ;
-the connection role may hide the "real" configuration ;
-custom parameters (eg. demo.toto) cannot be checkd if not declared by their extension.
+Known issues:
+TCP configuration can be checked only when two instances
+are connected by TCP (no socket);
+roles configurations are ignored;
+the connection role may hide the "real" configuration;
+custom parameters (eg. demo.foo) cannot be checked if not declared by their extension.
 
 =cut
 
@@ -4050,8 +4053,11 @@ sub check_configuration_difference {
     my @ignored_all = ('effective_wal_level');
     my $me          = 'POSTGRES_CONFIGURATION_DIFFERENCE';
     my %queries = (
-        $PG_VERSION_74 => q{
-        SELECT name, setting
+        $PG_VERSION_80 => q{
+        SELECT name,
+               (CASE WHEN name LIKE 'tcp%' AND inet_client_addr() IS NULL THEN 'N/A'
+                ELSE setting END
+               ) AS setting
         FROM pg_settings
         ORDER BY 1
         }
@@ -4072,6 +4078,7 @@ sub check_configuration_difference {
 
     # Fetch configuration for each host ; compare each parameter to the one on the 1st host a reference
     foreach my $host (@hosts) {
+        is_compat $hosts[$num_clusters], 'configuration', $PG_VERSION_80 or exit 1;
         $num_clusters ++;
         dprint ("Cluster $num_clusters : $host->{'dbservice'} \n" );
         # Fetch PG configuration from each host
@@ -4086,8 +4093,11 @@ sub check_configuration_difference {
                 my ($name, $setting) = @$cfg;
                 dprint ("$host->{'dbservice'} : $name, $setting \n" ) ;
                 $setting_ref = ($refserver{$name}//'ABSENT') ;
-                # Parameter is different, not ignored, and not excluded by --exclude
-                if ( ( $setting ne $setting_ref) and not exists $ignored{$name} ) {
+                # Parameter is different, not ignored, not 'N/A' on both sides,
+                # not excluded by --exclude
+                if ( ( $setting ne $setting_ref )
+                    and ( not exists $ignored{$name} )
+                    and ( $setting ne 'N/A' ) and ( $setting_ref ne 'N/A' ) ){
                     foreach my $exclude_regex ( @exclude_regexes ) {
                         next REC_PARAM if $name =~ /$exclude_regex/;
                     }
