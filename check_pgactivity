@@ -529,7 +529,7 @@ my %args = (
     'with-hugepages'        => undef,
     'schexclude'            => undef,
     'relexclude'            => undef,
-    'ok-on-standby'         => 0
+    'ok-on-standby'         => 0,
 );
 
 # Set name of the program without path*
