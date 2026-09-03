@@ -2907,7 +2907,7 @@ backup is running.
 Critical or Warning are raised if the age is above the thresholds
 (only intervals, eg. 1h30m25s).
 
-Threshold are ignored on PostgreSQL 15 and above :
+Thresholds are ignored on PostgreSQL 15 and above :
 the presence of a backup_label is an immediate failure (Critical),
 as this file should never be present on a running system
 and will prevent a restart.
