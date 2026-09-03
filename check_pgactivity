@@ -10391,8 +10391,9 @@ pod2usage(
     -exitval => 127
 ) if ( ( defined $args{'query'} or defined $args{'type'} or $args{'reverse'} == 1 ) and ( $args{'service'} ne 'custom_query' ) );
 
-
-# Check "configuration" specific arg
+#
+# Check specific args
+#
 pod2usage(
     -message => 'FATAL: work_mem, maintenance_work_mem, shared_buffers, wal_buffers, checkpoint_segments, effective_cache_size, max_wal_size, no_check_autovacuum, no_check_fsync, no_check_enable, no_check_track_counts are only allowed with "configuration" service.',
     -exitval => 127
@@ -10402,29 +10403,11 @@ pod2usage(
     or $args{'no_check_autovacuum'} == 1 or $args{'no_check_fsync'} == 1 or $args{'no_check_enable'} ==1
     or $args{'no_check_track_counts'} == 1) and ( $args{'service'} ne 'configuration' ) );
 
-
-# Check "archive_folder" specific args --ignore-wal-size and --suffix
-pod2usage(
-    -message => 'FATAL: "ignore-wal-size" and "suffix" are only allowed with "archive_folder" service.',
-    -exitval => 127
-) if ( $args{'ignore-wal-size'} or $args{'suffix'} )
-    and $args{'service'} ne 'archive_folder';
-
-
-# Check "streaming_delta" specific args --slave
-pod2usage(
-    -message => 'FATAL: "slave" is only allowed with "streaming_delta" service.',
-    -exitval => 127
-) if scalar @{ $args{'slave'} }  and $args{'service'} ne 'streaming_delta';
-
-
-# Check "oldest_xmin" specific args --detailed
 pod2usage(
     -message => 'FATAL: "detailed" argument is only allowed with "oldest_xmin" service.',
     -exitval => 127
 ) if scalar $args{'detailed'} and $args{'service'} ne 'oldest_xmin';
 
-# Check specific args
 pod2usage(
     -message => 'FATAL: "identical" argument is only allowed with "configuration_difference" service.',
     -exitval => 127
@@ -10434,6 +10417,24 @@ pod2usage(
     -message => 'FATAL: "ignore-paths" argument is only allowed with "configuration_difference" service.',
     -exitval => 127
 ) if scalar $args{'ignore-paths'} and $args{'service'} ne 'configuration_difference';
+
+pod2usage(
+    -message => 'FATAL: "ignore-wal-size" and "suffix" are only allowed with "archive_folder" service.',
+    -exitval => 127
+) if ( $args{'ignore-wal-size'} or $args{'suffix'} )
+    and $args{'service'} ne 'archive_folder';
+
+pod2usage(
+    -message => 'FATAL: "ok-on-standby" is only allowed with "last_vacuum" and "last_analyze" services.',
+    -exitval => 127
+) if ( $args{'ok-on-standby'}  )
+    and $args{'service'} ne 'last_vacuum' and $args{'service'} ne 'last_analyze' ;
+
+
+pod2usage(
+    -message => 'FATAL: "slave" is only allowed with "streaming_delta" service.',
+    -exitval => 127
+) if scalar @{ $args{'slave'} }  and $args{'service'} ne 'streaming_delta';
 
 
 # Set psql absolute path
