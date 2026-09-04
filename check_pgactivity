@@ -8116,11 +8116,11 @@ SLOTS_LOOP: foreach my $row (@rs) {
 =item B<settings> (9.0+)
 
 Check if the current settings have changed since they were stored in the
-service file.
+service file. Check also if there are errors in the configuration files.
 
-The "known" settings are recorded during the very first call of the service.
-To update the known settings after a configuration change, call this service
-again with the argument C<--save>.
+The "known" settings are recorded during the very first call of the service. If
+no error are found, you can update the known settings after a configuration
+change by calling this service again with the argument C<--save>.
 
 No perfdata.
 
@@ -8149,30 +8149,37 @@ sub check_settings {
     my $settings_lastedate;
     my %new_settings;
     my $pending_count = 0;
+    my $errors_count = 0;
     my %args  = %{ $_[0] };
     my $w_limit;
     my %queries = (
         $PG_VERSION_90 => q{
         SELECT coalesce(r.rolname, '*'), coalesce(d.datname, '*'),
           unnest(s.setconfig) AS setting,
-          false AS pending_restart
+          false AS pending_restart,
+          NULL AS error
         FROM pg_db_role_setting s
         LEFT JOIN pg_database d ON d.oid=s.setdatabase
         LEFT JOIN pg_roles r ON r.oid=s.setrole
         UNION ALL
-        SELECT '*', '*', name||'='||current_setting(name),false
+        SELECT '*', '*', name||'='||current_setting(name), false, NULL
         FROM pg_settings
        },
         $PG_VERSION_95 => q{
         SELECT coalesce(r.rolname, '*'), coalesce(d.datname, '*'),
           unnest(s.setconfig) AS setting,
-          false AS pending_restart
+          false AS pending_restart,
+          NULL AS error
         FROM pg_db_role_setting s
         LEFT JOIN pg_database d ON d.oid=s.setdatabase
         LEFT JOIN pg_roles r ON r.oid=s.setrole
         UNION ALL
-        SELECT '*', '*', name||'='||current_setting(name), pending_restart
+        SELECT '*', '*', name||'='||current_setting(name), pending_restart, NULL
         FROM pg_settings
+        UNION ALL
+        SELECT '*', '*', name||'='||setting, NULL, error||' in '||sourcefile||', line '||sourceline
+        FROM pg_file_settings
+        WHERE error IS NOT NULL
        }
     );
 
@@ -8190,14 +8197,20 @@ sub check_settings {
     $args{'save'} = 1 unless %settings;
 
 PARAM_LOOP: foreach my $row (@rs) {
-        my ( $rolname, $datname, $setting, $pending ) = @$row;
+        my ( $rolname, $datname, $setting, $pending, $error ) = @$row;
         my ( $name, $val ) = split /=/ => $setting, 2;
         my $prefix = "$rolname\@$datname";
         my $msg = "$setting";
 
+        if ( length($error) > 0 ) {
+            $errors_count++;
+            push @long_msg => "$error";
+            next PARAM_LOOP;
+        }
+
         if ( $pending eq "t" ) {
             $pending_count++;
-            push @long_msg => "$name is pending restart !";
+            push @long_msg => "$name is pending restart!";
         }
 
         $msg = "$prefix: $setting" unless $prefix eq '*@*';
@@ -8224,6 +8237,7 @@ PARAM_LOOP: foreach my $row (@rs) {
 
     $expected_result = 2 if scalar @long_msg;   # Regular warning
     $expected_result = 1 if $pending_count > 0; # Pending restart
+    $expected_result = 3 if $errors_count > 0;  # Errors
     $this_msg = join('\0', @long_msg);
     $settings_lastemsg = $settings_laste{'msg'} // "";
     $settings_lastedate = $settings_laste{'date'} // $now;
@@ -8243,10 +8257,13 @@ PARAM_LOOP: foreach my $row (@rs) {
         }
     }
 
-    if ( $args{'save'} ) {
+    if ( $args{'save'} and $errors_count == 0) {
         save $hosts[0], 'settings', \%new_settings, $args{'status-file'};
         return status_ok( $me, [ "Setting saved" ] )
     }
+
+    return status_critical( $me, [ 'Setting in error!' ], undef, \@long_msg )
+        if $expected_result == 3;
 
     return status_warning( $me, [ 'Setting changed and pending restart!' ], undef, \@long_msg )
         if $expected_result == 1;
