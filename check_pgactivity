@@ -180,6 +180,10 @@ my %services = (
         'sub'  => \&check_extensions_versions,
         'desc' => 'Check that installed extensions are up-to-date.'
     },
+    'ident_settings' => {
+        'sub'  => \&check_ident_settings,
+        'desc' => 'Check errors in ident settings.'
+    },
     'hit_ratio' => {
         'sub'  => \&check_hit_ratio,
         'desc' => 'Check hit ratio on databases.'
@@ -3619,6 +3623,72 @@ sub check_btree_bloat {
             if $w_count > 0;
 
     return status_ok( $me, [ "Btree bloat ok" ], \@perfdata );
+}
+
+
+=item B<ident_settings> (15+)
+
+Check errors in ident settings: pg_ident.conf and alike.
+
+Perfdata contains the number of errors per files.
+
+Thresholds, if any, are ignored.
+
+Required privileges: unprivileged role.
+
+=cut
+
+sub check_ident_settings {
+
+    my @rs;
+    my @perfdata;
+    my @msg;
+    my @longmsg;
+    my @hosts;
+    my %args         = %{ $_[0] };
+    my $me           = 'POSTGRES_IDENT_SETTINGS';
+    my $errors       = 0;
+
+    my %queries      = (
+        $PG_VERSION_150 => q{
+            SELECT NULL, line_number, error
+            FROM pg_ident_file_mappings
+            WHERE error IS NOT NULL
+            ORDER BY 1, 2, 3
+        },
+        $PG_VERSION_160 => q{
+            SELECT file_name, line_number, error
+            FROM pg_ident_file_mappings
+            WHERE error IS NOT NULL
+            ORDER BY 1, 2, 3
+        },
+    );
+
+    @hosts = @{ parse_hosts %args };
+
+    pod2usage(
+        -message => 'FATAL: you must give only one host with service "ident_settings".',
+        -exitval => 127
+    ) if @hosts != 1;
+
+    is_compat $hosts[0], 'ident_settings', $PG_VERSION_150 or exit 1;
+
+    @rs = @{ query_ver( $hosts[0], %queries ) };
+
+    REC_LOOP: foreach my $r (@rs) {
+        $errors++;
+        push @longmsg, "file ".$r->[0].", line ".$r->[1].", error: ".$r->[2];
+    }
+
+    push @perfdata, [ 'errors', $errors ];
+
+    if ($errors > 0) {
+        push @msg, "$errors errors";
+        return status_critical( $me, \@msg , \@perfdata, \@longmsg );
+    }
+
+    push @msg, "No errors in ident configuration files";
+    return status_ok( $me, \@msg , \@perfdata, \@longmsg );
 }
 
 
