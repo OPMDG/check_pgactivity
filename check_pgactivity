@@ -4045,7 +4045,7 @@ sub check_configuration_difference {
     # the parameters contain paths that may differ on two different servers
     # used by --ignore-paths
     my @ignored_paths = ( 'config_file','data_directory','external_pid_file',
-                          'hba_file','ident_file', 'stats_temp_directory' ) ;
+                          'hba_file','ident_file', 'stats_temp_directory', 'hosts_file' ) ;
     # always ignored
     my @ignored_all = ('effective_wal_level');
     my $me          = 'POSTGRES_CONFIGURATION_DIFFERENCE';
