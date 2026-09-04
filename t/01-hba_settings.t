@@ -21,13 +21,13 @@ $node->start;
 
 # simple check (trust everywhere, with initdb -A trust)
 $node->command_checks_all( [
-    './check_pgactivity', '--service'  => 'pg_hba_issues',
+    './check_pgactivity', '--service'  => 'hba_settings',
                           '--username' => $ENV{'USER'} || 'postgres',
                           '--format'   => 'human'
     ],
     2,
     [
-        qr/^Service  *: POSTGRES_PG_HBA_ISSUES$/m,
+        qr/^Service  *: POSTGRES_HBA_SETTINGS$/m,
         qr/^Returns  *: 2 \(CRITICAL\)$/m,
         qr/^Message  *: 1 critical issue\(s\) found, 0 warning issue\(s\) found$/m,
         qr/^Perfdata *: trust=6 warn=1 crit=1$/m,
@@ -43,13 +43,13 @@ truncate $node->data_dir . '/' . 'pg_hba.conf', 0;
 $node->append_conf('pg_hba.conf', "local all all trust");
 $node->reload;
 $node->command_checks_all( [
-    './check_pgactivity', '--service'  => 'pg_hba_issues',
+    './check_pgactivity', '--service'  => 'hba_settings',
                           '--username' => $ENV{'USER'} || 'postgres',
                           '--format'   => 'human'
     ],
     2,
     [
-        qr/^Service  *: POSTGRES_PG_HBA_ISSUES$/m,
+        qr/^Service  *: POSTGRES_HBA_SETTINGS$/m,
         qr/^Returns  *: 2 \(CRITICAL\)$/m,
         qr/^Message  *: 1 critical issue\(s\) found, 0 warning issue\(s\) found$/m,
         qr/^Perfdata *: trust=1 warn=1 crit=1$/m,
@@ -62,13 +62,13 @@ $node->command_checks_all( [
 $node->append_conf('pg_hba.conf', "local all all md5");
 $node->reload;
 $node->command_checks_all( [
-    './check_pgactivity', '--service'  => 'pg_hba_issues',
+    './check_pgactivity', '--service'  => 'hba_settings',
                           '--username' => $ENV{'USER'} || 'postgres',
                           '--format'   => 'human'
     ],
     2,
     [
-        qr/^Service  *: POSTGRES_PG_HBA_ISSUES$/m,
+        qr/^Service  *: POSTGRES_HBA_SETTINGS$/m,
         qr/^Returns  *: 2 \(CRITICAL\)$/m,
         qr/^Message  *: 2 critical issue\(s\) found, 0 warning issue\(s\) found$/m,
         qr/^Perfdata *: trust=1 warn=1 crit=1$/m,
@@ -82,13 +82,13 @@ $node->command_checks_all( [
 $node->append_conf('pg_hba.conf', "host all all all 255.255.255.255 scram-sha-256");
 $node->reload;
 $node->command_checks_all( [
-    './check_pgactivity', '--service'  => 'pg_hba_issues',
+    './check_pgactivity', '--service'  => 'hba_settings',
                           '--username' => $ENV{'USER'} || 'postgres',
                           '--format'   => 'human'
     ],
     2,
     [
-        qr/^Service  *: POSTGRES_PG_HBA_ISSUES$/m,
+        qr/^Service  *: POSTGRES_HBA_SETTINGS$/m,
         qr/^Returns  *: 2 \(CRITICAL\)$/m,
         qr/^Message  *: 3 critical issue\(s\) found, 0 warning issue\(s\) found$/m,
         qr/^Perfdata *: error=1 warn=1 crit=1$/m,

@@ -180,8 +180,8 @@ my %services = (
         'sub'  => \&check_extensions_versions,
         'desc' => 'Check that installed extensions are up-to-date.'
     },
-    'pg_hba_issues' => {
-        'sub'  => \&check_pg_hba_issues,
+    'hba_settings' => {
+        'sub'  => \&check_hba_settings,
         'desc' => 'Check issues in HBA configuration.'
     },
     'hit_ratio' => {
@@ -2909,7 +2909,7 @@ sub check_checksum_errors {
     return status_ok( $me, [ "$db_checked database(s) checked" ], \@perfdata );
 }
 
-=item B<pg_hba_issues> (10+)
+=item B<hba_settings> (10+)
 
 Check for issues in the HBA configuration, reported in pg_hba_file_rules.
 
@@ -2931,14 +2931,14 @@ Required privileges: unprivileged user.
 
 =cut
 
-sub check_pg_hba_issues {
+sub check_hba_settings {
     my @msg_crit;
     my @msg_warn;
     my @rs;
     my @perfdata;
     my @hosts;
     my %args    = %{ $_[0] };
-    my $me      = 'POSTGRES_PG_HBA_ISSUES';
+    my $me      = 'POSTGRES_HBA_SETTINGS';
     my $nb_crit = 0;
     my $nb_warn = 0;
     my $sql     = q{WITH list AS (
@@ -2967,11 +2967,11 @@ sub check_pg_hba_issues {
     @hosts = @{ parse_hosts %args };
 
     pod2usage(
-        -message => 'FATAL: you must give only one host with service "pg_hba_issues".',
+        -message => 'FATAL: you must give only one host with service "hba_settings".',
         -exitval => 127
     ) if @hosts != 1;
 
-    is_compat $hosts[0], 'pg_hba_issues', $PG_VERSION_100 or exit 1;
+    is_compat $hosts[0], 'hba_settings', $PG_VERSION_100 or exit 1;
 
     @rs = @{ query( $hosts[0], $sql ) };
 
