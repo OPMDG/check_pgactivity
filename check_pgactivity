@@ -313,7 +313,7 @@ my %services = (
     },
     'uptime' => {
         'sub'  => \&check_uptime,
-        'desc' => 'Time since postmaster start or configurtion reload.'
+        'desc' => 'Time since postmaster start or configuration reload.'
     },
     'wal_files' => {
         'sub'  => \&check_wal_files,
