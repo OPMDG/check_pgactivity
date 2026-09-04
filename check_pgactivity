@@ -3662,7 +3662,7 @@ sub check_file_settings {
             SELECT sourcefile, sourceline, name, error
             FROM pg_file_settings
             WHERE error IS NOT NULL
-            UNION ALL
+            UNION
             SELECT file_name, line_number, NULL, error
             FROM pg_hba_file_rules
             WHERE error IS NOT NULL
@@ -3672,11 +3672,11 @@ sub check_file_settings {
             SELECT sourcefile, sourceline, name, error
             FROM pg_file_settings
             WHERE error IS NOT NULL
-            UNION ALL
+            UNION
             SELECT file_name, line_number, NULL, error
             FROM pg_hba_file_rules
             WHERE error IS NOT NULL
-            UNION ALL
+            UNION
             SELECT NULL, line_number, NULL, error
             FROM pg_ident_file_mappings
             WHERE error IS NOT NULL
@@ -3686,11 +3686,11 @@ sub check_file_settings {
             SELECT sourcefile, sourceline, name, error
             FROM pg_file_settings
             WHERE error IS NOT NULL
-            UNION ALL
+            UNION
             SELECT file_name, line_number, NULL, error
             FROM pg_hba_file_rules
             WHERE error IS NOT NULL
-            UNION ALL
+            UNION
             SELECT file_name, line_number, NULL, error
             FROM pg_ident_file_mappings
             WHERE error IS NOT NULL
