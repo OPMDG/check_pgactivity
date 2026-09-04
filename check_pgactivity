@@ -4036,7 +4036,7 @@ sub check_configuration_difference {
     my $mess            = "";
     my $setting_ref     = "";
     my @exclude_regexes = @{ $args{'exclude'} };
-    my $identical       = $args{'identical'} ;
+    my $identical       = $args{'identical'} || 0;
     my $ignore_paths    = $args{'ignore-paths'} ;
     # will probably or always different on a primary & its secondary
     my @ignored_if_secondary = ( 'archive_mode', 'in_hot_standby',
