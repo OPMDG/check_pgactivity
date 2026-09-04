@@ -3648,6 +3648,7 @@ sub check_file_settings {
     my %args         = %{ $_[0] };
     my $me           = 'POSTGRES_FILE_SETTINGS';
     my $errors       = 0;
+    my %herrors;
 
     my %queries      = (
         # field current_query, not autovacuum_max_workers
@@ -3709,7 +3710,14 @@ sub check_file_settings {
     @rs = @{ query_ver( $hosts[0], %queries ) };
 
     REC_LOOP: foreach my $r (@rs) {
+        # increment global counter
         $errors++;
+
+        # increment per-database counter
+        $herrors{$r->[0]} = 0 if not defined($herrors{$r->[0]});
+        $herrors{$r->[0]}++;
+
+        # push message
         if (length($r->[2]) > 0) {
             push @longmsg, "file ".$r->[0].", line ".$r->[1].", setting ".$r->[2].", error: ".$r->[3];
         } else {
@@ -3717,7 +3725,12 @@ sub check_file_settings {
         }
     }
 
-    push @perfdata, [ 'errors', $errors ];
+    # push perfdata
+    push @perfdata, [ 'total errors', $errors ];
+    my @conffiles = keys %herrors;
+    for my $conffile (@conffiles) {
+        push @perfdata, [ "errors in $conffile", $herrors{$conffile} ];
+    }
 
     if ($errors > 0) {
         push @msg, "$errors errors";
