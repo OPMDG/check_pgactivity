@@ -180,6 +180,10 @@ my %services = (
         'sub'  => \&check_extensions_versions,
         'desc' => 'Check that installed extensions are up-to-date.'
     },
+    'file_settings' => {
+        'sub'  => \&check_file_settings,
+        'desc' => 'Check errors in file settings.'
+    },
     'hit_ratio' => {
         'sub'  => \&check_hit_ratio,
         'desc' => 'Check hit ratio on databases.'
@@ -3619,6 +3623,109 @@ sub check_btree_bloat {
             if $w_count > 0;
 
     return status_ok( $me, [ "Btree bloat ok" ], \@perfdata );
+}
+
+
+=item B<file_settings> (9.6+)
+
+Check errors in file settings: postgresql.conf since 9.6, pg_hba.conf since 10, and pg_ident.conf since 15.
+
+Perfdata contains the number of errors per files.
+
+Thresholds, if any, are ignored.
+
+Required privileges: unprivileged role.
+
+=cut
+
+sub check_file_settings {
+
+    my @rs;
+    my @perfdata;
+    my @msg;
+    my @longmsg;
+    my @hosts;
+    my %args         = %{ $_[0] };
+    my $me           = 'POSTGRES_FILE_SETTINGS';
+    my $errors       = 0;
+
+    my %queries      = (
+        # field current_query, not autovacuum_max_workers
+        $PG_VERSION_96 => q{
+            SELECT sourcefile, sourceline, name, error
+            FROM pg_file_settings
+            WHERE error IS NOT NULL
+            ORDER BY sourcefile, sourceline, name
+        },
+        $PG_VERSION_100 => q{
+            SELECT sourcefile, sourceline, name, error
+            FROM pg_file_settings
+            WHERE error IS NOT NULL
+            UNION
+            SELECT file_name, line_number, NULL, error
+            FROM pg_hba_file_rules
+            WHERE error IS NOT NULL
+            ORDER BY 1, 2, 3
+        },
+        $PG_VERSION_150 => q{
+            SELECT sourcefile, sourceline, name, error
+            FROM pg_file_settings
+            WHERE error IS NOT NULL
+            UNION
+            SELECT file_name, line_number, NULL, error
+            FROM pg_hba_file_rules
+            WHERE error IS NOT NULL
+            UNION
+            SELECT NULL, line_number, NULL, error
+            FROM pg_ident_file_mappings
+            WHERE error IS NOT NULL
+            ORDER BY 1, 2, 3
+        },
+        $PG_VERSION_160 => q{
+            SELECT sourcefile, sourceline, name, error
+            FROM pg_file_settings
+            WHERE error IS NOT NULL
+            UNION
+            SELECT file_name, line_number, NULL, error
+            FROM pg_hba_file_rules
+            WHERE error IS NOT NULL
+            UNION
+            SELECT file_name, line_number, NULL, error
+            FROM pg_ident_file_mappings
+            WHERE error IS NOT NULL
+            ORDER BY 1, 2, 3
+        },
+    );
+
+    @hosts = @{ parse_hosts %args };
+
+    pod2usage(
+        -message => 'FATAL: you must give only one host with service "file_settings".',
+        -exitval => 127
+    ) if @hosts != 1;
+
+    is_compat $hosts[0], 'file_settings', $PG_VERSION_96 or exit 1;
+
+    @rs = @{ query_ver( $hosts[0], %queries ) };
+
+    REC_LOOP: foreach my $r (@rs) {
+        $errors++;
+        if (length($r->[2]) > 0) {
+            push @longmsg, "file ".$r->[0].", line ".$r->[1].", setting ".$r->[2].", error: ".$r->[3];
+        } else {
+            push @longmsg, "file ".$r->[0].", line ".$r->[1].", error: ".$r->[3];
+        }
+    }
+
+    push @perfdata, [ 'errors', $errors ];
+
+    if ($errors > 0) {
+        push @msg, "$errors errors";
+        return status_critical( $me, \@msg , \@perfdata, \@longmsg );
+    }
+
+    push @msg, "No errors in configuration files";
+    return status_ok( $me, \@msg , \@perfdata, \@longmsg );
 }
 
 
