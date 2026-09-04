@@ -10,7 +10,7 @@ use warnings;
 use lib 't/lib';
 use pgNode;
 use TestLib ();
-use Test::More tests => 10;
+use Test::More tests => 16;
 
 my $node = pgNode->get_new_node('prod');
 my $pga_data = "$TestLib::tmp_check/pga.data";
@@ -52,6 +52,26 @@ $node->command_checks_all( [
     ],
     [ qr/^$/ ],
     'second basic check'
+);
+
+$node->append_conf('postgresql.conf', "work_mem=ahah");
+
+# Third check. Returns CRITICAL
+$node->command_checks_all( [
+    './check_pgactivity', '--service'     => 'settings',
+                          '--username'    => $ENV{'USER'} || 'postgres',
+                          '--format'      => 'human',
+                          '--status-file' => $pga_data,
+    ],
+    2,
+    [
+      qr/^Service  *: POSTGRES_SETTINGS$/m,
+      qr/^Returns  *: 2 \(CRITICAL\)$/m,
+      qr/^Message  *: Setting in error!$/m,
+      qr/^Long message  *: setting could not be applied in .*, line \d+$/m,
+    ],
+    [ qr/^$/ ],
+    'third basic check with an error'
 );
 
 ### End of tests ###
