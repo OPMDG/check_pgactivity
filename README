@@ -175,9 +175,9 @@ COMPATIBILITY
 
     Size
         If THRESHOLD is a size, the following units are accepted (not case
-        sensitive): b (Byte), k (KB), m (MB), g (GB), t (TB), p (PB), e (EB)
-        or Z (ZB). Only integers are accepted. Eg. "1.5MB" will be refused,
-        use "1500kB".
+        sensitive): b (Byte), kb (KB), mb (MB), gb (GB), tb (TB), pb (PB),
+        eb (EB) or Zb (ZB). Only integers are accepted. Eg. "1.5MB" will be
+        refused, use "1500kB".
 
         The factor between units is 1024 bytes. Eg. "1g = 1G =
         1024*1024*1024."
@@ -320,7 +320,7 @@ COMPATIBILITY
 
         Required privileges: superuser (<v10), <v10: superuser, v10:
         nonsuper user but output will lack perfdata oldest_ready_wal or
-        superuser, v11+: grant execute on function pg_stat_file(text).
+        superuser, v10+: grant execute on function pg_stat_file(text, bool).
 
     autovacuum (8.1+)
         Check the autovacuum activity on the cluster.
@@ -615,6 +615,18 @@ COMPATIBILITY
 
         Required privileges: unprivileged role.
 
+    slru_hit_ratio (13+)
+        Check the cache SLRU ratio on the cluster.
+
+        This service uses the status file (see "--status-file" parameter).
+
+        Perfdata returns the cache SLRU ratio for one cluster.
+
+        Critical and Warning thresholds are optional. They only accept a
+        percentage.
+
+        Required privileges: unprivileged role.
+
     hot_standby_delta (9.0)
         Check the data delta between a cluster and its hot standbys.
 
@@ -679,6 +691,32 @@ COMPATIBILITY
 
         Required privileges: unprivileged role able to log in all databases.
 
+    unused_indexes (8.2+)
+        Check if there are unused indexes in a database.
+
+        A warning alert is raised if an unused index is detected.
+
+        This service supports both "--dbexclude" and "--dbinclude"
+        parameters. The 'postgres' database and templates are always
+        excluded.
+
+        This service supports a "--exclude REGEX" parameter to exclude
+        indexes matching a regular expression. The regular expression
+        applies to "database.schema_name.index_name". This enables you to
+        filter either on a relation name for all schemas and databases, on a
+        qualified named index (schema + index) for all databases or on a
+        qualified named index in only one database.
+
+        You can use multiple "--exclude REGEX" parameters.
+
+        Perfdata will return the number of unused indexes per database.
+
+        A list of unused indexes will be returned after the perfdata. This
+        list contains the fully qualified index name. If excluded index is
+        set, the number of excluded indexes is returned.
+
+        Required privileges: unprivileged role able to log in all databases.
+
     is_replay_paused (9.1+)
         Checks if the replication is paused. The service will return UNKNOWN
         if executed on a master server.
@@ -726,6 +764,15 @@ COMPATIBILITY
         parameters. The 'postgres' database and templates are always
         excluded.
 
+        This service supports a "--exclude REGEX" parameter to exclude
+        relations matching a regular expression. The regular expression
+        applies to "database.schema_name.relation_name". This enables you to
+        filter either on a relation name for all schemas and databases, on a
+        qualified named relation (schema + relation) for all databases or on
+        a qualified named relation in only one database.
+
+        You can use multiple "--exclude REGEX" parameters.
+
         Required privileges: unprivileged role able to log in all databases.
 
     last_vacuum (8.2+)
@@ -755,6 +802,15 @@ COMPATIBILITY
         This service supports both "--dbexclude" and "--dbinclude"
         parameters. The 'postgres' database and templates are always
         excluded.
+
+        This service supports a "--exclude REGEX" parameter to exclude
+        relations matching a regular expression. The regular expression
+        applies to "database.schema_name.relation_name". This enables you to
+        filter either on a relation name for all schemas and databases, on a
+        qualified named relation (schema + relation) for all databases or on
+        a qualified named relation in only one database.
+
+        You can use multiple "--exclude REGEX" parameters.
 
         Required privileges: unprivileged role able to log in all databases.
 
@@ -998,6 +1054,31 @@ COMPATIBILITY
         access on the directory containing the dumps (but not on the dumps
         themselves).
 
+    pgss_dealloc (14+)
+        Check number of pg_stat_statements deallocations.
+
+        Too many deallocations can have a negative performance impact. This
+        could be due to: * an application performing many different queries
+        (ORM, lists of varying length, ...) * some utility statements (SET
+        application_name...). In this case, try to disable
+        pg_stat_statements.track_utility. * pg_stat_statements.max is too
+        low
+
+        This service uses the status file (see "--status-file" parameter).
+
+        The "--critical" and "--warning" thresholds are optional. Warning or
+        critical will be raised if the number of deallocations since the
+        previous check exceeds the thresholds.
+
+        Perfdata returns a counter of deallocs since last call.
+
+        The pg_stat_statements extension must be installed in the database
+        you're connecting into (including shared_preload_libraries setup).
+
+        Required privileges: unprivileged role able to log in to any
+        database in which the pg_stat_statements extension has been
+        installed.
+
     pga_version
         Check if this script is running the given version of
         check_pgactivity. You must provide the expected version using either
@@ -1068,9 +1149,12 @@ COMPATIBILITY
 
         No perfdata.
 
-        Critical and Warning thresholds are ignored.
+        The Critical thresholds is ignored.
 
-        A Critical is raised if at least one parameter changed.
+        Warning is raised when the time since configuration change is less
+        than the warning threshold. Obviously these alerts will disappear
+        from themselves once enough time has passed. This doesn't apply for
+        configuration changes with pending restart warnings.
 
         Required privileges: unprivileged role.
 
@@ -1164,6 +1248,34 @@ COMPATIBILITY
         A list of the unlogged tables will be returned after the perfdata.
         This list contains the fully qualified table name. If "--exclude
         REGEX" is set, the number of excluded tables is returned.
+
+        Required privileges: unprivileged role able to log in all databases,
+        or at least those in "--dbinclude".
+
+    relation_size (9.0+)
+        Check relations' size.
+
+        Critical and Warning thresholds are optional. An alert is raised if
+        a relation's size is above the warning or critical level. They only
+        accept a raw number or a size.
+
+        This service supports both "--dbexclude" and "--dbinclude"
+        parameters. The "postgres" database and templates are always
+        excluded.
+
+        This service supports a "--exclude REGEX" parameter to exclude
+        relations matching a regular expression. The regular expression
+        applies to "database.schema_name.relation_name". This enables you to
+        filter either on a relation name for all schemas and databases, on a
+        qualified named relation (schema + relation) for all databases or on
+        a qualified named relation in only one database.
+
+        You can use multiple "--exclude REGEX" parameters.
+
+        Perfdata returns the size of all relations per database. This list
+        use the fully qualified name of each relation. If "--exclude REGEX"
+        is set, the number of excluded relations is returned in the long
+        text field of the plugin.
 
         Required privileges: unprivileged role able to log in all databases,
         or at least those in "--dbinclude".
@@ -1333,7 +1445,7 @@ COMPATIBILITY
           check_pgactivity -p 5433 -h slave --service hit_ratio --dbinclude importantone -w 90% -c 80%
 
 VERSION
-    check_pgactivity version 2.8, released on Tue Oct 14 2025.
+    check_pgactivity version 2.11, released on Mon Aug 17 2026.
 
 LICENSING
     This program is open source, licensed under the PostgreSQL license. For
@@ -1341,5 +1453,5 @@ LICENSING
 
 AUTHORS
     Author: Open PostgreSQL Monitoring Development Group
-    Copyright: (C) 2012-2025 Open PostgreSQL Monitoring Development Group
+    Copyright: (C) 2012-2026 Open PostgreSQL Monitoring Development Group
 

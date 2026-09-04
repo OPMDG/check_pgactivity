@@ -1,6 +1,44 @@
 Changelog
 =========
 
+2026-08-17 v2.11:
+
+* add: basic v19 compatibility
+* change: filter out small tables in check_last_maintenance
+* fix: review of relation_size documentation
+* fix: review of last_maintenance documentation
+
+2026-05-18 v2.10:
+
+* add: new unused_indexes service (Guillaume Lelarge)
+* add: new relation_size service (Guillaume Lelarge)
+* change: pgss_dealloc service now handles --dbservice (Christophe Courtois)
+* change: invalid_indexes now also gets TOAST invalid indexes (Guillaume Lelarge)
+* change: add the database name to a query error message (Guillaume Lelarge)
+* change: set application_name to the program and service names (Guillaume Lelarge)
+* change: add application_name of the offending query in the msg (Guillaume Lelarge)
+* change: various enhancements to check_last_maintenance (Guillaume Lelarge)
+* change: exclude partitioned table for last_analyze service (Adrien Nayrat)
+* change: add exclude option for last_vauum and last_analyze services (Guillaume Armede)
+* fix: keep only three integers after the comma (Guillaume Lelarge)
+* fix: pgss_dealloc service is only PG14+ (doc) (Christophe Courtois)
+* fix: slru_hit_ratio is only PG13+ (doc) (Christophe Courtois)
+
+2026-02-17 v2.9:
+
+* add: compatibility with PostgreSQL 18 compatibility (Guillaume Lelarge)
+* add: new service pgss_dealloc (Adrien Nayrat)
+* add: new slru_hit_ratio service (Guillaume Lelarge)
+* add: allow warnings from the settings service to expire (Benoît Lobréau)
+* add: add github action to run tests across several Postgres versions (Adrien Nayrat)
+* fix: ignore partition table in check_last_maintenance (Adrien Nayrat)
+* fix: check if server is primary for last_maintenance (Guillaume Lelarge)
+* fix: annoying race condition in archiver service (Jehan-Guillaume de Rorthais)
+* fix: documentation for check_archiver service (Thomas Reiss)
+* fix: filter out xact with no backend_xid or no backend_xmin for oldest_idlexact service (Frédéric Yhuel)
+* fix: make archiver to not bail out when archiving is off (Thomas Reiss)
+* fix: fix to_size buggy unit conversion (Jehan-Guillaume de Rorthais)
+
 2025-10-10 v2.8:
 
 * add: compatibility with PostgreSQL 16 and 17, basic v18 compatibility (Thomas Reiss)

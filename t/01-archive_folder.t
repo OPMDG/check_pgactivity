@@ -2,7 +2,7 @@
 # This program is open source, licensed under the PostgreSQL License.
 # For license terms, see the LICENSE file.
 #
-# Copyright (C) 2012-2025: Open PostgreSQL Monitoring Development Group
+# Copyright (C) 2012-2026: Open PostgreSQL Monitoring Development Group
 
 use strict;
 use warnings;
@@ -155,7 +155,7 @@ $node->command_checks_all( [
 # next file but find 01 and warn that 03 was expected.
 $time = time - 400;
 utime $time, $time, "$archive_dir/000000010000000000000002";
-    
+
 $node->command_checks_all( [
     './check_pgactivity', '--service'  => 'archive_folder',
                           '--username' => $ENV{'USER'} || 'postgres',

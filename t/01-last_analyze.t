@@ -2,7 +2,7 @@
 # This program is open source, licensed under the PostgreSQL License.
 # For license terms, see the LICENSE file.
 #
-# Copyright (C) 2012-2025: Open PostgreSQL Monitoring Development Group
+# Copyright (C) 2012-2026: Open PostgreSQL Monitoring Development Group
 
 use strict;
 use warnings;
@@ -43,14 +43,17 @@ TestLib::system_or_bail('createdb',
     '--port' => $node->port,
     'testdb'
 );
+$node->psql('testdb', 'VACUUM ANALYZE');
+sleep(1);
 
-# test database with no tables
+# new analyzed database with no user tables
 
 $node->command_checks_all( [
     './check_pgactivity', '--service'  => 'last_analyze',
+                          '--analyze-table-min-size' => 0,
                           '--username' => $ENV{'USER'} || 'postgres',
                           '--format'   => 'human',
-                          '--dbname'   => 'template1',
+                          '--dbname'   => 'testdb',
                           '--status-file' => $pga_data,
                           '--warning'  => '1h',
                           '--critical' => '10d'
@@ -59,7 +62,7 @@ $node->command_checks_all( [
     [ qr/^Service  *: POSTGRES_LAST_ANALYZE$/m,
       qr/^Returns  *: 0 \(OK\)$/m,
       qr/^Message  *: 1 database\(s\) checked$/m,
-      qr/^Perfdata *: testdb=NaNs warn=3600 crit=864000$/m,
+      qr/^Perfdata *: testdb=.*s warn=3600 crit=864000$/m,
     ],
     [ qr/^$/ ],
     'database with no tables'
@@ -104,6 +107,7 @@ SKIP: {
 
 $node->command_checks_all( [
     './check_pgactivity', '--service'  => 'last_analyze',
+                          '--analyze-table-min-size' => 0,
                           '--username' => $ENV{'USER'} || 'postgres',
                           '--format'   => 'human',
                           '--dbname'   => 'testdb',
@@ -143,6 +147,7 @@ push @stdout, (
 
 $node->command_checks_all( [
     './check_pgactivity', '--service'  => 'last_analyze',
+                          '--analyze-table-min-size' => 0,
                           '--username' => $ENV{'USER'} || 'postgres',
                           '--format'   => 'human',
                           '--dbname'   => 'testdb',
@@ -180,6 +185,7 @@ push @stdout, (
 
 $node->command_checks_all( [
     './check_pgactivity', '--service'  => 'last_analyze',
+                          '--analyze-table-min-size' => 0,
                           '--username' => $ENV{'USER'} || 'postgres',
                           '--format'   => 'human',
                           '--dbname'   => 'testdb',

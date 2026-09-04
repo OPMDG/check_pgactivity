@@ -2,7 +2,7 @@
 # This program is open source, licensed under the PostgreSQL License.
 # For license terms, see the LICENSE file.
 #
-# Copyright (C) 2012-2025: Open PostgreSQL Monitoring Development Group
+# Copyright (C) 2012-2026: Open PostgreSQL Monitoring Development Group
 
 use strict;
 use warnings;
@@ -63,16 +63,16 @@ SKIP: {
         './check_pgactivity', '--service'  => 'hot_standby_delta',
                               '--username' => $ENV{'USER'} || 'postgres',
                               '--format'   => 'human',
-                              '--host'     => $prim->host . ',' . $stb1->host, 
-                              '--port'     => $prim->port . ',' . $stb1->port, 
+                              '--host'     => $prim->host . ',' . $stb1->host,
+                              '--port'     => $prim->port . ',' . $stb1->port,
         ],
         0,
         [
             qr/Service  *: POSTGRES_HOT_STANDBY_DELTA$/m,
             qr/Returns  *: 0 \(OK\)$/m,
             qr/Message  *: 1 Hot standby checked$/m,
-            qr/Perfdata *: receive delta host:.* port:[1-9][0-9]+ db:postgres=0B$/m,
-            qr/Perfdata *: replay delta host:.* port:[1-9][0-9]+ db:postgres=0B$/m,
+            qr/Perfdata *: receive delta host:.* port:[1-9][0-9]+ db:postgres=0.00B$/m,
+            qr/Perfdata *: replay delta host:.* port:[1-9][0-9]+ db:postgres=0.00B$/m,
         ],
         [ qr/^$/ ],
         'two standbys streaming'
@@ -92,8 +92,8 @@ SKIP: {
             qr/Service  *: POSTGRES_HOT_STANDBY_DELTA$/m,
             qr/Returns  *: 0 \(OK\)$/m,
             qr/Message  *: 2 Hot standby checked$/m,
-            qr/Perfdata *: receive delta host:.* port:[1-9][0-9]+ db:postgres=0B$/m,
-            qr/Perfdata *: replay delta host:.* port:[1-9][0-9]+ db:postgres=0B$/m,
+            qr/Perfdata *: receive delta host:.* port:[1-9][0-9]+ db:postgres=0.00B$/m,
+            qr/Perfdata *: replay delta host:.* port:[1-9][0-9]+ db:postgres=0.00B$/m,
         ],
         [ qr/^$/ ],
         'two standbys streaming'
