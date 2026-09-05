@@ -7598,6 +7598,10 @@ Checking the user only works on Linux systems (it uses /proc to avoid
 dependencies). Before 9.3, you need to provide the expected owner using the
 C<--uid> argument, or the owner will not be checked.
 
+After 11, if the user running the script doesn't have the right to use stats,
+it will check the mode with the data_directory_mode GUC. It won't be able to
+check the owner though.
+
 Required privileges:
  <11:superuser
  v11: user with pg_monitor or pg_read_all_setting
@@ -7640,13 +7644,28 @@ sub check_pgdata_permission {
 
     $data_directory = $rs[0][0];
 
-    return status_unknown( $me,
-        [ "Postgresql returned this PGDATA: $data_directory, but I cannot access it: $!" ]
-    ) unless @stat = stat( $data_directory );
+    @stat = stat( $data_directory );
 
     $mode    = $stat[2];
     $dir_uid = $stat[4];
-    $perm = sprintf( "%04o", $mode & 07777 );
+    $perm = sprintf( "%04o", $mode & 07777 ) unless (not defined ($mode));
+
+    if ( not defined ($dir_uid) ) {
+        if ( $hosts[0]{'version_num'} >= $PG_VERSION_110 ) {
+            # Get the data mode another way
+            $query = q{
+                SELECT setting FROM pg_settings WHERE name='data_directory_mode'
+            };
+
+            @rs = @{ query( $hosts[0], $query ) };
+
+            $perm = $rs[0][0];
+        } else {
+            return status_unknown( $me,
+                [ "Postgresql returned this PGDATA: $data_directory, but I cannot access it: $!" ]
+            );
+        }
+    }
 
     # starting with v11, PGDATA can be 0750.
     if ($perm eq '0700'
@@ -7693,6 +7712,9 @@ sub check_pgdata_permission {
 
     if ( not defined $pg_uid ) {
         push @longmsg, ( "Cannot determine UID of user running postgres. Try to use '--uid'?" );
+    }
+    elsif ( not defined $dir_uid ) {
+        push @longmsg, ( "Cannot determine UID of data directory owner." );
     }
     elsif ( $pg_uid ne $dir_uid ) {
         $criticity = 2;
