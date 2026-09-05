@@ -152,6 +152,10 @@ my %services = (
         'sub'  => \&check_checksum_errors,
         'desc' => 'Check data checksums errors.'
     },
+    'commit_ratio' => {
+        'sub'  => \&check_commit_ratio,
+        'desc' => 'Commit and rollback rate per second and commit ratio since last execution.'
+    },
     'configuration' => {
         'sub'  => \&check_configuration,
         'desc' => 'Check the most important settings.',
@@ -163,10 +167,6 @@ my %services = (
     'connection' => {
         'sub'  => \&check_connection,
         'desc' => 'Perform a simple connection test.'
-    },
-    'commit_ratio' => {
-        'sub'  => \&check_commit_ratio,
-        'desc' => 'Commit and rollback rate per second and commit ratio since last execution.'
     },
     'custom_query' => {
         'sub'  => \&check_custom_query,
@@ -246,7 +246,10 @@ my %services = (
         'sub'  => \&check_oldest_xmin,
         'desc' => 'Check the xmin horizon from distinct sources of xmin retention.'
     },
-
+    'orphan_files' => {
+        'sub'  => \&check_orphan_files,
+        'desc' => 'Check for orphan files in PGDATA and tablespaces.'
+    },
     'pga_version' => {
         'sub'  => \&check_pga_version,
         'desc' => 'Check the version of this check_pgactivity script.'
@@ -7086,6 +7089,234 @@ sub check_oldest_xmin {
     return status_ok( $me, \@msg, \@perfdata );
 }
 
+=item B<orphan_files> (9.4+)
+
+Check the number and size of orphan files.
+
+This service supports both C<--dbexclude> and C<--dbinclude> parameters.
+
+Perfdata returns the number and total size of temp files found in
+the data directory and its tablespaces. They are aggregated by database.
+
+Critical and Warning thresholds are optional. They accept either a number
+of file (raw value), a size (unit is B<mandatory> to define a size) or both
+values separated by a comma. Thresholds are applied on current orphan files.
+
+Required privileges:
+user with pg_monitor or pg_read_all_setting
+and grant execute on function pg_ls_dir(text, bool, bool).
+and grant execute on function pg_stat_file(text, bool).
+
+=cut
+
+sub check_orphan_files {
+    my $me  = 'POSTGRES_ORPHAN_FILES';
+    my %args = %{ $_[0] };
+    my @dbinclude  = @{ $args{'dbinclude'} };
+    my @dbexclude  = @{ $args{'dbexclude'} };
+    my @hosts;
+    my $detailed;
+    my @all_db;
+    my @rs;
+    my @msg;
+    my @longmsg;
+    my @perfdata;
+    my $w_flimit;
+    my $c_flimit;
+    my $w_limit;
+    my $c_limit;
+    my @perf_flimits;
+    my @perf_limits;
+    my $num_files        = 0;
+    my $size_files       = 0;
+    my $total_num_files  = 0;
+    my $total_size_files = 0;
+
+    my $query       = q{WITH ver AS (
+    SELECT
+        current_setting('server_version_num') pgversion,
+        v::INTEGER / 10000 || '.' || MOD(v::INTEGER, 10000) / 100 AS version
+    FROM
+        current_setting('server_version_num') v
+),
+tbl_paths AS (
+    SELECT
+        tbs.oid AS tbs_oid,
+        spcname,
+        'pg_tblspc/' || tbs.oid || '/' || (
+            SELECT
+                dir
+            FROM
+                pg_ls_dir('pg_tblspc/' || tbs.oid || '/', TRUE, FALSE) dir
+            WHERE
+                dir LIKE E'PG\\_' || ver.version || E'\\_%') AS tbl_path
+    FROM
+        pg_tablespace tbs,
+        ver
+    WHERE
+        tbs.spcname NOT IN ('pg_default', 'pg_global')
+),
+files AS (
+    SELECT
+        d.oid AS database_oid,
+        0 AS tbs_oid,
+        'base/' || d.oid AS path,
+        file_name AS file_name,
+        SUBSTRING(file_name FROM E'[0-9]+') AS base_name
+    FROM
+        pg_database d,
+        pg_ls_dir('base/' || d.oid, TRUE, FALSE) AS file_name
+    WHERE
+        d.datname = current_database()
+    UNION ALL
+    SELECT
+        d.oid,
+        tbp.tbs_oid,
+        tbl_path || '/' || d.oid,
+        file_name,
+        (SUBSTRING(file_name FROM E'[0-9]+')) AS base_name
+    FROM
+        pg_database d,
+        tbl_paths tbp,
+        pg_ls_dir(tbp.tbl_path || '/' || d.oid, TRUE, FALSE) AS file_name
+    WHERE
+        d.datname = current_database()
+),
+orphans AS (
+    SELECT
+        tbs_oid,
+        base_name,
+        file_name,
+        current_setting('data_directory') || '/' || path || '/' || file_name AS orphaned_file,
+        pg_filenode_relation(tbs_oid, base_name::oid) AS rel_without_pgclass
+    FROM
+        ver,
+        files
+        LEFT JOIN pg_class c ON (c.relfilenode::text = files.base_name
+                OR (c.oid::text = files.base_name
+                    AND c.relfilenode = 0
+                    AND c.relname LIKE 'pg_%'))
+    WHERE
+        c.oid IS NULL
+        AND LOWER(file_name)
+        NOT LIKE 'pg_%'
+)
+SELECT
+    current_database(),
+    orphaned_file,
+    (pg_stat_file(orphaned_file)).size
+FROM
+    orphans
+WHERE
+    rel_without_pgclass IS NULL
+ORDER BY current_database};
+
+    $detailed = $args{'detailed'};
+
+    @hosts = @{ parse_hosts %args };
+
+    is_compat $hosts[0], 'orphan_files', $PG_VERSION_94 or exit 1;
+
+    pod2usage(
+        -message => 'FATAL: you must give only one host with service "orphan_files".',
+        -exitval => 127
+    ) if @hosts != 1;
+
+    if ( defined $args{'warning'} and defined $args{'critical'} ) {
+
+        while ( $args{'warning'} =~ m/(?:(\d+)([kmgtpez]?b)?)/ig ) {
+            if ( defined $2 ) {
+                $w_limit = get_size("$1$2");
+            }
+            else {
+                $w_flimit = $1;
+            }
+        }
+
+        while ( $args{'critical'} =~ m/(?:(\d+)([kmgtpez]?b)?)/ig ) {
+            if ( defined $2 ) {
+                $c_limit = get_size("$1$2");
+            }
+            else {
+                $c_flimit = $1;
+            }
+        }
+
+        pod2usage(
+            -message => 'FATAL: you must give the number file thresholds '
+                .'for both warning AND critical if used with service "orphan_files".',
+            -exitval => 127
+        ) if (defined $w_flimit and not defined $c_flimit)
+            or (not defined $w_flimit and defined $c_flimit);
+
+        pod2usage(
+            -message => 'FATAL: you must give the total size thresholds '
+                .'for both warning AND critical if used with service "orphan_files".',
+            -exitval => 127
+        ) if (defined $w_limit and not defined $c_limit)
+            or (not defined $w_limit and defined $c_limit);
+
+        @perf_flimits = ( $w_flimit, $c_flimit ) if defined $w_flimit;
+        @perf_limits  = ( $w_limit, $c_limit ) if defined $w_limit;
+    }
+
+    @all_db = @{ get_all_dbname( $hosts[0], 'all' ) };
+
+    # Iterate over all db
+    ALLDB_LOOP: foreach my $db (sort @all_db) {
+        my @rs;
+
+        next ALLDB_LOOP if grep { $db =~ /$_/ } @dbexclude;
+        next ALLDB_LOOP if @dbinclude and not grep { $db =~ /$_/ } @dbinclude;
+
+        $num_files = 0;
+        $size_files = 0;
+
+        @rs = @{ query( $hosts[0], $query, $db ) };
+
+        foreach my $res (@rs) {
+            $num_files++;
+            $size_files += $res->[2];
+            push @longmsg => "File $res->[1], size ". to_size($res->[2]) if $detailed;
+        }
+
+        $total_num_files += $num_files;
+        $total_size_files += $size_files;
+
+        push @perfdata => [ "# files in $db", $num_files, 'File', @perf_flimits ];
+        push @perfdata => [ "Total size in $db", $size_files, 'B', @perf_limits ];
+    }
+
+    push @perfdata => [ "# files", $total_num_files, 'File', @perf_flimits ];
+    push @perfdata => [ "Total size", $total_size_files, 'B', @perf_limits ];
+
+    if ($total_num_files > 0) {
+        push @msg, "$total_num_files orphan files found, total size ".to_size($total_size_files);
+    } else {
+        push @msg, "No orphan files found!";
+
+    }
+
+    if ( defined $c_limit) {
+        return status_critical( $me, \@msg, \@perfdata, \@longmsg )
+            if $total_size_files >= $c_limit;
+
+        return status_warning( $me, \@msg, \@perfdata, \@longmsg )
+            if $total_size_files >= $w_limit;
+    }
+
+    if ( defined $c_flimit) {
+        return status_critical( $me, \@msg, \@perfdata, \@longmsg )
+            if $total_num_files >= $c_flimit;
+
+        return status_warning( $me, \@msg, \@perfdata, \@longmsg )
+            if $total_num_files >= $w_flimit;
+    }
+
+    return status_ok( $me, \@msg, \@perfdata, \@longmsg );
+}
+
+
 =item B<pg_dump_backup>
 
 Check the age and size of backups.
@@ -10406,7 +10637,7 @@ pod2usage(
 pod2usage(
     -message => 'FATAL: "detailed" argument is only allowed with "oldest_xmin" service.',
     -exitval => 127
-) if scalar $args{'detailed'} and $args{'service'} ne 'oldest_xmin';
+) if scalar $args{'detailed'} and $args{'service'} ne 'oldest_xmin' and $args{'service'} ne 'orphan_files';
 
 pod2usage(
     -message => 'FATAL: "identical" argument is only allowed with "configuration_difference" service.',
@@ -10429,7 +10660,6 @@ pod2usage(
     -exitval => 127
 ) if ( $args{'ok-on-standby'}  )
     and $args{'service'} ne 'last_vacuum' and $args{'service'} ne 'last_analyze' ;
-
 
 pod2usage(
     -message => 'FATAL: "slave" is only allowed with "streaming_delta" service.',
