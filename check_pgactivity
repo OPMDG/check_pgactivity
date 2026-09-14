@@ -1663,20 +1663,19 @@ Descriptions and parameters of available services.
 Check if all archived WALs exist between the oldest and the latest WAL in the
 archive folder and make sure they are 16MB. The given folder must have archived
 files from ONE cluster. The version of PostgreSQL that created the archives is
-only checked on the last one, for performance consideration.
+only checked on the last one, for performance consideration. This service needs
+to read the header of one of the archives to define how many segments a WAL
+owns.
 
 This service requires the argument C<--path> on the command line to specify the
-archive folder path to check. Obviously, it must have access to this
-folder at the filesystem level: you may have to execute it on the archiving
-server rather than on the PostgreSQL instance.
+archive folder path to check. Obviously, it must have access to this folder at
+the filesystem level: you may have to execute it on the archiving server rather
+than on the PostgreSQL instance.
 
-The optional argument C<--suffix> defines the suffix of your archived
-WALs; this is useful for compressed WALs (eg. .gz, .bz2, ...).
-Default is no suffix.
-
-This service needs to read the header of one of the archives to define how many
-segments a WAL owns. Check_pgactivity automatically handles files with
-extensions .gz, .bz2, .xz, .zip or .7z using the following commands:
+The optional argument C<--suffix> defines the suffix of your archived WALs;
+this is useful for compressed WALs (eg. .gz, .bz2, ...). Default is no suffix.
+Check_pgactivity handles files with extensions .gz, .bz2, .xz, .zip or .7z
+using the following commands:
 
   gzip -dc
   bzip2 -dc
@@ -1687,10 +1686,10 @@ extensions .gz, .bz2, .xz, .zip or .7z using the following commands:
 If needed, provide your own command that writes the uncompressed file
 to standard output with the C<--unarchiver> argument.
 
-Optional argument C<--ignore-wal-size> skips the WAL size check. This is useful
-if your archived WALs are compressed and check_pgactivity is unable to guess
-the original size. Here are the commands check_pgactivity uses to guess the
-original size of .gz, .xz or .zip files:
+The optional argument C<--ignore-wal-size> skips the WAL size check. This is
+useful if your archived WALs are compressed and check_pgactivity is unable to
+guess the original size. Here are the commands check_pgactivity uses to guess
+the original size of .gz, .xz or .zip files:
 
   gzip -ql
   xz -ql
@@ -1794,16 +1793,18 @@ sub check_archive_folder {
         -exitval => 127
     ) unless defined $args{'warning'} and defined $args{'critical'} ;
 
+    # invalid warning and/or critical values
     pod2usage(
         -message => "FATAL: critical and warning thresholds only acccepts interval.",
         -exitval => 127
     ) unless ( is_time( $args{'warning'} ) and is_time( $args{'critical'} ) );
 
-
+    # get a list of all WAL and history files
     opendir( $dh, $args{'path'} )
         or die "Cannot opendir $args{'path'} : $!\n";
 
     $filename_re = qr/^[0-9A-F]{24}$suffix$/;
+    # stat struct: 9 is mtime, 7 is size
     @filelist = map { [ $_ => (stat("$args{'path'}/$_"))[9,7] ] }
         grep( /$filename_re/, readdir($dh) );
 
@@ -1814,18 +1815,19 @@ sub check_archive_folder {
 
     closedir($dh);
 
+    # exit if no archived files
     return status_unknown( $me, ['No archived WAL found.'] ) unless @filelist;
-
 
     $w_limit = get_time($args{'warning'});
     $c_limit = get_time($args{'critical'});
 
-    # Sort by mtime
+    # sort by mtime
     @filelist_sorted = sort { ($a->[1] <=> $b->[1]) || ($a->[0] cmp $b->[0]) }
         grep{ (defined($_->[0]) and defined($_->[1]))
                 or die "Cannot read WAL files"
         } @filelist;
 
+    # get the latest wal age
     $latest_wal_age = time() - $filelist_sorted[-1][1];
 
     # Read the XLOG_PAGE_MAGIC header to guess $seg_per_wal
