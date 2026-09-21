@@ -1972,7 +1972,7 @@ waiting to be archived. They only accept a raw number of files.
 Whatever the given threshold, a critical alert is raised if the archiver
 process did not archive the oldest waiting WAL to be archived since last call.
 
-Required privileges: superuser (<v10),
+Required privileges:
 <v10: superuser,
 v10: nonsuper user but output will lack perfdata oldest_ready_wal or superuser,
 v10+: grant execute on function pg_stat_file(text, bool).
@@ -2017,7 +2017,6 @@ sub check_archiver {
            FROM pg_ls_dir('pg_xlog/archive_status') AS s(f)
            WHERE f ~ '^[0123456789ABCDEF.history.backup.partial]{16,40}\.ready$'
            ORDER BY s.f ASC};
-
 
         $prev_archiving = load( $hosts[0], 'archiver', $args{'status-file'} ) || '';
 
