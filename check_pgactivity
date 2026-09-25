@@ -1772,7 +1772,7 @@ sub check_archive_folder {
         '160' => 53523, # 0xD113
         '170' => 53526, # 0xD116
         '180' => 53528, # 0xD118
-        '190' => 53537, # 0xD121
+        '190' => 53538, # 0xD122
     );
 
     # "path" argument must be given
