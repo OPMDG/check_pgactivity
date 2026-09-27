@@ -501,57 +501,58 @@ Show this help page.
 =cut
 
 my %args = (
-    'service'               => undef,
-    'host'                  => undef,
-    'username'              => undef,
-    'port'                  => undef,
-    'dbname'                => undef,
-    'dbservice'             => undef,
-    'warning'               => undef,
-    'critical'              => undef,
-    'exclude'               => [],
-    'dbexclude'             => [],
-    'dbinclude'             => [],
-    'tmpdir'                => File::Spec->tmpdir(),
-    'psql'                  => undef,
-    'old-psql'              => undef,
-    'status-file'           => dirname(__FILE__) . '/check_pgactivity.data',
-    'output'                => dirname(__FILE__) . '/check_pgactivity.out',
-    'query'                 => undef,
+    'service'                 => undef,
+    'host'                    => undef,
+    'username'                => undef,
+    'port'                    => undef,
+    'dbname'                  => undef,
+    'dbservice'               => undef,
+    'warning'                 => undef,
+    'critical'                => undef,
+    'exclude'                 => [],
+    'dbexclude'               => [],
+    'dbinclude'               => [],
+    'tmpdir'                  => File::Spec->tmpdir(),
+    'psql'                    => undef,
+    'old-psql'                => undef,
+    'status-file'             => dirname(__FILE__) . '/check_pgactivity.data',
+    'output'                  => dirname(__FILE__) . '/check_pgactivity.out',
+    'query'                   => undef,
     # service-specific parameters
-    'analyze-table-min-size'=> '1mb',
-    'checkpoint_segments'   => undef,
-    'debug'                 => 0,
-    'detailed'              => 0,
-    'dump-bin-file'         => undef,
-    'dump-status-file'      => 0,
-    'effective_cache_size'  => undef,
-    'format'                => 'nagios',
-    'help'                  => 0,
-    'ignore-wal-size'       => 0,
-    'list'                  => 0,
-    'maintenance_work_mem'  => undef,
-    'max_wal_size'          => undef,
-    'no_check_autovacuum'   => 0,
-    'no_check_enable'       => 0,
-    'no_check_fsync'        => 0,
-    'no_check_track_counts' => 0,
-    'path'                  => undef,
-    'relexclude'            => undef,
-    'reverse'               => 0,
-    'save'                  => 0,
-    'schexclude'            => undef,
-    'shared_buffers'        => undef,
-    'slave'                 => [],
-    'suffix'                => '',
-    'timeout'               => '30s',
-    'type'                  => undef,
-    'uid'                   => undef,
-    'unarchiver'            => '',
-    'vacuum-table-min-size' => '2mb',
-    'wal_buffers'           => undef,
-    'with-hugepages'        => undef,
-    'work_mem'              => undef,
+    'analyze-table-min-size'  => '1mb',
+    'checkpoint_segments'     => undef,
+    'debug'                   => 0,
+    'detailed'                => 0,
+    'dump-bin-file'           => undef,
+    'dump-status-file'        => 0,
+    'effective_cache_size'    => undef,
+    'format'                  => 'nagios',
+    'help'                    => 0,
+    'ignore-wal-size'         => 0,
+    'list'                    => 0,
+    'maintenance_work_mem'    => undef,
+    'max_wal_size'            => undef,
+    'no_check_autovacuum'     => 0,
+    'no_check_enable'         => 0,
+    'no_check_fsync'          => 0,
+    'no_check_track_counts'   => 0,
+    'path'                    => undef,
+    'relexclude'              => undef,
+    'reverse'                 => 0,
+    'save'                    => 0,
+    'schexclude'              => undef,
+    'shared_buffers'          => undef,
+    'slave'                   => [],
+    'suffix'                  => '',
+    'timeout'                 => '30s',
+    'type'                    => undef,
+    'uid'                     => undef,
+    'unarchiver'              => '',
+    'vacuum-table-min-size'   => '2mb',
+    'wal_buffers'             => undef,
+    'with-hugepages'          => undef,
+    'with-pgstattuple-approx' => undef,
+    'work_mem'                => undef,
 );
 
 # Set name of the program without path*
@@ -9501,7 +9502,13 @@ sub check_relation_size {
 
 =item B<table_bloat>
 
-Estimate bloat on tables.
+Estimate bloat on tables. By default, it works with queries coming from:
+https://github.com/ioguix/pgsql-bloat-estimation. It is quick but may give
+wrong results, especially with TOASTed fields. If C<--with-pgstattuple-approx>
+is specified, the query calls the pgstattuple_approx() function. The
+pgstattuple extension (from PostgreSQL 9.5) must be installed in all queried
+databases (you may want to restrict with `--dbinclude`). Be aware that
+C<--with-pgstattuple-approx> may take more time and read a part of the table.
 
 Warning and critical thresholds accept a comma-separated list of either
 raw number(for a size), size (eg. 125M) or percentage. The thresholds apply to
@@ -9553,8 +9560,12 @@ sub check_table_bloat {
     my %args      = %{ $_[0] };
     my @dbinclude = @{ $args{'dbinclude'} };
     my @dbexclude = @{ $args{'dbexclude'} };
+    my $pgstattuple = ( defined( $args{'with-pgstattuple-approx'} ) ? 'on' : 'off' );
     my $me        = 'POSTGRES_TABLE_BLOAT';
-    my %queries   = (
+    my %queries   = ();
+
+    if ($pgstattuple ne 'on') {
+    %queries   = (
         # The base for the following queries come from:
         #   https://github.com/ioguix/pgsql-bloat-estimation
         #
@@ -9776,6 +9787,7 @@ sub check_table_bloat {
         WHERE NOT is_na
         ORDER BY ns.nspname, s3.tblname },
     );
+    }
 
     # Warning and critical are mandatory.
     pod2usage(
@@ -9801,6 +9813,41 @@ sub check_table_bloat {
 
         next ALLDB_LOOP if grep { $db =~ /$_/ } @dbexclude;
         next ALLDB_LOOP if @dbinclude and not grep { $db =~ /$_/ } @dbinclude;
+
+        if ($pgstattuple eq 'on') {
+            is_compat $hosts[0], 'table_bloat', $PG_VERSION_95 or exit 1;
+
+            my $pgstt_query= q{
+            SELECT e.extversion, n.nspname
+            FROM pg_extension e
+            JOIN pg_namespace n ON e.extnamespace=n.oid
+            WHERE extname='pgstattuple'
+            };
+
+            @rs = @{ query( $hosts[0], $pgstt_query, $db ) };
+
+            # No row:
+            return status_unknown( $me, [ "Ensure that the pgstattuple extension has been created on the target database (currently " . ($db // "the service " . $hosts[0]->{'dbservice'}) . ")\n" ] ) if (not defined $rs[0]);
+
+            my $pgstt_schema = $rs[0][1];
+
+            %queries   = (
+                $PG_VERSION_95 => qq{
+                SELECT current_database(), nspname, relname,
+                    pgstattuple_approx.table_len,
+                    NULL, NULL, NULL,
+                    pgstattuple_approx.dead_tuple_len+pgstattuple_approx.approx_free_space as bloat,
+                    pgstattuple_approx.dead_tuple_percent+pgstattuple_approx.approx_free_percent as bloatpct,
+                    false
+                FROM pg_class
+                JOIN pg_namespace ON pg_namespace.oid=pg_class.relnamespace,
+                LATERAL $pgstt_schema.pgstattuple_approx(pg_class.oid)
+                WHERE relkind='r'
+                  AND pgstattuple_approx.table_len > current_setting('block_size')::integer
+                  AND pgstattuple_approx.dead_tuple_len+pgstattuple_approx.approx_free_space > current_setting('block_size')::integer
+                ORDER BY nspname, relname},
+            );
+        }
 
         @rc = @{ query_ver( $hosts[0], %queries, $db ) };
 
@@ -10804,6 +10851,7 @@ GetOptions(
         'wal_buffers=i',
         'warning|w=s',
         'with-hugepages!',
+        'with-pgstattuple-approx!',
         'work_mem=i'
 ) or pod2usage( -exitval => 127 );
 
@@ -10904,6 +10952,11 @@ pod2usage(
     -exitval => 127
 ) if scalar @{ $args{'slave'} }  and $args{'service'} ne 'streaming_delta';
 
+
+pod2usage(
+    -message => 'FATAL: "with-pgstattuple-approx" is only allowed with "table_bloat" service.',
+    -exitval => 127
+) if $args{'with-pgstattuple-approx'}  and $args{'service'} ne 'table_bloat';
 
 # Set psql absolute path
 unless ($args{'psql'}) {
