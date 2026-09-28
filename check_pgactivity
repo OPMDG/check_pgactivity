@@ -6920,6 +6920,7 @@ sub check_oldest_idlexact {
     my $oldest_alive = 0;
     my $nb_idle     = 0;
     my $nb_alive   = 0;
+    my @test = ( 'idle', 'alive' );
     my %stats       = ( );
     my $exclude_filter = "";
     my %queries     = (
@@ -7025,27 +7026,18 @@ sub check_oldest_idlexact {
         $oldest_idle = $r->[1] if $r->[1] > $oldest_idle;
         $oldest_alive = $r->[2] if $r->[2] > $oldest_alive;
 
-        $stats{$r->[0]}{'idlenum'}++ if $r->[1] > -1;
-        if ( defined( $crit{'idle'} ) and $r->[1] > $crit{'idle'} ) {
-            $stats{$r->[0]}{'idlenumc'}++;
-        } elsif ( defined( $warn{'idle'} ) and $r->[1] > $warn{'idle'} ) {
-            $stats{$r->[0]}{'idlenumw'}++;
+        for ( my $col = 1 ; $col < 3 ; $col++ ) {
+            $stats{$r->[0]}{$test[$col-1].'num'}++ if $r->[$col] > -1;
+            if ( defined( $crit{$test[$col-1]} ) and $r->[$col] > $crit{$test[$col-1]} ) {
+                $stats{$r->[0]}{$test[$col-1].'numc'}++;
+            } elsif ( defined( $warn{$test[$col-1]} ) and $r->[$col] > $warn{$test[$col-1]} ) {
+                $stats{$r->[0]}{$test[$col-1].'numw'}++;
+            }
+            $stats{$r->[0]}{$test[$col-1].'max'} = $r->[$col]*1 if $stats{$r->[0]}{$test[$col-1].'max'} < $r->[$col];
+            $stats{$r->[0]}{$test[$col-1].'avg'} = (
+                $stats{$r->[0]}{$test[$col-1].'avg'} * ($stats{$r->[0]}{$test[$col-1].'num'} -1) + $r->[$col])
+                / $stats{$r->[0]}{$test[$col-1].'num'} if $stats{$r->[0]}{$test[$col-1].'num'};
         }
-        $stats{$r->[0]}{'idlemax'} = $r->[1] if $stats{$r->[0]}{'idlemax'} < $r->[1];
-        $stats{$r->[0]}{'idleavg'} = (
-            $stats{$r->[0]}{'idleavg'} * ($stats{$r->[0]}{'idlenum'} -1) + $r->[1])
-            / $stats{$r->[0]}{'idlenum'} if $stats{$r->[0]}{'idlenum'};
-
-        $stats{$r->[0]}{'alivenum'}++ if $r->[2] > -1;
-        if ( defined ( $crit{'alive'} ) and $r->[2] > $crit{'alive'} ) {
-            $stats{$r->[0]}{'alivenumc'}++;
-        } elsif ( defined( $warn{'alive'} ) and $r->[2] > $warn{'alive'} ) {
-            $stats{$r->[0]}{'alivenumw'}++;
-        }
-        $stats{$r->[0]}{'alivemax'} = $r->[2] if $stats{$r->[0]}{'alivemax'} < $r->[2];
-        $stats{$r->[0]}{'aliveavg'} = (
-            $stats{$r->[0]}{'aliveavg'} * ($stats{$r->[0]}{'alivenum'} -1) + $r->[2])
-            / $stats{$r->[0]}{'alivenum'} if $stats{$r->[0]}{'alivenum'};
     }
 
     DB_LOOP: foreach my $db (sort keys %stats) {
@@ -7054,45 +7046,27 @@ sub check_oldest_idlexact {
         next DB_LOOP if @dbinclude and not grep { $db =~ /$_/ } @dbinclude;
 
         $nb_idle += $stats{$db}{'idlenum'};
-
-        unless($stats{$db}{'idlemax'} > -1) {
-            $stats{$db}{'idlemax'} = 'NaN';
-            $stats{$db}{'idleavg'} = 'NaN';
-        }
-
-        push @perfdata, (
-            [ "$db max", $stats{$db}{'idlemax'}, 's', $warn{'idle'}, $crit{'idle'} ],
-            [ "$db avg", $stats{$db}{'idleavg'}, 's', $warn{'idle'}, $crit{'idle'} ],
-            [ "$db # idle xact", $stats{$db}{'idlenum'} ],
-            [ "$db # idle xact above warning", $stats{$db}{'idlenumw'} ],
-            [ "$db # idle xact above critical", $stats{$db}{'idlenumc'} ]
-        );
-
-        if ( defined ( $crit{'idle'} ) and $stats{$db}{'idlemax'} > $crit{'idle'} ) {
-            push @msg => $stats{$db}{'idlenumc'} ." above critical value, oldest idle xact on $db: ". to_interval($stats{$db}{'idlemax'});
-        } elsif ( defined ( $warn{'idle'}) and $stats{$db}{'idlemax'} > $warn{'idle'} ) {
-            push @msg => $stats{$db}{'idlenumw'} ." above warning value, oldest idle xact on $db: ". to_interval($stats{$db}{'idlemax'});
-        }
-
         $nb_alive += $stats{$db}{'alivenum'};
 
-        unless($stats{$db}{'alivemax'} > -1) {
-            $stats{$db}{'alivemax'} = 'NaN';
-            $stats{$db}{'aliveavg'} = 'NaN';
+        for ( my $col = 0 ; $col < 2 ; $col++ ) {
+        unless($stats{$db}{$test[$col].'max'} > -1) {
+            $stats{$db}{$test[$col].'max'} = 'NaN';
+            $stats{$db}{$test[$col].'avg'} = 'NaN';
         }
 
         push @perfdata, (
-            [ "$db max", $stats{$db}{'alivemax'}, 's', $warn{'alive'}, $crit{'alive'} ],
-            [ "$db avg", $stats{$db}{'aliveavg'}, 's', $warn{'alive'}, $crit{'alive'} ],
-            [ "$db # alive xact", $stats{$db}{'alivenum'} ],
-            [ "$db # alive xact above warning", $stats{$db}{'alivenumw'} ],
-            [ "$db # alive xact above critical", $stats{$db}{'alivenumc'} ]
+            [ "$db max", $stats{$db}{$test[$col].'max'}, 's', $warn{$test[$col]}, $crit{$test[$col]} ],
+            [ "$db avg", $stats{$db}{$test[$col].'avg'}, 's', $warn{$test[$col]}, $crit{$test[$col]} ],
+            [ "$db # idle xact", $stats{$db}{$test[$col].'num'} ],
+            [ "$db # idle xact above warning", $stats{$db}{$test[$col].'numw'} ],
+            [ "$db # idle xact above critical", $stats{$db}{$test[$col].'numc'} ]
         );
 
-        if ( defined ( $crit{'alive'} ) and $stats{$db}{'alivemax'} > $crit{'alive'} ) {
-            push @msg => $stats{$db}{'alivenumc'} ." above critical value, oldest alive xact on $db: ". to_interval($stats{$db}{'alivemax'});
-        } elsif ( defined ( $warn{'alive'} ) and $stats{$db}{'alivemax'} > $warn{'alive'} ) {
-            push @msg => $stats{$db}{'alivenumw'} ." above warning value, oldest alive xact on $db: ". to_interval($stats{$db}{'alivemax'});
+        if ( defined ( $crit{$test[$col]} ) and $stats{$db}{$test[$col].'max'} > $crit{$test[$col]} ) {
+            push @msg => $stats{$db}{$test[$col].'numc'} ." above critical value, oldest idle xact on $db: ". to_interval($stats{$db}{$test[$col].'max'});
+        } elsif ( defined ( $warn{$test[$col]}) and $stats{$db}{$test[$col].'max'} > $warn{$test[$col]} ) {
+            push @msg => $stats{$db}{$test[$col].'numw'} ." above warning value, oldest idle xact on $db: ". to_interval($stats{$db}{$test[$col].'max'});
+        }
         }
     }
 
