@@ -6887,7 +6887,11 @@ Check the oldest I<idle> transaction.
 Perfdata contains the max/avg age and the number of idle transactions
 per databases.
 
-Critical and Warning thresholds only accept an interval.
+Critical and Warning thresholds are required. They accept a list of
+'label=value' separated by a comma. Available labels are C<idle>, and C<alive>.
+Values are intervals. Here is an example:
+
+    -w 'idle=1h,alive=5h' -c 'idle=10h,alive=8h'
 
 This service supports both C<--dbexclude> and C<--dbinclude> parameters.
 
@@ -6912,18 +6916,20 @@ sub check_oldest_idlexact {
     my @hosts;
     my %warn;
     my %crit;
-    my %args        = %{ $_[0] };
-    my @dbinclude   = @{ $args{'dbinclude'} };
-    my @dbexclude   = @{ $args{'dbexclude'} };
-    my $me          = 'POSTGRES_OLDEST_IDLEXACT';
-    my $oldest_idle = 0;
-    my $oldest_alive = 0;
-    my $nb_idle     = 0;
-    my $nb_alive   = 0;
-    my @test = ( 'idle', 'alive' );
-    my %stats       = ( );
+    my $xacttype;
+    my $duration;
+    my %args           = %{ $_[0] };
+    my @dbinclude      = @{ $args{'dbinclude'} };
+    my @dbexclude      = @{ $args{'dbexclude'} };
+    my $me             = 'POSTGRES_OLDEST_IDLEXACT';
+    my $oldest_idle    = 0;
+    my $oldest_alive   = 0;
+    my $nb_idle        = 0;
+    my $nb_alive       = 0;
+    my @test           = ( 'idle', 'alive' );
+    my %stats          = ( );
     my $exclude_filter = "";
-    my %queries     = (
+    my %queries        = (
         $PG_VERSION_83 => q{SELECT d.datname,
             CASE WHEN current_query = '<IDLE> in transaction' THEN coalesce(extract('epoch' FROM date_trunc('second', current_timestamp-state_change)), -1)
                                                   ELSE -1 END AS statechange,
@@ -6947,7 +6953,7 @@ sub check_oldest_idlexact {
         }
     );
 
-    # Start with something
+    # Start with something to avoid checking for undefined
     $warn{'idle'} = undef;
     $warn{'alive'} = undef;
     $crit{'idle'} = undef;
@@ -7027,16 +7033,21 @@ sub check_oldest_idlexact {
         $oldest_alive = $r->[2] if $r->[2] > $oldest_alive;
 
         for ( my $col = 1 ; $col < 3 ; $col++ ) {
-            $stats{$r->[0]}{$test[$col-1].'num'}++ if $r->[$col] > -1;
-            if ( defined( $crit{$test[$col-1]} ) and $r->[$col] > $crit{$test[$col-1]} ) {
-                $stats{$r->[0]}{$test[$col-1].'numc'}++;
-            } elsif ( defined( $warn{$test[$col-1]} ) and $r->[$col] > $warn{$test[$col-1]} ) {
-                $stats{$r->[0]}{$test[$col-1].'numw'}++;
+            # Set proper variables
+            $xacttype = $test[$col-1];
+            $duration = $r->[$col];
+
+            # Use them...
+            $stats{$r->[0]}{$xacttype.'num'}++ if $duration > -1;
+            if ( defined( $crit{$xacttype} ) and $duration > $crit{$xacttype} ) {
+                $stats{$r->[0]}{$xacttype.'numc'}++;
+            } elsif ( defined( $warn{$xacttype} ) and $duration > $warn{$xacttype} ) {
+                $stats{$r->[0]}{$xacttype.'numw'}++;
             }
-            $stats{$r->[0]}{$test[$col-1].'max'} = $r->[$col]*1 if $stats{$r->[0]}{$test[$col-1].'max'} < $r->[$col];
-            $stats{$r->[0]}{$test[$col-1].'avg'} = (
-                $stats{$r->[0]}{$test[$col-1].'avg'} * ($stats{$r->[0]}{$test[$col-1].'num'} -1) + $r->[$col])
-                / $stats{$r->[0]}{$test[$col-1].'num'} if $stats{$r->[0]}{$test[$col-1].'num'};
+            $stats{$r->[0]}{$xacttype.'max'} = $duration if $stats{$r->[0]}{$xacttype.'max'} < $duration;
+            $stats{$r->[0]}{$xacttype.'avg'} = (
+                $stats{$r->[0]}{$xacttype.'avg'} * ($stats{$r->[0]}{$xacttype.'num'} -1) + $duration)
+                / $stats{$r->[0]}{$xacttype.'num'} if $stats{$r->[0]}{$xacttype.'num'};
         }
     }
 
@@ -7049,24 +7060,28 @@ sub check_oldest_idlexact {
         $nb_alive += $stats{$db}{'alivenum'};
 
         for ( my $col = 0 ; $col < 2 ; $col++ ) {
-        unless($stats{$db}{$test[$col].'max'} > -1) {
-            $stats{$db}{$test[$col].'max'} = 'NaN';
-            $stats{$db}{$test[$col].'avg'} = 'NaN';
-        }
+            # Set proper variables
+            $xacttype = $test[$col];
 
-        push @perfdata, (
-            [ "$db max", $stats{$db}{$test[$col].'max'}, 's', $warn{$test[$col]}, $crit{$test[$col]} ],
-            [ "$db avg", $stats{$db}{$test[$col].'avg'}, 's', $warn{$test[$col]}, $crit{$test[$col]} ],
-            [ "$db # idle xact", $stats{$db}{$test[$col].'num'} ],
-            [ "$db # idle xact above warning", $stats{$db}{$test[$col].'numw'} ],
-            [ "$db # idle xact above critical", $stats{$db}{$test[$col].'numc'} ]
-        );
+            # Use them...
+            unless($stats{$db}{$xacttype.'max'} > -1) {
+                $stats{$db}{$xacttype.'max'} = 'NaN';
+                $stats{$db}{$xacttype.'avg'} = 'NaN';
+            }
 
-        if ( defined ( $crit{$test[$col]} ) and $stats{$db}{$test[$col].'max'} > $crit{$test[$col]} ) {
-            push @msg => $stats{$db}{$test[$col].'numc'} ." above critical value, oldest idle xact on $db: ". to_interval($stats{$db}{$test[$col].'max'});
-        } elsif ( defined ( $warn{$test[$col]}) and $stats{$db}{$test[$col].'max'} > $warn{$test[$col]} ) {
-            push @msg => $stats{$db}{$test[$col].'numw'} ." above warning value, oldest idle xact on $db: ". to_interval($stats{$db}{$test[$col].'max'});
-        }
+            push @perfdata, (
+                [ "$db max", $stats{$db}{$xacttype.'max'}, 's', $warn{$xacttype}, $crit{$xacttype} ],
+                [ "$db avg", $stats{$db}{$xacttype.'avg'}, 's', $warn{$xacttype}, $crit{$xacttype} ],
+                [ "$db # idle xact", $stats{$db}{$xacttype.'num'} ],
+                [ "$db # idle xact above warning", $stats{$db}{$xacttype.'numw'} ],
+                [ "$db # idle xact above critical", $stats{$db}{$xacttype.'numc'} ]
+            );
+
+            if ( defined ( $crit{$xacttype} ) and $stats{$db}{$xacttype.'max'} > $crit{$xacttype} ) {
+                push @msg => $stats{$db}{$xacttype.'numc'} ." above critical value, oldest idle xact on $db: ". to_interval($stats{$db}{$xacttype.'max'});
+            } elsif ( defined ( $warn{$xacttype}) and $stats{$db}{$xacttype.'max'} > $warn{$xacttype} ) {
+                push @msg => $stats{$db}{$xacttype.'numw'} ." above warning value, oldest idle xact on $db: ". to_interval($stats{$db}{$xacttype.'max'});
+            }
         }
     }
 
