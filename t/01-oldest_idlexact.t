@@ -41,8 +41,8 @@ SKIP: {
         './check_pgactivity', '--service'  => 'oldest_idlexact',
                               '--username' => $ENV{'USER'} || 'postgres',
                               '--format'   => 'human',
-                              '--warning'  => '30s',
-                              '--critical' => '1h'
+                              '--warning'  => 'idle=30s',
+                              '--critical' => 'idle=1h'
         ],
         1,
         [ qr/^$/ ],
@@ -60,13 +60,13 @@ SKIP: {
                               '--username' => $ENV{'USER'} || 'postgres',
                               '--format'   => 'human',
                               '--dbname'   => 'template1',
-                              '--warning'  => '30s',
-                              '--critical' => '1h'
+                              '--warning'  => 'idle=30s',
+                              '--critical' => 'idle=1h'
         ],
         0,
         [ qr/^Service  *: POSTGRES_OLDEST_IDLEXACT$/m,
           qr/^Returns  *: 0 \(OK\)$/m,
-          qr/^Message  *: 0 idle transaction\(s\)$/m,
+          qr/^Message  *: 0 idle transaction\(s\), 1 alive transaction\(s\)$/m,
           qr/^Perfdata *: template1 # idle xact=0$/m
         ],
         [ qr/^$/ ],
@@ -79,8 +79,8 @@ SKIP: {
                               '--username' => $ENV{'USER'} || 'postgres',
                               '--format'   => 'human',
                               '--dbname'   => 'template1',
-                              '--warning'  => '30m',
-                              '--critical' => '1h'
+                              '--warning'  => 'idle=30m',
+                              '--critical' => 'idle=1h'
         ],
         0,
         [ qr/^Service  *: POSTGRES_OLDEST_IDLEXACT$/m,
@@ -101,13 +101,13 @@ SKIP: {
                               '--username' => $ENV{'USER'} || 'postgres',
                               '--format'   => 'human',
                               '--dbname'   => 'postgres',
-                              '--warning'  => '3s',
-                              '--critical' => '1h'
+                              '--warning'  => 'idle=3s',
+                              '--critical' => 'idle=1h'
         ],
         0,
         [ qr/^Service  *: POSTGRES_OLDEST_IDLEXACT$/m,
           qr/^Returns  *: 0 \(OK\)$/m,
-          qr/^Message  *: 1 idle transaction\(s\)$/m,
+          qr/^Message  *: 1 idle transaction\(s\), 2 alive transaction\(s\)$/m,
           qr/^Perfdata *: postgres # idle xact=1$/m
         ],
         [ qr/^$/ ],
@@ -129,13 +129,13 @@ SKIP: {
                               '--username' => $ENV{'USER'} || 'postgres',
                               '--format'   => 'human',
                               '--dbname'   => 'postgres',
-                              '--warning'  => '2s',
-                              '--critical' => '1h'
+                              '--warning'  => 'idle=2s',
+                              '--critical' => 'idle=1h'
         ],
         1,
         [ qr/^Service  *: POSTGRES_OLDEST_IDLEXACT$/m,
           qr/^Returns  *: 1 \(WARNING\)$/m,
-          qr/^Message  *: 1 idle transaction\(s\)$/m,
+          qr/^Message  *: 1 idle transaction\(s\), 2 alive transaction\(s\)$/m,
           qr/^Perfdata *: postgres # idle xact=1$/m
         ],
         [ qr/^$/ ],
@@ -148,13 +148,13 @@ SKIP: {
                               '--username' => $ENV{'USER'} || 'postgres',
                               '--format'   => 'human',
                               '--dbname'   => 'template1',
-                              '--warning'  => '1s',
-                              '--critical' => '2s'
+                              '--warning'  => 'idle=1s',
+                              '--critical' => 'idle=2s'
         ],
         2,
         [ qr/^Service  *: POSTGRES_OLDEST_IDLEXACT$/m,
           qr/^Returns  *: 2 \(CRITICAL\)$/m,
-          qr/^Message  *: 1 idle transaction\(s\)$/m,
+          qr/^Message  *: 1 idle transaction\(s\), 2 alive transaction\(s\)$/m,
           qr/^Perfdata *: postgres # idle xact=1$/m
         ],
         [ qr/^$/ ],
@@ -173,13 +173,13 @@ SKIP: {
                                   '--username' => $ENV{'USER'} || 'postgres',
                                   '--format'   => 'human',
                                   '--dbname'   => 'template1',
-                                  '--warning'  => '2s',
-                                  '--critical' => '1h'
+                                  '--warning'  => 'idle=2s',
+                                  '--critical' => 'idle=1h'
             ],
             0,
             [ qr/^Service  *: POSTGRES_OLDEST_IDLEXACT$/m,
               qr/^Returns  *: 0 \(OK\)$/m,
-              qr/^Message  *: 1 idle transaction\(s\)$/m,
+              qr/^Message  *: 1 idle transaction\(s\), 2 alive transaction\(s\)$/m,
               qr/^Perfdata *: postgres # idle xact=1$/m
             ],
             [ qr/^$/ ],
