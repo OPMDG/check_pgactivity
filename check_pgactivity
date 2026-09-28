@@ -6910,39 +6910,47 @@ sub check_oldest_idlexact {
     my @perfdata;
     my @msg;
     my @hosts;
-    my $c_limit;
-    my $w_limit;
+    my %warn;
+    my %crit;
     my %args        = %{ $_[0] };
     my @dbinclude   = @{ $args{'dbinclude'} };
     my @dbexclude   = @{ $args{'dbexclude'} };
     my $me          = 'POSTGRES_OLDEST_IDLEXACT';
     my $oldest_idle = 0;
+    my $oldest_alive = 0;
     my $nb_idle     = 0;
+    my $nb_alive   = 0;
     my %stats       = ( );
     my $exclude_filter = "";
     my %queries     = (
         $PG_VERSION_83 => q{SELECT d.datname,
-            coalesce(extract('epoch' FROM
-                    date_trunc('second', current_timestamp-xact_start)
-                ), -1)
+            CASE WHEN current_query = '<IDLE> in transaction' THEN coalesce(extract('epoch' FROM date_trunc('second', current_timestamp-state_change)), -1)
+                                                  ELSE -1 END AS statechange,
+            coalesce(extract('epoch' FROM date_trunc('second', current_timestamp-xact_start)), -1) AS xactstart
             FROM pg_database AS d
-            LEFT JOIN pg_stat_activity AS a ON (a.datid = d.oid AND current_query = '<IDLE> in transaction')},
+            LEFT JOIN pg_stat_activity AS a ON a.datid = d.oid
+        },
         $PG_VERSION_92 => q{SELECT d.datname,
-            coalesce(extract('epoch' FROM
-                    date_trunc('second', current_timestamp-state_change)
-                ), -1)
+            CASE WHEN state='idle in transaction' THEN coalesce(extract('epoch' FROM date_trunc('second', current_timestamp-state_change)), -1)
+                                                  ELSE -1 END AS statechange,
+            coalesce(extract('epoch' FROM date_trunc('second', current_timestamp-xact_start)), -1) AS xactstart
             FROM pg_database AS d
-            LEFT JOIN pg_stat_activity AS a ON (a.datid = d.oid AND state='idle in transaction')
+            LEFT JOIN pg_stat_activity AS a ON a.datid = d.oid
         },
         $PG_VERSION_94 => q{SELECT d.datname,
-            coalesce(extract('epoch' FROM
-                    date_trunc('second', current_timestamp-state_change)
-                ), -1)
+            CASE WHEN state='idle in transaction' THEN coalesce(extract('epoch' FROM date_trunc('second', current_timestamp-state_change)), -1)
+                                                  ELSE -1 END AS statechange,
+            coalesce(extract('epoch' FROM date_trunc('second', current_timestamp-xact_start)), -1) AS xactstart
             FROM pg_database AS d
-            LEFT JOIN pg_stat_activity AS a ON (a.datid = d.oid AND a.state='idle in transaction'
-	            AND NOT (a.backend_xid IS NULL AND a.backend_xmin IS NULL))
+            LEFT JOIN pg_stat_activity AS a ON (a.datid = d.oid AND NOT (a.backend_xid IS NULL AND a.backend_xmin IS NULL))
         }
     );
+
+    # Start with something
+    $warn{'idle'} = undef;
+    $warn{'alive'} = undef;
+    $crit{'idle'} = undef;
+    $crit{'alive'} = undef;
 
     # Exclude some apps
     if(defined $args{'exclude'}[0]){
@@ -6957,15 +6965,36 @@ sub check_oldest_idlexact {
         -exitval => 127
     ) unless defined $args{'warning'} and defined $args{'critical'} ;
 
-    pod2usage(
-        -message => "FATAL: critical and warning thresholds only acccepts interval.",
-        -exitval => 127
-    ) unless ( is_time( $args{'warning'} ) and is_time( $args{'critical'} ) );
+    if ( defined $args{'warning'} ) {
+        my $thresholds_re
+            = qr/(idle|alive)\s*=\s*(\d+\s*[smhd]?)/i;
 
+        # Warning and critical must be raw
+        pod2usage(
+            -message => "FATAL: critical and warning thresholds only accept a list of 'label=value' separated by comma.\n"
+                . "See documentation for more information.",
+            -exitval => 127
+        ) unless $args{'warning'} =~ m/^$thresholds_re(\s*,\s*$thresholds_re)*$/
+            and $args{'critical'} =~ m/^$thresholds_re(\s*,\s*$thresholds_re)*$/ ;
 
-    $c_limit = get_time $args{'critical'};
-    $w_limit = get_time $args{'warning'};
+        while ( $args{'warning'} =~ /$thresholds_re/g ) {
+            my ($threshold, $value) = ($1, $2);
+            pod2usage(
+                -message => "FATAL: critical and warning thresholds only acccepts interval.",
+                -exitval => 127
+            ) unless is_time $value;
+            $warn{$threshold} = get_time $value if $1 and defined $2;
+        }
 
+        while ( $args{'critical'} =~ /$thresholds_re/g ) {
+            my ($threshold, $value) = ($1, $2);
+            pod2usage(
+                -message => "FATAL: critical and warning thresholds only acccepts interval.",
+                -exitval => 127
+            ) unless is_time $value;
+            $crit{$threshold} = get_time $value if $1 and defined $2;
+        }
+    }
 
     @hosts = @{ parse_hosts %args };
 
@@ -6976,31 +7005,47 @@ sub check_oldest_idlexact {
 
     is_compat $hosts[0], 'oldest_idlexact', $PG_VERSION_83 or exit 1;
 
-
     @rs = @{ query_ver( $hosts[0], %queries ) };
 
     REC_LOOP: foreach my $r (@rs) {
 
         $stats{$r->[0]} = {
-            'num' => 0,
-            'numw' => 0,
-            'numc' => 0,
-            'max' => -1,
-            'avg' => 0,
+            'idlenum'   => 0,
+            'idlenumw'  => 0,
+            'idlenumc'  => 0,
+            'idlemax'   => -1,
+            'idleavg'   => 0,
+            'alivenum'  => 0,
+            'alivenumw' => 0,
+            'alivenumc' => 0,
+            'alivemax'  => -1,
+            'aliveavg'  => 0,
         } unless exists $stats{$r->[0]};
 
         $oldest_idle = $r->[1] if $r->[1] > $oldest_idle;
+        $oldest_alive = $r->[2] if $r->[2] > $oldest_alive;
 
-        $stats{$r->[0]}{'num'}++ if $r->[1] > -1;
-        if ( $r->[1] > $c_limit ) {
-            $stats{$r->[0]}{'numc'}++;
-        } elsif ( $r->[1] > $w_limit ) {
-            $stats{$r->[0]}{'numw'}++;
+        $stats{$r->[0]}{'idlenum'}++ if $r->[1] > -1;
+        if ( defined( $crit{'idle'} ) and $r->[1] > $crit{'idle'} ) {
+            $stats{$r->[0]}{'idlenumc'}++;
+        } elsif ( defined( $warn{'idle'} ) and $r->[1] > $warn{'idle'} ) {
+            $stats{$r->[0]}{'idlenumw'}++;
         }
-        $stats{$r->[0]}{'max'} = $r->[1] if $stats{$r->[0]}{'max'} < $r->[1];
-        $stats{$r->[0]}{'avg'} = (
-            $stats{$r->[0]}{'avg'} * ($stats{$r->[0]}{'num'} -1) + $r->[1])
-            / $stats{$r->[0]}{'num'} if $stats{$r->[0]}{'num'};
+        $stats{$r->[0]}{'idlemax'} = $r->[1] if $stats{$r->[0]}{'idlemax'} < $r->[1];
+        $stats{$r->[0]}{'idleavg'} = (
+            $stats{$r->[0]}{'idleavg'} * ($stats{$r->[0]}{'idlenum'} -1) + $r->[1])
+            / $stats{$r->[0]}{'idlenum'} if $stats{$r->[0]}{'idlenum'};
+
+        $stats{$r->[0]}{'alivenum'}++ if $r->[2] > -1;
+        if ( defined ( $crit{'alive'} ) and $r->[2] > $crit{'alive'} ) {
+            $stats{$r->[0]}{'alivenumc'}++;
+        } elsif ( defined( $warn{'alive'} ) and $r->[2] > $warn{'alive'} ) {
+            $stats{$r->[0]}{'alivenumw'}++;
+        }
+        $stats{$r->[0]}{'alivemax'} = $r->[2] if $stats{$r->[0]}{'alivemax'} < $r->[2];
+        $stats{$r->[0]}{'aliveavg'} = (
+            $stats{$r->[0]}{'aliveavg'} * ($stats{$r->[0]}{'alivenum'} -1) + $r->[2])
+            / $stats{$r->[0]}{'alivenum'} if $stats{$r->[0]}{'alivenum'};
     }
 
     DB_LOOP: foreach my $db (sort keys %stats) {
@@ -7008,38 +7053,58 @@ sub check_oldest_idlexact {
         next DB_LOOP if grep { $db =~ /$_/ } @dbexclude;
         next DB_LOOP if @dbinclude and not grep { $db =~ /$_/ } @dbinclude;
 
-        $nb_idle += $stats{$db}{'num'};
+        $nb_idle += $stats{$db}{'idlenum'};
 
-        unless($stats{$db}{'max'} > -1) {
-            $stats{$db}{'max'} = 'NaN';
-            $stats{$db}{'avg'} = 'NaN';
+        unless($stats{$db}{'idlemax'} > -1) {
+            $stats{$db}{'idlemax'} = 'NaN';
+            $stats{$db}{'idleavg'} = 'NaN';
         }
 
         push @perfdata, (
-            [ "$db max", $stats{$db}{'max'}, 's', $w_limit, $c_limit ],
-            [ "$db avg", $stats{$db}{'avg'}, 's', $w_limit, $c_limit ],
-            [ "$db # idle xact", $stats{$db}{'num'} ],
-            [ "$db # idle xact above warning", $stats{$db}{'numw'} ],
-            [ "$db # idle xact above critical", $stats{$db}{'numc'} ]
+            [ "$db max", $stats{$db}{'idlemax'}, 's', $warn{'idle'}, $crit{'idle'} ],
+            [ "$db avg", $stats{$db}{'idleavg'}, 's', $warn{'idle'}, $crit{'idle'} ],
+            [ "$db # idle xact", $stats{$db}{'idlenum'} ],
+            [ "$db # idle xact above warning", $stats{$db}{'idlenumw'} ],
+            [ "$db # idle xact above critical", $stats{$db}{'idlenumc'} ]
         );
 
-        if ( $stats{$db}{'max'} > $c_limit ) {
-            push @msg => $stats{$db}{'numc'} ." above critical value, oldest idle xact on $db: ". to_interval($stats{$db}{'max'});
-            next DB_LOOP;
+        if ( defined ( $crit{'idle'} ) and $stats{$db}{'idlemax'} > $crit{'idle'} ) {
+            push @msg => $stats{$db}{'idlenumc'} ." above critical value, oldest idle xact on $db: ". to_interval($stats{$db}{'idlemax'});
+        } elsif ( defined ( $warn{'idle'}) and $stats{$db}{'idlemax'} > $warn{'idle'} ) {
+            push @msg => $stats{$db}{'idlenumw'} ." above warning value, oldest idle xact on $db: ". to_interval($stats{$db}{'idlemax'});
         }
 
-        if ( $stats{$db}{'max'} > $w_limit ) {
-            push @msg => $stats{$db}{'numw'} ." above warning value, oldest idle xact on $db: ". to_interval($stats{$db}{'max'});
+        $nb_alive += $stats{$db}{'alivenum'};
+
+        unless($stats{$db}{'alivemax'} > -1) {
+            $stats{$db}{'alivemax'} = 'NaN';
+            $stats{$db}{'aliveavg'} = 'NaN';
+        }
+
+        push @perfdata, (
+            [ "$db max", $stats{$db}{'alivemax'}, 's', $warn{'alive'}, $crit{'alive'} ],
+            [ "$db avg", $stats{$db}{'aliveavg'}, 's', $warn{'alive'}, $crit{'alive'} ],
+            [ "$db # alive xact", $stats{$db}{'alivenum'} ],
+            [ "$db # alive xact above warning", $stats{$db}{'alivenumw'} ],
+            [ "$db # alive xact above critical", $stats{$db}{'alivenumc'} ]
+        );
+
+        if ( defined ( $crit{'alive'} ) and $stats{$db}{'alivemax'} > $crit{'alive'} ) {
+            push @msg => $stats{$db}{'alivenumc'} ." above critical value, oldest alive xact on $db: ". to_interval($stats{$db}{'alivemax'});
+        } elsif ( defined ( $warn{'alive'} ) and $stats{$db}{'alivemax'} > $warn{'alive'} ) {
+            push @msg => $stats{$db}{'alivenumw'} ." above warning value, oldest alive xact on $db: ". to_interval($stats{$db}{'alivemax'});
         }
     }
 
-    unshift @msg => "$nb_idle idle transaction(s)";
+    unshift @msg => "$nb_idle idle transaction(s), $nb_alive alive transaction(s)";
 
     return status_critical( $me, \@msg, \@perfdata )
-        if $oldest_idle > $c_limit;
+        if ( ( defined ( $crit{'idle'} ) and $oldest_idle > $crit{'idle'} )
+           or ( defined ( $crit{'alive'} ) and $oldest_alive > $crit{'alive'} ) );
 
     return status_warning( $me, \@msg, \@perfdata )
-        if $oldest_idle > $w_limit;
+        if ( ( defined ( $warn{'idle'} ) and $oldest_idle > $warn{'idle'} )
+           or ( defined ( $warn{'alive'} ) and $oldest_alive > $warn{'alive'} ) );
 
     return status_ok( $me, \@msg, \@perfdata );
 }
