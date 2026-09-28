@@ -246,9 +246,13 @@ my %services = (
         'sub'  => \&check_oldest_2pc,
         'desc' => 'Check the oldest two-phase commit transaction.'
     },
-    'oldest_idlexact' => {
-        'sub'  => \&check_oldest_idlexact,
-        'desc' => 'Check the oldest idle transaction.'
+    'oldest_idlexact' => { # for compatibility with previous usage
+        'sub'  => \&check_oldest_xact,
+        'desc' => 'Deprecated, replaced by oldest_xact'
+    },
+    'oldest_xact' => {
+        'sub'  => \&check_oldest_xact,
+        'desc' => 'Check the oldest idle and/or active transactions.'
     },
     'oldest_xmin' => {
         'sub'  => \&check_oldest_xmin,
@@ -6887,69 +6891,92 @@ sub check_oldest_2pc {
 }
 
 
-=item B<oldest_idlexact> (8.3+)
+=item B<oldest_xact> (8.3+)
 
-Check the oldest I<idle> transaction.
+Check I<idle> and long transactions.
+Idle transactions do not execute any queries, but did not commit. Alive
+transactions still execute queries regularly without committing. Note that very
+long queries are monitored by the longest_query service.
 
-Perfdata contains the max/avg age and the number of idle transactions
-per databases.
+Perfdata contains the max/avg age and the number of idle/alive transactions per
+databases.
 
-Critical and Warning thresholds only accept an interval.
+Critical and Warning thresholds are required. They accept a list of
+'label=value' separated by a comma. Available labels are C<idle>, and C<alive>.
+Values are intervals. Here is an example:
+
+    -w 'idle=1h,alive=5h' -c 'idle=10h,alive=8h'
+
+The service was formerly called oldest_idlexact.
+For compatibility with previous versions, a simple interval such as '1h'
+is converted as 'idle=1h'.
 
 This service supports both C<--dbexclude> and C<--dbinclude> parameters.
 
-Above 9.2, it supports C<--exclude> to filter out connections. Eg., to
-filter out pg_dump and pg_dumpall, set this to 'pg_dump,pg_dumpall'.
+Above 9.2, it supports C<--exclude> to filter out connections. Eg., to filter
+out pg_dump and pg_dumpall, set this to 'pg_dump,pg_dumpall'.
 
 Before 9.2, this services checks for idle transaction with their start time.
 Thus, the service can mistakenly take account of transaction transiently in
 idle state.
+
 From 9.2 and up, the service checks for transaction that really had no activity
 since the given thresholds.
 
-Required privileges: an unprivileged role checks only its own queries;
-a pg_monitor (10+) or superuser (<10) role is required to check all queries.
+Required privileges: an unprivileged role checks only its own queries; a
+pg_monitor (10+) or superuser (<10) role is required to check all queries.
 
 =cut
 
-sub check_oldest_idlexact {
+sub check_oldest_xact {
     my @rs;
     my @perfdata;
     my @msg;
     my @hosts;
-    my $c_limit;
-    my $w_limit;
-    my %args        = %{ $_[0] };
-    my @dbinclude   = @{ $args{'dbinclude'} };
-    my @dbexclude   = @{ $args{'dbexclude'} };
-    my $me          = 'POSTGRES_OLDEST_IDLEXACT';
-    my $oldest_idle = 0;
-    my $nb_idle     = 0;
-    my %stats       = ( );
+    my %warn;
+    my %crit;
+    my $xacttype;
+    my $duration;
+    my %args           = %{ $_[0] };
+    my @dbinclude      = @{ $args{'dbinclude'} };
+    my @dbexclude      = @{ $args{'dbexclude'} };
+    my $me             = 'POSTGRES_OLDEST_XACT';
+    my $oldest_idle    = 0;
+    my $oldest_alive   = 0;
+    my $nb_idle        = 0;
+    my $nb_alive       = 0;
+    my @test           = ( 'idle', 'alive' );
+    my %stats          = ( );
     my $exclude_filter = "";
-    my %queries     = (
+    my %queries        = (
         $PG_VERSION_83 => q{SELECT d.datname,
-            coalesce(extract('epoch' FROM
-                    date_trunc('second', current_timestamp-xact_start)
-                ), -1)
+            CASE WHEN current_query = '<IDLE> in transaction' THEN coalesce(extract('epoch' FROM date_trunc('second', current_timestamp-state_change)), -1)
+                                                  ELSE -1 END AS statechange,
+            coalesce(extract('epoch' FROM date_trunc('second', current_timestamp-xact_start)), -1) AS xactstart
             FROM pg_database AS d
-            LEFT JOIN pg_stat_activity AS a ON (a.datid = d.oid AND current_query = '<IDLE> in transaction')},
+            LEFT JOIN pg_stat_activity AS a ON a.datid = d.oid
+        },
         $PG_VERSION_92 => q{SELECT d.datname,
-            coalesce(extract('epoch' FROM
-                    date_trunc('second', current_timestamp-state_change)
-                ), -1)
+            CASE WHEN state='idle in transaction' THEN coalesce(extract('epoch' FROM date_trunc('second', current_timestamp-state_change)), -1)
+                                                  ELSE -1 END AS statechange,
+            coalesce(extract('epoch' FROM date_trunc('second', current_timestamp-xact_start)), -1) AS xactstart
             FROM pg_database AS d
-            LEFT JOIN pg_stat_activity AS a ON (a.datid = d.oid AND state='idle in transaction')
+            LEFT JOIN pg_stat_activity AS a ON a.datid = d.oid
         },
         $PG_VERSION_94 => q{SELECT d.datname,
-            coalesce(extract('epoch' FROM
-                    date_trunc('second', current_timestamp-state_change)
-                ), -1)
+            CASE WHEN state='idle in transaction' THEN coalesce(extract('epoch' FROM date_trunc('second', current_timestamp-state_change)), -1)
+                                                  ELSE -1 END AS statechange,
+            coalesce(extract('epoch' FROM date_trunc('second', current_timestamp-xact_start)), -1) AS xactstart
             FROM pg_database AS d
-            LEFT JOIN pg_stat_activity AS a ON (a.datid = d.oid AND a.state='idle in transaction'
-	            AND NOT (a.backend_xid IS NULL AND a.backend_xmin IS NULL))
+            LEFT JOIN pg_stat_activity AS a ON (a.datid = d.oid AND NOT (a.backend_xid IS NULL AND a.backend_xmin IS NULL))
         }
     );
+
+    # Start with something to avoid checking for undefined
+    $warn{'idle'} = undef;
+    $warn{'alive'} = undef;
+    $crit{'idle'} = undef;
+    $crit{'alive'} = undef;
 
     # Exclude some apps
     if(defined $args{'exclude'}[0]){
@@ -6964,15 +6991,44 @@ sub check_oldest_idlexact {
         -exitval => 127
     ) unless defined $args{'warning'} and defined $args{'critical'} ;
 
-    pod2usage(
-        -message => "FATAL: critical and warning thresholds only acccepts interval.",
-        -exitval => 127
-    ) unless ( is_time( $args{'warning'} ) and is_time( $args{'critical'} ) );
+    if ( defined $args{'warning'} ) {
+        if ( defined $args{'warning'} and is_time $args{'warning'} ) {
+            $args{'warning'} = 'idle='.$args{'warning'};
+        }
+        if ( defined $args{'critical'} and is_time $args{'critical'} ) {
+            $args{'critical'} = 'idle='.$args{'critical'};
+        }
 
+        my $thresholds_re
+            = qr/(idle|alive)\s*=\s*(\d+\s*[smhd]?)/i;
 
-    $c_limit = get_time $args{'critical'};
-    $w_limit = get_time $args{'warning'};
+        # Warning and critical must be raw
+        pod2usage(
+            -message => "FATAL: critical and warning thresholds accept a list of 'label=value' separated by comma.\n"
+                . "It also accepts a simple interval value, in which case it is the idle and alive values.\n"
+                . "See documentation for more information.",
+            -exitval => 127
+        ) unless $args{'warning'} =~ m/^$thresholds_re(\s*,\s*$thresholds_re)*$/
+            and $args{'critical'} =~ m/^$thresholds_re(\s*,\s*$thresholds_re)*$/ ;
 
+        while ( $args{'warning'} =~ /$thresholds_re/g ) {
+            my ($threshold, $value) = ($1, $2);
+            pod2usage(
+                -message => "FATAL: critical and warning thresholds only acccepts interval.",
+                -exitval => 127
+            ) unless is_time $value;
+            $warn{$threshold} = get_time $value if $1 and defined $2;
+        }
+
+        while ( $args{'critical'} =~ /$thresholds_re/g ) {
+            my ($threshold, $value) = ($1, $2);
+            pod2usage(
+                -message => "FATAL: critical and warning thresholds only acccepts interval.",
+                -exitval => 127
+            ) unless is_time $value;
+            $crit{$threshold} = get_time $value if $1 and defined $2;
+        }
+    }
 
     @hosts = @{ parse_hosts %args };
 
@@ -6981,33 +7037,45 @@ sub check_oldest_idlexact {
         -exitval => 127
     ) if @hosts != 1;
 
-    is_compat $hosts[0], 'oldest_idlexact', $PG_VERSION_83 or exit 1;
-
+    is_compat $hosts[0], 'oldest_xact', $PG_VERSION_83 or exit 1;
 
     @rs = @{ query_ver( $hosts[0], %queries ) };
 
     REC_LOOP: foreach my $r (@rs) {
 
         $stats{$r->[0]} = {
-            'num' => 0,
-            'numw' => 0,
-            'numc' => 0,
-            'max' => -1,
-            'avg' => 0,
+            'idlenum'   => 0,
+            'idlenumw'  => 0,
+            'idlenumc'  => 0,
+            'idlemax'   => -1,
+            'idleavg'   => 0,
+            'alivenum'  => 0,
+            'alivenumw' => 0,
+            'alivenumc' => 0,
+            'alivemax'  => -1,
+            'aliveavg'  => 0,
         } unless exists $stats{$r->[0]};
 
         $oldest_idle = $r->[1] if $r->[1] > $oldest_idle;
+        $oldest_alive = $r->[2] if $r->[2] > $oldest_alive;
 
-        $stats{$r->[0]}{'num'}++ if $r->[1] > -1;
-        if ( $r->[1] > $c_limit ) {
-            $stats{$r->[0]}{'numc'}++;
-        } elsif ( $r->[1] > $w_limit ) {
-            $stats{$r->[0]}{'numw'}++;
+        for ( my $col = 1 ; $col < 3 ; $col++ ) {
+            # Set proper variables
+            $xacttype = $test[$col-1];
+            $duration = $r->[$col];
+
+            # Use them...
+            $stats{$r->[0]}{$xacttype.'num'}++ if $duration > -1;
+            if ( defined( $crit{$xacttype} ) and $duration > $crit{$xacttype} ) {
+                $stats{$r->[0]}{$xacttype.'numc'}++;
+            } elsif ( defined( $warn{$xacttype} ) and $duration > $warn{$xacttype} ) {
+                $stats{$r->[0]}{$xacttype.'numw'}++;
+            }
+            $stats{$r->[0]}{$xacttype.'max'} = $duration if $stats{$r->[0]}{$xacttype.'max'} < $duration;
+            $stats{$r->[0]}{$xacttype.'avg'} = (
+                $stats{$r->[0]}{$xacttype.'avg'} * ($stats{$r->[0]}{$xacttype.'num'} -1) + $duration)
+                / $stats{$r->[0]}{$xacttype.'num'} if $stats{$r->[0]}{$xacttype.'num'};
         }
-        $stats{$r->[0]}{'max'} = $r->[1] if $stats{$r->[0]}{'max'} < $r->[1];
-        $stats{$r->[0]}{'avg'} = (
-            $stats{$r->[0]}{'avg'} * ($stats{$r->[0]}{'num'} -1) + $r->[1])
-            / $stats{$r->[0]}{'num'} if $stats{$r->[0]}{'num'};
     }
 
     DB_LOOP: foreach my $db (sort keys %stats) {
@@ -7015,38 +7083,44 @@ sub check_oldest_idlexact {
         next DB_LOOP if grep { $db =~ /$_/ } @dbexclude;
         next DB_LOOP if @dbinclude and not grep { $db =~ /$_/ } @dbinclude;
 
-        $nb_idle += $stats{$db}{'num'};
+        $nb_idle += $stats{$db}{'idlenum'};
+        $nb_alive += $stats{$db}{'alivenum'};
 
-        unless($stats{$db}{'max'} > -1) {
-            $stats{$db}{'max'} = 'NaN';
-            $stats{$db}{'avg'} = 'NaN';
-        }
+        for ( my $col = 0 ; $col < 2 ; $col++ ) {
+            # Set proper variables
+            $xacttype = $test[$col];
 
-        push @perfdata, (
-            [ "$db max", $stats{$db}{'max'}, 's', $w_limit, $c_limit ],
-            [ "$db avg", $stats{$db}{'avg'}, 's', $w_limit, $c_limit ],
-            [ "$db # idle xact", $stats{$db}{'num'} ],
-            [ "$db # idle xact above warning", $stats{$db}{'numw'} ],
-            [ "$db # idle xact above critical", $stats{$db}{'numc'} ]
-        );
+            # Use them...
+            unless($stats{$db}{$xacttype.'max'} > -1) {
+                $stats{$db}{$xacttype.'max'} = 'NaN';
+                $stats{$db}{$xacttype.'avg'} = 'NaN';
+            }
 
-        if ( $stats{$db}{'max'} > $c_limit ) {
-            push @msg => $stats{$db}{'numc'} ." above critical value, oldest idle xact on $db: ". to_interval($stats{$db}{'max'});
-            next DB_LOOP;
-        }
+            push @perfdata, (
+                [ "$db $xacttype max", $stats{$db}{$xacttype.'max'}, 's', $warn{$xacttype}, $crit{$xacttype} ],
+                [ "$db $xacttype avg", $stats{$db}{$xacttype.'avg'}, 's', $warn{$xacttype}, $crit{$xacttype} ],
+                [ "$db # $xacttype xact", $stats{$db}{$xacttype.'num'} ],
+                [ "$db # $xacttype xact above warning", $stats{$db}{$xacttype.'numw'} ],
+                [ "$db # $xacttype xact above critical", $stats{$db}{$xacttype.'numc'} ]
+            );
 
-        if ( $stats{$db}{'max'} > $w_limit ) {
-            push @msg => $stats{$db}{'numw'} ." above warning value, oldest idle xact on $db: ". to_interval($stats{$db}{'max'});
+            if ( defined ( $crit{$xacttype} ) and $stats{$db}{$xacttype.'max'} > $crit{$xacttype} ) {
+                push @msg => $stats{$db}{$xacttype.'numc'} ." above critical value, oldest $xacttype xact on $db: ". to_interval($stats{$db}{$xacttype.'max'});
+            } elsif ( defined ( $warn{$xacttype}) and $stats{$db}{$xacttype.'max'} > $warn{$xacttype} ) {
+                push @msg => $stats{$db}{$xacttype.'numw'} ." above warning value, oldest $xacttype xact on $db: ". to_interval($stats{$db}{$xacttype.'max'});
+            }
         }
     }
 
-    unshift @msg => "$nb_idle idle transaction(s)";
+    unshift @msg => "$nb_idle idle transaction(s), $nb_alive alive transaction(s)";
 
     return status_critical( $me, \@msg, \@perfdata )
-        if $oldest_idle > $c_limit;
+        if ( ( defined ( $crit{'idle'} ) and $oldest_idle > $crit{'idle'} )
+           or ( defined ( $crit{'alive'} ) and $oldest_alive > $crit{'alive'} ) );
 
     return status_warning( $me, \@msg, \@perfdata )
-        if $oldest_idle > $w_limit;
+        if ( ( defined ( $warn{'idle'} ) and $oldest_idle > $warn{'idle'} )
+           or ( defined ( $warn{'alive'} ) and $oldest_alive > $warn{'alive'} ) );
 
     return status_ok( $me, \@msg, \@perfdata );
 }
