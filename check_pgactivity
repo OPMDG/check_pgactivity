@@ -7078,9 +7078,9 @@ sub check_oldest_idlexact {
             );
 
             if ( defined ( $crit{$xacttype} ) and $stats{$db}{$xacttype.'max'} > $crit{$xacttype} ) {
-                push @msg => $stats{$db}{$xacttype.'numc'} ." above critical value, oldest idle xact on $db: ". to_interval($stats{$db}{$xacttype.'max'});
+                push @msg => $stats{$db}{$xacttype.'numc'} ." above critical value, oldest $xacttype xact on $db: ". to_interval($stats{$db}{$xacttype.'max'});
             } elsif ( defined ( $warn{$xacttype}) and $stats{$db}{$xacttype.'max'} > $warn{$xacttype} ) {
-                push @msg => $stats{$db}{$xacttype.'numw'} ." above warning value, oldest idle xact on $db: ". to_interval($stats{$db}{$xacttype.'max'});
+                push @msg => $stats{$db}{$xacttype.'numw'} ." above warning value, oldest $xacttype xact on $db: ". to_interval($stats{$db}{$xacttype.'max'});
             }
         }
     }
