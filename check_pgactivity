@@ -7546,7 +7546,7 @@ If the path contains the date, like this:
    /var/lib/backups/2015-08-03-daily/mydb.dump
    /var/lib/backups/2015-08-03-daily/otherdb.dump
 
-then you can set:
+then you can set (don't forget the quotes):
 
     --path    '/var/lib/backups/*/*.dump'
     --pattern '/\d+-\d+-\d+-daily/(.*).dump'
