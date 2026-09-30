@@ -6973,12 +6973,20 @@ sub check_oldest_idlexact {
     ) unless defined $args{'warning'} and defined $args{'critical'} ;
 
     if ( defined $args{'warning'} ) {
+        if ( defined $args{'warning'} and is_time $args{'warning'} ) {
+            $args{'warning'} = 'idle='.$args{'warning'}.',alive='.$args{'warning'};
+        }
+        if ( defined $args{'critical'} and is_time $args{'critical'} ) {
+            $args{'critical'} = 'idle='.$args{'critical'}.',alive='.$args{'critical'};
+        }
+
         my $thresholds_re
             = qr/(idle|alive)\s*=\s*(\d+\s*[smhd]?)/i;
 
         # Warning and critical must be raw
         pod2usage(
-            -message => "FATAL: critical and warning thresholds only accept a list of 'label=value' separated by comma.\n"
+            -message => "FATAL: critical and warning thresholds accept a list of 'label=value' separated by comma.\n"
+                . "It also accepts a simple interval value, in which case it is the idle and alive values.\n"
                 . "See documentation for more information.",
             -exitval => 127
         ) unless $args{'warning'} =~ m/^$thresholds_re(\s*,\s*$thresholds_re)*$/
@@ -7072,9 +7080,9 @@ sub check_oldest_idlexact {
             push @perfdata, (
                 [ "$db max", $stats{$db}{$xacttype.'max'}, 's', $warn{$xacttype}, $crit{$xacttype} ],
                 [ "$db avg", $stats{$db}{$xacttype.'avg'}, 's', $warn{$xacttype}, $crit{$xacttype} ],
-                [ "$db # idle xact", $stats{$db}{$xacttype.'num'} ],
-                [ "$db # idle xact above warning", $stats{$db}{$xacttype.'numw'} ],
-                [ "$db # idle xact above critical", $stats{$db}{$xacttype.'numc'} ]
+                [ "$db # $xacttype xact", $stats{$db}{$xacttype.'num'} ],
+                [ "$db # $xacttype xact above warning", $stats{$db}{$xacttype.'numw'} ],
+                [ "$db # $xacttype xact above critical", $stats{$db}{$xacttype.'numc'} ]
             );
 
             if ( defined ( $crit{$xacttype} ) and $stats{$db}{$xacttype.'max'} > $crit{$xacttype} ) {
