@@ -382,8 +382,8 @@ of them to check them though). C<--dbexclude> excludes any
 database whose name matches the given Perl regular expression.
 Repeat this option as many time as needed.
 
-See C<--dbinclude> as well. If a database match both dbexclude and
-dbinclude arguments, it is excluded.
+See C<--dbinclude> as well and its examples.
+If a database matches both dbexclude and dbinclude arguments, it is excluded.
 
 
 =item B<--dbinclude> REGEXP
@@ -393,9 +393,15 @@ cluster (note: that does not imply that they always need to connect to all
 of them though). Some always exclude the 'postgres'
 database and templates. C<--dbinclude> checks B<ONLY>
 databases whose names match the given Perl regular expression.
+Examples:
+ --dbinclude 'erp' checks databases with names like 'erp','erp_dev','test_erp'
+ --dbinclude '^erp$' checks the 'erp' database, and not 'erp_dev' or 'test_erp'
+ --dbinclude '(_dev|test_)' checks all databases with names containing '_dev' or 'test_'
+ --dbinclude 'customer_[0-9]{3}$' checks databases ending with 'customer_001' to 'customer_999',
+   not 'customer_1' or 'customer_9999'
 Repeat this option as many time as needed.
 
-See C<--dbexclude> as well. If a database match both dbexclude and
+See C<--dbexclude> as well. If a database matches both dbexclude and
 dbinclude arguments, it is excluded.
 
 =item B<-w>, B<--warning> THRESHOLD
