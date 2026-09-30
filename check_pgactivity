@@ -6882,7 +6882,10 @@ sub check_oldest_2pc {
 
 =item B<oldest_idlexact> (8.3+)
 
-Check the oldest I<idle> transaction.
+Check I<idle> and long transactions.
+Idle transactions do not execute any queries, but did not commit.
+Active transactions still execute queries regularly without committing.
+Note that very long queries are monitored by the longest_query service.
 
 Perfdata contains the max/avg age and the number of idle transactions
 per databases.
