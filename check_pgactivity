@@ -246,8 +246,12 @@ my %services = (
         'sub'  => \&check_oldest_2pc,
         'desc' => 'Check the oldest two-phase commit transaction.'
     },
-    'oldest_idlexact' => {
-        'sub'  => \&check_oldest_idlexact,
+    'oldest_idlexact' => { # for compatibility with previous usage
+        'sub'  => \&check_oldest_xact,
+        'desc' => 'Check the oldest idle transaction.'
+    },
+    'oldest_xact' => {
+        'sub'  => \&check_oldest_xact,
         'desc' => 'Check the oldest idle transaction.'
     },
     'oldest_xmin' => {
@@ -6916,7 +6920,7 @@ pg_monitor (10+) or superuser (<10) role is required to check all queries.
 
 =cut
 
-sub check_oldest_idlexact {
+sub check_oldest_xact {
     my @rs;
     my @perfdata;
     my @msg;
@@ -6928,7 +6932,7 @@ sub check_oldest_idlexact {
     my %args           = %{ $_[0] };
     my @dbinclude      = @{ $args{'dbinclude'} };
     my @dbexclude      = @{ $args{'dbexclude'} };
-    my $me             = 'POSTGRES_OLDEST_IDLEXACT';
+    my $me             = 'POSTGRES_OLDEST_XACT';
     my $oldest_idle    = 0;
     my $oldest_alive   = 0;
     my $nb_idle        = 0;

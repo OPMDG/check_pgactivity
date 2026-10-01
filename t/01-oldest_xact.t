@@ -22,7 +22,7 @@ $node->start;
 
 # failing without thresholds
 $node->command_checks_all( [
-    './check_pgactivity', '--service'  => 'oldest_idlexact',
+    './check_pgactivity', '--service'  => 'oldest_xact',
                           '--username' => $ENV{'USER'} || 'postgres',
                           '--format'   => 'human'
     ],
@@ -38,7 +38,7 @@ SKIP: {
         if $node->version >= 8.3;
 
     $node->command_checks_all( [
-        './check_pgactivity', '--service'  => 'oldest_idlexact',
+        './check_pgactivity', '--service'  => 'oldest_xact',
                               '--username' => $ENV{'USER'} || 'postgres',
                               '--format'   => 'human',
                               '--warning'  => 'idle=30s',
@@ -46,7 +46,7 @@ SKIP: {
         ],
         1,
         [ qr/^$/ ],
-        [ qr/^Service oldest_idlexact is not compatible with host/ ],
+        [ qr/^Service oldest_xact is not compatible with host/ ],
         'non compatible PostgreSQL version'
     );
 }
@@ -56,7 +56,7 @@ SKIP: {
 
     # basic check
     $node->command_checks_all( [
-        './check_pgactivity', '--service'  => 'oldest_idlexact',
+        './check_pgactivity', '--service'  => 'oldest_xact',
                               '--username' => $ENV{'USER'} || 'postgres',
                               '--format'   => 'human',
                               '--dbname'   => 'template1',
@@ -64,7 +64,7 @@ SKIP: {
                               '--critical' => 'idle=1h'
         ],
         0,
-        [ qr/^Service  *: POSTGRES_OLDEST_IDLEXACT$/m,
+        [ qr/^Service  *: POSTGRES_OLDEST_XACT$/m,
           qr/^Returns  *: 0 \(OK\)$/m,
           qr/^Message  *: 0 idle transaction\(s\), 1 alive transaction\(s\)$/m,
           qr/^Perfdata *: template1 # idle xact=0$/m
@@ -75,7 +75,7 @@ SKIP: {
 
     # unit check
     $node->command_checks_all( [
-        './check_pgactivity', '--service'  => 'oldest_idlexact',
+        './check_pgactivity', '--service'  => 'oldest_xact',
                               '--username' => $ENV{'USER'} || 'postgres',
                               '--format'   => 'human',
                               '--dbname'   => 'template1',
@@ -83,8 +83,8 @@ SKIP: {
                               '--critical' => 'idle=1h'
         ],
         0,
-        [ qr/^Service  *: POSTGRES_OLDEST_IDLEXACT$/m,
-          qr/^Perfdata       : template1 avg=NaNs warn=1800 crit=3600$/m,
+        [ qr/^Service  *: POSTGRES_OLDEST_XACT$/m,
+          qr/^Perfdata       : template1 idle avg=NaNs warn=1800 crit=3600$/m,
         ],
         [ qr/^$/ ],
         'unit check'
@@ -97,7 +97,7 @@ SKIP: {
 
     # OK check
     $node->command_checks_all( [
-        './check_pgactivity', '--service'  => 'oldest_idlexact',
+        './check_pgactivity', '--service'  => 'oldest_xact',
                               '--username' => $ENV{'USER'} || 'postgres',
                               '--format'   => 'human',
                               '--dbname'   => 'postgres',
@@ -105,7 +105,7 @@ SKIP: {
                               '--critical' => 'idle=1h'
         ],
         0,
-        [ qr/^Service  *: POSTGRES_OLDEST_IDLEXACT$/m,
+        [ qr/^Service  *: POSTGRES_OLDEST_XACT$/m,
           qr/^Returns  *: 0 \(OK\)$/m,
           qr/^Message  *: 1 idle transaction\(s\), 2 alive transaction\(s\)$/m,
           qr/^Perfdata *: postgres # idle xact=1$/m
@@ -125,7 +125,7 @@ SKIP: {
 
     # warning check
     $node->command_checks_all( [
-        './check_pgactivity', '--service'  => 'oldest_idlexact',
+        './check_pgactivity', '--service'  => 'oldest_xact',
                               '--username' => $ENV{'USER'} || 'postgres',
                               '--format'   => 'human',
                               '--dbname'   => 'postgres',
@@ -133,7 +133,7 @@ SKIP: {
                               '--critical' => 'idle=1h'
         ],
         1,
-        [ qr/^Service  *: POSTGRES_OLDEST_IDLEXACT$/m,
+        [ qr/^Service  *: POSTGRES_OLDEST_XACT$/m,
           qr/^Returns  *: 1 \(WARNING\)$/m,
           qr/^Message  *: 1 idle transaction\(s\), 2 alive transaction\(s\)$/m,
           qr/^Perfdata *: postgres # idle xact=1$/m
@@ -144,7 +144,7 @@ SKIP: {
 
     # critical check
     $node->command_checks_all( [
-        './check_pgactivity', '--service'  => 'oldest_idlexact',
+        './check_pgactivity', '--service'  => 'oldest_xact',
                               '--username' => $ENV{'USER'} || 'postgres',
                               '--format'   => 'human',
                               '--dbname'   => 'template1',
@@ -152,7 +152,7 @@ SKIP: {
                               '--critical' => 'idle=2s'
         ],
         2,
-        [ qr/^Service  *: POSTGRES_OLDEST_IDLEXACT$/m,
+        [ qr/^Service  *: POSTGRES_OLDEST_XACT$/m,
           qr/^Returns  *: 2 \(CRITICAL\)$/m,
           qr/^Message  *: 1 idle transaction\(s\), 2 alive transaction\(s\)$/m,
           qr/^Perfdata *: postgres # idle xact=1$/m
@@ -169,7 +169,7 @@ SKIP: {
 
         # active transaction check
         $node->command_checks_all( [
-            './check_pgactivity', '--service'  => 'oldest_idlexact',
+            './check_pgactivity', '--service'  => 'oldest_xact',
                                   '--username' => $ENV{'USER'} || 'postgres',
                                   '--format'   => 'human',
                                   '--dbname'   => 'template1',
@@ -177,7 +177,7 @@ SKIP: {
                                   '--critical' => 'idle=1h'
             ],
             0,
-            [ qr/^Service  *: POSTGRES_OLDEST_IDLEXACT$/m,
+            [ qr/^Service  *: POSTGRES_OLDEST_XACT$/m,
               qr/^Returns  *: 0 \(OK\)$/m,
               qr/^Message  *: 1 idle transaction\(s\), 2 alive transaction\(s\)$/m,
               qr/^Perfdata *: postgres # idle xact=1$/m
