@@ -6895,6 +6895,9 @@ Critical and Warning thresholds are required. They accept a list of
 Values are intervals. Here is an example:
 
     -w 'idle=1h,alive=5h' -c 'idle=10h,alive=8h'
+    
+For compatibility with previous versions, a simple interval such as '1h'
+is converted as 'idle=1h,active=1h'
 
 This service supports both C<--dbexclude> and C<--dbinclude> parameters.
 
