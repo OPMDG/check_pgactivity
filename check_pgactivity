@@ -6883,35 +6883,36 @@ sub check_oldest_2pc {
 =item B<oldest_idlexact> (8.3+)
 
 Check I<idle> and long transactions.
-Idle transactions do not execute any queries, but did not commit.
-Active transactions still execute queries regularly without committing.
-Note that very long queries are monitored by the longest_query service.
+Idle transactions do not execute any queries, but did not commit. Alive
+transactions still execute queries regularly without committing. Note that very
+long queries are monitored by the longest_query service.
 
-Perfdata contains the max/avg age and the number of idle transactions
-per databases.
+Perfdata contains the max/avg age and the number of idle/alive transactions per
+databases.
 
 Critical and Warning thresholds are required. They accept a list of
 'label=value' separated by a comma. Available labels are C<idle>, and C<alive>.
 Values are intervals. Here is an example:
 
     -w 'idle=1h,alive=5h' -c 'idle=10h,alive=8h'
-    
+
 For compatibility with previous versions, a simple interval such as '1h'
-is converted as 'idle=1h,active=1h'
+is converted as 'idle=1h'.
 
 This service supports both C<--dbexclude> and C<--dbinclude> parameters.
 
-Above 9.2, it supports C<--exclude> to filter out connections. Eg., to
-filter out pg_dump and pg_dumpall, set this to 'pg_dump,pg_dumpall'.
+Above 9.2, it supports C<--exclude> to filter out connections. Eg., to filter
+out pg_dump and pg_dumpall, set this to 'pg_dump,pg_dumpall'.
 
 Before 9.2, this services checks for idle transaction with their start time.
 Thus, the service can mistakenly take account of transaction transiently in
 idle state.
+
 From 9.2 and up, the service checks for transaction that really had no activity
 since the given thresholds.
 
-Required privileges: an unprivileged role checks only its own queries;
-a pg_monitor (10+) or superuser (<10) role is required to check all queries.
+Required privileges: an unprivileged role checks only its own queries; a
+pg_monitor (10+) or superuser (<10) role is required to check all queries.
 
 =cut
 
@@ -6980,10 +6981,10 @@ sub check_oldest_idlexact {
 
     if ( defined $args{'warning'} ) {
         if ( defined $args{'warning'} and is_time $args{'warning'} ) {
-            $args{'warning'} = 'idle='.$args{'warning'}.',alive='.$args{'warning'};
+            $args{'warning'} = 'idle='.$args{'warning'};
         }
         if ( defined $args{'critical'} and is_time $args{'critical'} ) {
-            $args{'critical'} = 'idle='.$args{'critical'}.',alive='.$args{'critical'};
+            $args{'critical'} = 'idle='.$args{'critical'};
         }
 
         my $thresholds_re
@@ -7084,8 +7085,8 @@ sub check_oldest_idlexact {
             }
 
             push @perfdata, (
-                [ "$db max", $stats{$db}{$xacttype.'max'}, 's', $warn{$xacttype}, $crit{$xacttype} ],
-                [ "$db avg", $stats{$db}{$xacttype.'avg'}, 's', $warn{$xacttype}, $crit{$xacttype} ],
+                [ "$db $xacttype max", $stats{$db}{$xacttype.'max'}, 's', $warn{$xacttype}, $crit{$xacttype} ],
+                [ "$db $xacttype avg", $stats{$db}{$xacttype.'avg'}, 's', $warn{$xacttype}, $crit{$xacttype} ],
                 [ "$db # $xacttype xact", $stats{$db}{$xacttype.'num'} ],
                 [ "$db # $xacttype xact above warning", $stats{$db}{$xacttype.'numw'} ],
                 [ "$db # $xacttype xact above critical", $stats{$db}{$xacttype.'numc'} ]
