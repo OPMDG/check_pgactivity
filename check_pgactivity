@@ -7005,7 +7005,7 @@ sub check_oldest_xact {
         # Warning and critical must be raw
         pod2usage(
             -message => "FATAL: critical and warning thresholds accept a list of 'label=value' separated by comma.\n"
-                . "It also accepts a simple interval value, in which case it is the idle and alive values.\n"
+                . "It also accepts a simple interval value, in which case it is the idle value.\n"
                 . "See documentation for more information.",
             -exitval => 127
         ) unless $args{'warning'} =~ m/^$thresholds_re(\s*,\s*$thresholds_re)*$/
