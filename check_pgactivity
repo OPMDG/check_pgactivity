@@ -9907,6 +9907,7 @@ sub check_table_bloat {
 
             %queries   = (
                 $PG_VERSION_95 => qq{
+                SET lock_timeout TO '1s';
                 SELECT current_database(), nspname, relname,
                     pgstattuple_approx.table_len,
                     NULL, NULL, NULL,
