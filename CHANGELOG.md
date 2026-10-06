@@ -1,6 +1,27 @@
 Changelog
 =========
 
+2026-10-07 v2.12:
+
+* add: new orphan_files service
+* add: new ident_settings service
+* add: new hba_settings service
+* add: new configuration_difference service to compare 2 servers configurations
+* add: configuration service checks many more GUC; supports --exclude
+* change: service settings now handles errors in configuration files
+* change: the service oldest_idlexact is renamed into oldest_xact; the service now checks long active (not idle) transactions too; adapt -w and -c parameters to enable it
+* change: handles last_idx_scan for the unused_indexes service
+* change: add -with-pgstattuple-approx to table_bloat service (extension pgstattuple needed)
+* change: service uses the data_directory_mode GUC to check at least the mode if stats is not allowed
+* change: for backup_label_age service, sends critical on PG15+ if backup_label exists
+* change: new option --ok-on-standby for last_vacuum and last_analyze services
+* fix: v19 compatibility
+* fix: archive_mode isn't a boolean
+* fix: Time/HiRes.pm is not required anymore
+* doc: add examples for --dbinclude for regex newbies
+* doc: add warning about quotes for inattentive users with pg_dump_backup
+  service
+
 2026-08-17 v2.11:
 
 * add: basic v19 compatibility

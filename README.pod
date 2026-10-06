@@ -73,8 +73,8 @@ of them to check them though). C<--dbexclude> excludes any
 database whose name matches the given Perl regular expression.
 Repeat this option as many time as needed.
 
-See C<--dbinclude> as well. If a database match both dbexclude and
-dbinclude arguments, it is excluded.
+See C<--dbinclude> as well and its examples.
+If a database matches both dbexclude and dbinclude arguments, it is excluded.
 
 
 =item B<--dbinclude> REGEXP
@@ -84,9 +84,15 @@ cluster (note: that does not imply that they always need to connect to all
 of them though). Some always exclude the 'postgres'
 database and templates. C<--dbinclude> checks B<ONLY>
 databases whose names match the given Perl regular expression.
+Examples:
+ --dbinclude 'erp' checks databases with names like 'erp','erp_dev','test_erp'
+ --dbinclude '^erp$' checks the 'erp' database, and not 'erp_dev' or 'test_erp'
+ --dbinclude '(_dev|test_)' checks all databases with names containing '_dev' or 'test_'
+ --dbinclude 'customer_[0-9]{3}$' checks databases ending with 'customer_001' to 'customer_999',
+   not 'customer_1' or 'customer_9999'
 Repeat this option as many time as needed.
 
-See C<--dbexclude> as well. If a database match both dbexclude and
+See C<--dbexclude> as well. If a database matches both dbexclude and
 dbinclude arguments, it is excluded.
 
 =item B<-w>, B<--warning> THRESHOLD
@@ -292,20 +298,19 @@ Descriptions and parameters of available services.
 Check if all archived WALs exist between the oldest and the latest WAL in the
 archive folder and make sure they are 16MB. The given folder must have archived
 files from ONE cluster. The version of PostgreSQL that created the archives is
-only checked on the last one, for performance consideration.
+only checked on the last one, for performance consideration. This service needs
+to read the header of one of the archives to define how many segments a WAL
+owns.
 
 This service requires the argument C<--path> on the command line to specify the
-archive folder path to check. Obviously, it must have access to this
-folder at the filesystem level: you may have to execute it on the archiving
-server rather than on the PostgreSQL instance.
+archive folder path to check. Obviously, it must have access to this folder at
+the filesystem level: you may have to execute it on the archiving server rather
+than on the PostgreSQL instance.
 
-The optional argument C<--suffix> defines the suffix of your archived
-WALs; this is useful for compressed WALs (eg. .gz, .bz2, ...).
-Default is no suffix.
-
-This service needs to read the header of one of the archives to define how many
-segments a WAL owns. Check_pgactivity automatically handles files with
-extensions .gz, .bz2, .xz, .zip or .7z using the following commands:
+The optional argument C<--suffix> defines the suffix of your archived WALs;
+this is useful for compressed WALs (eg. .gz, .bz2, ...). Default is no suffix.
+Check_pgactivity handles files with extensions .gz, .bz2, .xz, .zip or .7z
+using the following commands:
 
   gzip -dc
   bzip2 -dc
@@ -316,10 +321,10 @@ extensions .gz, .bz2, .xz, .zip or .7z using the following commands:
 If needed, provide your own command that writes the uncompressed file
 to standard output with the C<--unarchiver> argument.
 
-Optional argument C<--ignore-wal-size> skips the WAL size check. This is useful
-if your archived WALs are compressed and check_pgactivity is unable to guess
-the original size. Here are the commands check_pgactivity uses to guess the
-original size of .gz, .xz or .zip files:
+The optional argument C<--ignore-wal-size> skips the WAL size check. This is
+useful if your archived WALs are compressed and check_pgactivity is unable to
+guess the original size. Here are the commands check_pgactivity uses to guess
+the original size of .gz, .xz or .zip files:
 
   gzip -ql
   xz -ql
@@ -356,7 +361,7 @@ waiting to be archived. They only accept a raw number of files.
 Whatever the given threshold, a critical alert is raised if the archiver
 process did not archive the oldest waiting WAL to be archived since last call.
 
-Required privileges: superuser (<v10),
+Required privileges:
 <v10: superuser,
 v10: nonsuper user but output will lack perfdata oldest_ready_wal or superuser,
 v10+: grant execute on function pg_stat_file(text, bool).
@@ -438,16 +443,45 @@ Perfdata contains the number of error per database.
 
 Required privileges: unprivileged user.
 
+=item B<hba_settings> (10+)
+
+Check for issues in the HBA configuration, reported in pg_hba_file_rules.
+
+Critical and Warning thresholds are optional. They only accept a raw number of
+errors.  If the thresholds are not provided, a default value of `1` will be
+used for both thresholds.
+
+Lines with error are CRITICAL issues, so it's highly recommended to keep
+default threshold, as immediate action should be taken as soon as such a
+problem arises.
+
+Lines with trust or password authentication are CRITICAL issues, and lines with
+md5 authentication are merely WARNING issues.
+
+Perfdata contains the number of lines per authentication method. Another
+perfdata gives the number of lines with errors.
+
+Required privileges: unprivileged user.
+
 =item B<backup_label_age> (8.1+)
 
-Check the age of the backup label file.
+Check the presence of backup label file (PG15 or later),
+or raise an alarm if it's too old (PG14 or former).
+
+Until PostgreSQL 14, a backup_label appears while a concurrent physical
+backup is running.
+Critical or Warning are raised if the age is above the thresholds
+(only intervals, eg. 1h30m25s).
+
+Thresholds are ignored on PostgreSQL 15 and above:
+the presence of a backup_label is an immediate failure (Critical),
+as this file should never be present on a running system
+and will prevent a restart.
 
 Perfdata returns the age of the backup_label file, -1 if not present.
 
-Critical and Warning thresholds only accept an interval (eg. 1h30m25s).
-
 Required privileges:
-grant execute on function pg_stat_file(text, boolean) (pg12+);
+GRANT EXECUTE ON FUNCTION pg_stat_file(text, boolean) (12+);
 unprivileged role (9.3+); superuser (<9.3)
 
 =item B<bgwriter> (8.3+)
@@ -501,6 +535,16 @@ provided that you grant SELECT on the system table pg_statistic
 to the pg_monitor role, in each database of the cluster:
 C<GRANT SELECT ON pg_statistic TO pg_monitor;>
 
+=item B<ident_settings> (15+)
+
+Check errors in ident settings: pg_ident.conf and alike.
+
+Perfdata contains the number of errors per files.
+
+Thresholds, if any, are ignored.
+
+Required privileges: unprivileged role.
+
 =item B<session_stats> (14+)
 
 Gather miscellaneous session statistics.
@@ -533,16 +577,61 @@ Required privileges: unprivileged role.
 
 =item B<configuration> (8.0+)
 
-Check the most important settings.
+Check the most important settings (according to pg_settings).
+
+Raises a Critical for dangerous settings,
+or a Warning if some parameters do not follow common guidelines
+(although some of them are still shipped by default).
 
 Warning and Critical thresholds are ignored.
 
-Specific parameters are :
+The thresholds for some parameters may be modified with:
 C<--work_mem>, C<--maintenance_work_mem>, C<--shared_buffers>,C<--wal_buffers>,
-C<--checkpoint_segments>, C<--effective_cache_size>, C<--no_check_autovacuum>,
-C<--no_check_fsync>, C<--no_check_enable>, C<--no_check_track_counts>.
+C<--checkpoint_segments>, C<--max_wal_size>, C<--effective_cache_size>
 
-Required privileges: unprivileged role.
+Use one or more C<--exclude REGEX> parameters
+to exclude some checks matching a regular expression.
+Some checks may be disabled directly with:
+C<--no_check_autovacuum>, C<--no_check_fsync>, C<--no_check_enable>,
+C<--no_check_track_counts> (kept for compatibility).
+
+No perfdata.
+
+Required privileges: unprivileged role,
+preferable without custom parameters.
+
+=item B<configuration_difference> (8.0+)
+
+Check that the configuration is the same between two servers (according to pg_settings)
+By default, assumes that the 1st server is a primary
+and the others are secondaries that must be fully identical.
+
+Give the connections parameters with 2 or more services,
+eg. with --dbservices=pg1,pg2
+The first one is taken as the reference (usually a primary).
+
+By default it ignores a few parameters that will differ on a secondary:
+archive_mode,primary_conninfo,primary_slot_name.
+Force the check of all parameters with C<--identical>.
+
+C<--ignore-paths> ignore all differences in paths (data_directory, config_file, PID file, etc.)
+
+This service supports the argument C<--exclude REGEX> to exclude parameters
+matching the expression. You can use multiple C<--exclude REGEX> arguments.
+Eg : --exclude '(.*parallel.*|cluster_name|auto_explain.*|pg_stat_statements.*|work_mem)'
+
+No perfdata
+
+Returns a Warning if some parameters are different
+
+Required privileges: unprivileged role
+
+Known issues:
+TCP configuration can be checked only when two instances
+are connected by TCP (no socket);
+roles configurations are ignored;
+the connection role may hide the "real" configuration;
+custom parameters (eg. demo.foo) cannot be checked if not declared by their extension.
 
 =item B<connection> (all)
 
@@ -736,6 +825,9 @@ Required privileges: unprivileged role able to log in all databases.
 Check if there are unused indexes in a database.
 
 A warning alert is raised if an unused index is detected.
+
+Critical and Warning define the interval since the last usage of an index
+(eg. 5m or 300s ).
 
 This service supports both C<--dbexclude>  and C<--dbinclude> parameters.
 The 'postgres' database and templates are always excluded.
@@ -967,28 +1059,40 @@ Critical and Warning thresholds only accept an interval.
 
 Required privileges: unprivileged role.
 
-=item B<oldest_idlexact> (8.3+)
+=item B<oldest_xact> (8.3+)
 
-Check the oldest I<idle> transaction.
+Check I<idle> and long transactions.
+Idle transactions do not execute any queries, but did not commit. Alive
+transactions still execute queries regularly without committing. Note that very
+long queries are monitored by the longest_query service.
 
-Perfdata contains the max/avg age and the number of idle transactions
-per databases.
+Perfdata contains the max/avg age and the number of idle/alive transactions per
+databases.
 
-Critical and Warning thresholds only accept an interval.
+Critical and Warning thresholds are required. They accept a list of
+'label=value' separated by a comma. Available labels are C<idle>, and C<alive>.
+Values are intervals. Here is an example:
+
+    -w 'idle=1h,alive=5h' -c 'idle=10h,alive=8h'
+
+The service was formerly called oldest_idlexact.
+For compatibility with previous versions, a simple interval such as '1h'
+is converted as 'idle=1h'.
 
 This service supports both C<--dbexclude> and C<--dbinclude> parameters.
 
-Above 9.2, it supports C<--exclude> to filter out connections. Eg., to
-filter out pg_dump and pg_dumpall, set this to 'pg_dump,pg_dumpall'.
+Above 9.2, it supports C<--exclude> to filter out connections. Eg., to filter
+out pg_dump and pg_dumpall, set this to 'pg_dump,pg_dumpall'.
 
 Before 9.2, this services checks for idle transaction with their start time.
 Thus, the service can mistakenly take account of transaction transiently in
 idle state.
+
 From 9.2 and up, the service checks for transaction that really had no activity
 since the given thresholds.
 
-Required privileges: an unprivileged role checks only its own queries;
-a pg_monitor (10+) or superuser (<10) role is required to check all queries.
+Required privileges: an unprivileged role checks only its own queries; a
+pg_monitor (10+) or superuser (<10) role is required to check all queries.
 
 =item B<oldest_xmin> (8.4+)
 
@@ -1018,6 +1122,24 @@ This service supports both C<--dbexclude>" and C<--dbinclude>" parameters.
 Required privileges: a pg_read_all_stats (10+) or superuser (<10) role is
 required to check pg_stat_replication.  2PC, pg_stat_activity, and replication
 slots don't require special privileges.
+
+=item B<orphan_files> (9.4+)
+
+Check the number and size of orphan files.
+
+This service supports both C<--dbexclude> and C<--dbinclude> parameters.
+
+Perfdata returns the number and total size of temp files found in
+the data directory and its tablespaces. They are aggregated by database.
+
+Critical and Warning thresholds are optional. They accept either a number
+of file (raw value), a size (unit is B<mandatory> to define a size) or both
+values separated by a comma. Thresholds are applied on current orphan files.
+
+Required privileges:
+user with pg_monitor or pg_read_all_setting
+and grant execute on function pg_ls_dir(text, bool, bool).
+and grant execute on function pg_stat_file(text, bool).
 
 =item B<pg_dump_backup>
 
@@ -1055,7 +1177,7 @@ If the path contains the date, like this:
    /var/lib/backups/2015-08-03-daily/mydb.dump
    /var/lib/backups/2015-08-03-daily/otherdb.dump
 
-then you can set:
+then you can set (don't forget the quotes):
 
     --path    '/var/lib/backups/*/*.dump'
     --pattern '/\d+-\d+-\d+-daily/(.*).dump'
@@ -1133,6 +1255,10 @@ Checking the user only works on Linux systems (it uses /proc to avoid
 dependencies). Before 9.3, you need to provide the expected owner using the
 C<--uid> argument, or the owner will not be checked.
 
+After 11, if the user running the script doesn't have the right to use stats,
+it will check the mode with the data_directory_mode GUC. It won't be able to
+check the owner though.
+
 Required privileges:
  <11:superuser
  v11: user with pg_monitor or pg_read_all_setting
@@ -1176,11 +1302,11 @@ Here is somes examples:
 =item B<settings> (9.0+)
 
 Check if the current settings have changed since they were stored in the
-service file.
+service file. Check also if there are errors in the configuration files.
 
-The "known" settings are recorded during the very first call of the service.
-To update the known settings after a configuration change, call this service
-again with the argument C<--save>.
+The "known" settings are recorded during the very first call of the service. If
+no error are found, you can update the known settings after a configuration
+change by calling this service again with the argument C<--save>.
 
 No perfdata.
 
@@ -1312,7 +1438,13 @@ or at least those in C<--dbinclude>.
 
 =item B<table_bloat>
 
-Estimate bloat on tables.
+Estimate bloat on tables. By default, it works with queries coming from:
+https://github.com/ioguix/pgsql-bloat-estimation. It is quick but may give
+wrong results, especially with TOASTed fields. If C<--with-pgstattuple-approx>
+is specified, the query calls the pgstattuple_approx() function. The
+pgstattuple extension (from PostgreSQL 9.5) must be installed in all queried
+databases (you may want to restrict with `--dbinclude`). Be aware that
+C<--with-pgstattuple-approx> may take more time and read a part of the table.
 
 Warning and critical thresholds accept a comma-separated list of either
 raw number(for a size), size (eg. 125M) or percentage. The thresholds apply to
@@ -1484,7 +1616,7 @@ pg_ls_waldir
 
 =head1 VERSION
 
-check_pgactivity version 2.11, released on Mon Aug 17 2026.
+check_pgactivity version 2.12, released on Wed Oct 07 2026.
 
 =head1 LICENSING
 

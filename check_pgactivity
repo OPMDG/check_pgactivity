@@ -69,7 +69,7 @@ delete $ENV{'LANGUAGE'};
 
 $| = 1;
 
-$VERSION = '2.11';
+$VERSION = '2.12';
 $PROGRAM = 'check_pgactivity';
 
 my $PG_VERSION_MIN =  70400;
@@ -3020,15 +3020,15 @@ sub check_hba_settings {
 
 =item B<backup_label_age> (8.1+)
 
-Check the presence of backup label file (≥ PG15),
-or raise an alarm if it's too old (≤ PG14).
+Check the presence of backup label file (PG15 or later),
+or raise an alarm if it's too old (PG14 or former).
 
 Until PostgreSQL 14, a backup_label appears while a concurrent physical
 backup is running.
 Critical or Warning are raised if the age is above the thresholds
 (only intervals, eg. 1h30m25s).
 
-Thresholds are ignored on PostgreSQL 15 and above :
+Thresholds are ignored on PostgreSQL 15 and above:
 the presence of a backup_label is an immediate failure (Critical),
 as this file should never be present on a running system
 and will prevent a restart.
@@ -3036,7 +3036,7 @@ and will prevent a restart.
 Perfdata returns the age of the backup_label file, -1 if not present.
 
 Required privileges:
-GRANT EXECUTE ON FUNCTION pg_stat_file(text, boolean) (≥ PG 12);
+GRANT EXECUTE ON FUNCTION pg_stat_file(text, boolean) (12+);
 unprivileged role (9.3+); superuser (<9.3)
 
 =cut
@@ -11105,7 +11105,7 @@ __END__
 
 =head1 VERSION
 
-check_pgactivity version 2.11, released on Mon Aug 17 2026.
+check_pgactivity version 2.12, released on Wed Oct 07 2026.
 
 =head1 LICENSING
 
