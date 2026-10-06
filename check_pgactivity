@@ -4235,7 +4235,7 @@ sub check_configuration_difference {
     my $setting_ref     = "";
     my @exclude_regexes = @{ $args{'exclude'} };
     my $identical       = $args{'identical'} || 0;
-    my $ignore_paths    = $args{'ignore-paths'} ;
+    my $ignore_paths    = $args{'ignore-paths'} || 0;
     # will probably or always different on a primary & its secondary
     my @ignored_if_secondary = ( 'archive_mode', 'in_hot_standby',
                                  'primary_conninfo', 'primary_slot_name',
