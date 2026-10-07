@@ -10,7 +10,7 @@ use warnings;
 use lib 't/lib';
 use pgNode;
 use pgSession;
-use Test::More tests => 40;
+use Test::More tests => 48;
 
 my $node = pgNode->get_new_node('prod');
 my $proc;
@@ -159,6 +159,27 @@ SKIP: {
         ],
         [ qr/^$/ ],
         'critical check'
+    );
+
+    # ok check with mixed units
+    $node->command_checks_all( [
+        './check_pgactivity', '--service'  => 'oldest_xact',
+                              '--username' => $ENV{'USER'} || 'postgres',
+                              '--format'   => 'human',
+                              '--dbname'   => 'template1',
+                              '--warning'  => 'idle=1m30s,alive=02m05s',
+                              '--critical' => 'alive=1d5h4s,idle=2h30m10s'
+        ],
+        0,
+        [ qr/^Service  *: POSTGRES_OLDEST_XACT$/m,
+          qr/^Returns  *: 0 \(OK\)$/m,
+          qr/^Message  *: 1 idle transaction\(s\), 2 alive transaction\(s\)$/m,
+          qr/^Perfdata *: postgres # idle xact=1$/m,
+          qr/^Perfdata *: postgres idle max=.* warn=90 crit=9010$/m,
+          qr/^Perfdata *: postgres alive max=.* warn=125 crit=104404$/m
+        ],
+        [ qr/^$/ ],
+        'critical check with mixed units'
     );
 
     SKIP: {

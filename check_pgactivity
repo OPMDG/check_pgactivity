@@ -7000,7 +7000,7 @@ sub check_oldest_xact {
         }
 
         my $thresholds_re
-            = qr/(idle|alive)\s*=\s*(\d+\s*[smhd]?)/i;
+            = qr/(idle|alive)=((\d+[smhd]?)*)/i;
 
         # Warning and critical must be raw
         pod2usage(
@@ -7008,8 +7008,8 @@ sub check_oldest_xact {
                 . "It also accepts a simple interval value, in which case it is the idle value.\n"
                 . "See documentation for more information.",
             -exitval => 127
-        ) unless $args{'warning'} =~ m/^$thresholds_re(\s*,\s*$thresholds_re)*$/
-            and $args{'critical'} =~ m/^$thresholds_re(\s*,\s*$thresholds_re)*$/ ;
+        ) unless $args{'warning'} =~ m/^$thresholds_re(,$thresholds_re)*$/
+            and $args{'critical'} =~ m/^$thresholds_re(,$thresholds_re)*$/ ;
 
         while ( $args{'warning'} =~ /$thresholds_re/g ) {
             my ($threshold, $value) = ($1, $2);
@@ -7028,6 +7028,11 @@ sub check_oldest_xact {
             ) unless is_time $value;
             $crit{$threshold} = get_time $value if $1 and defined $2;
         }
+
+        dprint "WARNING  idle  >$warn{'idle'}<\n"  if defined $warn{'idle'};
+        dprint "WARNING  alive >$warn{'alive'}<\n" if defined $warn{'alive'};
+        dprint "CRITICAL idle  >$crit{'idle'}<\n"  if defined $crit{'idle'};
+        dprint "CRITICAL alive >$crit{'alive'}<\n" if defined $crit{'alive'};
     }
 
     @hosts = @{ parse_hosts %args };
