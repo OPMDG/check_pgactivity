@@ -165,3 +165,12 @@ Ask Thomas (frost242) Reiss or Jehan-Guillaume (ioguix) de Rorthais for credenti
 ## Tweets & blogs
 
 Make some noise...
+
+## Start the work on the next release
+
+In `check_pgactivity`:
+  * edit variable `$VERSION`, and add "dev" to the new version (for example
+    2.13dev)
+
+In `t/01-pga_version.t`, edit variable `$good_version` in the same way.
+
