@@ -1806,7 +1806,7 @@ sub check_archive_folder {
 
     # invalid warning and/or critical values
     pod2usage(
-        -message => "FATAL: critical and warning thresholds only acccepts interval.",
+        -message => "FATAL: critical and warning thresholds only accepts interval.",
         -exitval => 127
     ) unless ( is_time( $args{'warning'} ) and is_time( $args{'critical'} ) );
 
@@ -3083,7 +3083,7 @@ sub check_backup_label_age {
     ) unless defined $args{'warning'} and defined $args{'critical'} ;
 
     pod2usage(
-        -message => "FATAL: critical and warning thresholds only acccepts interval.",
+        -message => "FATAL: critical and warning thresholds only accepts interval.",
         -exitval => 127
     ) unless ( is_time( $args{'warning'} ) and is_time( $args{'critical'} ) );
 
@@ -4422,7 +4422,7 @@ sub check_custom_query {
     }
     elsif ( $type eq 'time' ) {
         pod2usage(
-                -message => "FATAL: critical and warning thresholds only acccepts interval with --type time.",
+                -message => "FATAL: critical and warning thresholds only accepts interval with --type time.",
                 -exitval => 127
                 ) unless ( is_time( $args{'warning'} ) and is_time( $args{'critical'} ) );
 
@@ -5736,7 +5736,7 @@ sub check_last_maintenance {
     ) unless defined $args{'warning'} and defined $args{'critical'} ;
 
     pod2usage(
-        -message => "FATAL: critical and warning thresholds only acccepts interval.",
+        -message => "FATAL: critical and warning thresholds only accepts interval.",
         -exitval => 127
     ) unless ( is_time( $args{'warning'} ) and is_time( $args{'critical'} ) );
 
@@ -6395,7 +6395,7 @@ sub check_longest_query {
     ) unless defined $args{'warning'} and defined $args{'critical'} ;
 
     pod2usage(
-        -message => "FATAL: critical and warning thresholds only acccepts interval.",
+        -message => "FATAL: critical and warning thresholds only accepts interval.",
         -exitval => 127
     ) unless ( is_time( $args{'warning'} ) and is_time( $args{'critical'} ) );
 
@@ -6816,7 +6816,7 @@ sub check_oldest_2pc {
     ) unless defined $args{'warning'} and defined $args{'critical'} ;
 
     pod2usage(
-        -message => "FATAL: critical and warning thresholds only acccepts interval.",
+        -message => "FATAL: critical and warning thresholds only accepts interval.",
         -exitval => 127
     ) unless ( is_time( $args{'warning'} ) and is_time( $args{'critical'} ) );
 
@@ -7014,7 +7014,7 @@ sub check_oldest_xact {
         while ( $args{'warning'} =~ /$thresholds_re/g ) {
             my ($threshold, $value) = ($1, $2);
             pod2usage(
-                -message => "FATAL: critical and warning thresholds only acccepts interval.",
+                -message => "FATAL: critical and warning thresholds only accepts interval.",
                 -exitval => 127
             ) unless is_time $value;
             $warn{$threshold} = get_time $value if $1 and defined $2;
@@ -7023,7 +7023,7 @@ sub check_oldest_xact {
         while ( $args{'critical'} =~ /$thresholds_re/g ) {
             my ($threshold, $value) = ($1, $2);
             pod2usage(
-                -message => "FATAL: critical and warning thresholds only acccepts interval.",
+                -message => "FATAL: critical and warning thresholds only accepts interval.",
                 -exitval => 127
             ) unless is_time $value;
             $crit{$threshold} = get_time $value if $1 and defined $2;
@@ -9083,7 +9083,7 @@ sub check_stat_snapshot_age {
         ) unless defined $args{'warning'} and defined $args{'critical'} ;
 
         pod2usage(
-            -message => "FATAL: critical and warning thresholds only acccepts interval.",
+            -message => "FATAL: critical and warning thresholds only accepts interval.",
             -exitval => 127
         ) unless is_time( $args{'warning'} ) and is_time( $args{'critical'} );
     }
