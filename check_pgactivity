@@ -7370,21 +7370,27 @@ sub check_oldest_xmin {
 
 =item B<orphan_files> (9.4+)
 
-Check the number and size of orphan files.
+Check the number and size of orphan files in database folders.
 
-This service supports both C<--dbexclude> and C<--dbinclude> parameters.
+This service supports both C<--dbexclude> and C<--dbinclude> parameters to
+filter the databases.
 
-Perfdata returns the number and total size of temp files found in
-the data directory and its tablespaces. They are aggregated by database.
+Perfdata returns the number and total size of orphan files found in the data
+directory and its tablespaces. They are aggregated by database.
 
-Critical and Warning thresholds are optional. They accept either a number
-of file (raw value), a size (unit is B<mandatory> to define a size) or both
-values separated by a comma. Thresholds are applied on current orphan files.
+Critical and Warning thresholds are optional. They accept either a number of
+file (raw value), a size (unit is B<mandatory> to define a size) or both values
+separated by a comma. Thresholds are applied on current orphan files. Eg:
+
+--warning 0         --critical '2,1MB'
+--warning '2,1MB'   --critical '3,100MB'
+
+The --detailed option lists all orphan files.
 
 Required privileges:
 user with pg_monitor or pg_read_all_setting
-and grant execute on function pg_ls_dir(text, bool, bool).
-and grant execute on function pg_stat_file(text, bool).
+and GRANT EXECUTE ON FUNCTION pg_ls_dir(text, bool, bool).
+and GRANT EXECUTE ON FUNCTION pg_stat_file(text, bool).
 
 =cut
 
@@ -7414,7 +7420,12 @@ sub check_orphan_files {
     my $query       = q{WITH ver AS (
     SELECT
         current_setting('server_version_num') pgversion,
-        v::INTEGER / 10000 || '.' || MOD(v::INTEGER, 10000) / 100 AS version
+        CASE WHEN v::integer < 100000 THEN
+            -- eg  tb1/PG_9.6_201608131/16853/
+            v::integer / 10000 || '.' || mod(v::integer, 10000) / 100
+        ELSE
+            (v::integer / 10000)::text
+        END AS version
     FROM
         current_setting('server_version_num') v
 ),
@@ -7505,35 +7516,32 @@ ORDER BY current_database};
 
         while ( $args{'warning'} =~ m/(?:(\d+)([kmgtpez]?b)?)/ig ) {
             if ( defined $2 ) {
-                $w_limit = get_size("$1$2");
+                $w_limit = get_size("$1$2");    # size threshold
             }
             else {
-                $w_flimit = $1;
+                $w_flimit = $1;                 # files threshold
             }
         }
 
         while ( $args{'critical'} =~ m/(?:(\d+)([kmgtpez]?b)?)/ig ) {
             if ( defined $2 ) {
-                $c_limit = get_size("$1$2");
+                $c_limit = get_size("$1$2");    # size threshold
             }
             else {
-                $c_flimit = $1;
+                $c_flimit = $1;                 # files threshold
             }
         }
 
         pod2usage(
-            -message => 'FATAL: you must give the number file thresholds '
+            -message => 'FATAL: you must give the number of files or size thresholds '
                 .'for both warning AND critical if used with service "orphan_files".',
             -exitval => 127
-        ) if (defined $w_flimit and not defined $c_flimit)
-            or (not defined $w_flimit and defined $c_flimit);
-
-        pod2usage(
-            -message => 'FATAL: you must give the total size thresholds '
-                .'for both warning AND critical if used with service "orphan_files".',
-            -exitval => 127
-        ) if (defined $w_limit and not defined $c_limit)
-            or (not defined $w_limit and defined $c_limit);
+        ) if (         (defined $w_flimit or defined $w_limit)
+               and not (defined $c_flimit or defined $c_limit)
+            ) or (
+                   (not defined $w_flimit and defined $w_flimit)
+               and (defined $c_flimit or  defined $c_limit)
+            ) ;
 
         @perf_flimits = ( $w_flimit, $c_flimit ) if defined $w_flimit;
         @perf_limits  = ( $w_limit, $c_limit ) if defined $w_limit;
@@ -7569,27 +7577,24 @@ ORDER BY current_database};
     push @perfdata => [ "# files", $total_num_files, 'File', @perf_flimits ];
     push @perfdata => [ "Total size", $total_size_files, 'B', @perf_limits ];
 
+    # Warning/critical if one of the thresholds as size or number of files
+    # is reached
     if ($total_num_files > 0) {
         push @msg, "$total_num_files orphan files found, total size ".to_size($total_size_files);
+
+        return status_critical( $me, \@msg, \@perfdata, \@longmsg )
+            if defined $c_limit and $total_size_files >= $c_limit;
+
+        return status_critical( $me, \@msg, \@perfdata, \@longmsg )
+            if defined $c_flimit and $total_num_files >= $c_flimit;
+
+        return status_warning( $me, \@msg, \@perfdata, \@longmsg )
+            if defined $w_limit and $total_size_files >= $w_limit;
+
+        return status_warning( $me, \@msg, \@perfdata, \@longmsg )
+            if defined $w_flimit and $total_num_files >= $w_flimit;
     } else {
         push @msg, "No orphan files found!";
-
-    }
-
-    if ( defined $c_limit) {
-        return status_critical( $me, \@msg, \@perfdata, \@longmsg )
-            if $total_size_files >= $c_limit;
-
-        return status_warning( $me, \@msg, \@perfdata, \@longmsg )
-            if $total_size_files >= $w_limit;
-    }
-
-    if ( defined $c_flimit) {
-        return status_critical( $me, \@msg, \@perfdata, \@longmsg )
-            if $total_num_files >= $c_flimit;
-
-        return status_warning( $me, \@msg, \@perfdata, \@longmsg )
-            if $total_num_files >= $w_flimit;
     }
 
     return status_ok( $me, \@msg, \@perfdata, \@longmsg );
