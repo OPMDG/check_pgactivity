@@ -13,6 +13,10 @@ use Test::More tests => 27;
 
 my $node        = pgNode->new('prod'); # declare instance named "prod"
 
+SKIP: {
+    skip "PostgreSQL 10 and above only", 27
+        if $node->version <= 10;
+
 # create the instance and start it
 $node->init();
 $node->start;
@@ -102,3 +106,5 @@ $node->command_checks_all( [
 ### End of tests ###
 
 $node->stop( 'immediate' );
+
+}
