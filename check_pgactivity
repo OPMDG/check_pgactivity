@@ -11049,7 +11049,10 @@ unless ($args{'psql'}) {
 }
 
 # Pre-compile given regexp
-unless (($args{'service'} eq 'pg_dump_backup') or ($args{'service'} eq 'oldest_idlexact')) {
+unless (($args{'service'} eq 'pg_dump_backup')
+     or ($args{'service'} eq 'oldest_idlexact')
+     or ($args{'service'} eq 'oldest_xact')
+     ) {
     $_ = qr/$_/ for @{ $args{'exclude'} } ;
     $_ = qr/$_/ for @{ $args{'dbinclude'} };
 }
