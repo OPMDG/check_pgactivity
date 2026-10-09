@@ -2951,9 +2951,8 @@ Required privileges: unprivileged user.
 =cut
 
 sub check_hba_settings {
-    my @msg_crit;
-    my @msg_warn;
     my @rs;
+    my @msg;
     my @perfdata;
     my @hosts;
     my %args    = %{ $_[0] };
@@ -2998,21 +2997,28 @@ sub check_hba_settings {
 
         push @perfdata => [ $line->[0], $line->[1], '', $w_limit, $c_limit ];
 
-        if ( $line->[1] >= $c_limit ) {
-            $nb_crit++;
-            next LOOP;
+        if ($line->[0] eq 'error') {
+            $nb_crit += $line->[1];
+            push @msg => "$line->[1] error(s)";
         }
-
-        if ( $line->[1] >= $w_limit ) {
-            $nb_warn++;
-            next LOOP;
+        elsif ($line->[0] eq 'md5') {
+            $nb_warn += $line->[1];
+            push @msg => "$line->[1] md5 method(s)";
+        }
+        elsif ($line->[0] eq 'password') {
+            $nb_crit += $line->[1];
+            push @msg => "$line->[1] password method(s)";
+        }
+        elsif ($line->[0] eq 'trust') {
+            $nb_crit += $line->[1];
+            push @msg => "$line->[1] trust method(s)";
         }
     }
 
-    return status_critical( $me, [ "$nb_crit critical issue(s) found, $nb_warn warning issue(s) found" ], \@perfdata )
+    return status_critical( $me, \@msg, \@perfdata )
         if $nb_crit > 0;
 
-    return status_warning( $me, [ "$nb_warn warning issue(s) found" ], \@perfdata )
+    return status_warning( $me, \@msg, \@perfdata )
         if $nb_warn > 0;
 
     return status_ok( $me, [ "No issue on hba files" ], \@perfdata );
