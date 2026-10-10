@@ -2936,7 +2936,7 @@ Critical and Warning thresholds are optional. They only accept a raw number of
 errors.  If the thresholds are not provided, a default value of `1` will be
 used for both thresholds.
 
-Lines with error are CRITICAL issues, so it's highly recommended to keep
+Lines with errors are CRITICAL issues, so it's highly recommended to keep
 default threshold, as immediate action should be taken as soon as such a
 problem arises.
 
@@ -2946,7 +2946,10 @@ md5 authentication are merely WARNING issues.
 Perfdata contains the number of lines per authentication method. Another
 perfdata gives the number of lines with errors.
 
-Required privileges: unprivileged user.
+Required privileges: superuser, or user with access to pg_hba_file_rules
+in the monitoring database, with:
+GRANT SELECT ON pg_hba_file_rules TO … ;
+GRANT EXECUTE ON FUNCTION pg_hba_file_rules TO … ;
 
 =cut
 
@@ -3762,7 +3765,10 @@ Perfdata contains the number of errors per files.
 
 Thresholds, if any, are ignored.
 
-Required privileges: unprivileged role.
+Required privileges: superuser, or user with access to pg_ident_file_mappings
+in the monitoring database, with:
+GRANT SELECT ON pg_ident_file_mappings TO … ;
+GRANT EXECUTE ON FUNCTION pg_ident_file_mappings TO … ;
 
 =cut
 
