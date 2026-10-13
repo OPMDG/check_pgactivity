@@ -22,6 +22,10 @@ $node->start;
 
 ### Beginning of tests ###
 
+SKIP: {
+    skip "testing incompatibility with PostgreSQL 9.4 and before", 75
+        if $node->version < '9.5';
+
 # Find the OID of the postgres database
 my ($cmdret1, $dboid, $stderr1) =
       $node->psql('postgres', "SELECT oid FROM pg_database WHERE datname='postgres'");
@@ -282,7 +286,7 @@ opendir my $dhandle, $tbsp || die "Can't opendir $tbsp: $!";
     my $tbspath = "$tbsp/$tbsp2";  # eg pg_tblspc/16856/PG_9.6_201608131
     print ("DEBUG : tbspath : $tbspath \n");
 close $dhandle;
-copy($node->data_dir . '/base/' . $dboid . '/1247',  $tbspath . '/' . $dboid . '/124712475');
+copy($node->data_dir . '/' . $relfilepath,  $tbspath . '/' . $dboid . '/666666');
 
 $node->command_checks_all( [
     './check_pgactivity', '--service'  => 'orphan_files',
@@ -325,6 +329,7 @@ $node->command_checks_all( [
     [ qr/^$/ ],
     'detailed check ending in critical for number of files'
 );
+}
 
 ### End of tests ###
 
