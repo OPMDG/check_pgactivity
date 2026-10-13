@@ -114,24 +114,30 @@ EOSF
         'three clusters supposed identical'
     );
 
-    # Must detect that cluster_name is different (2 clusters only)
-    note "Normal check with one standby";
-    $prim->command_checks_all( [
-        './check_pgactivity', '--service'  => 'configuration_difference',
-                              '--format'   => 'human',
-                              '--dbservice'   => 'prim,sec1',
-                              '--exclude'   => 'port',
-                              '--ignore-paths'
-        ],
-        1,
-        [
-            qr/Service  *: POSTGRES_CONFIGURATION_DIFFERENCE$/m,
-            qr/Returns  *: 1 \(WARNING\)$/m,
-            qr/Message  *: \[sec1\] : cluster_name=sec1 \(≠ prim\)$/m
-        ],
-        [ qr/^$/ ],
-        'two clusters, one difference'
-    );
+    # For PostgreSQL < 9.4+, cluster_name doesn't exist
+    SKIP: {
+        skip "checking cluster_name is not supported before v9.5", 4
+            unless $pgversion >= '9.5';
+
+        # Must detect that cluster_name is different (2 clusters only)
+        note "Normal check with one standby";
+        $prim->command_checks_all( [
+            './check_pgactivity', '--service'  => 'configuration_difference',
+                                  '--format'   => 'human',
+                                  '--dbservice'   => 'prim,sec1',
+                                  '--exclude'   => 'port',
+                                  '--ignore-paths'
+            ],
+            1,
+            [
+                qr/Service  *: POSTGRES_CONFIGURATION_DIFFERENCE$/m,
+                qr/Returns  *: 1 \(WARNING\)$/m,
+                qr/Message  *: \[sec1\] : cluster_name=sec1 \(≠ prim\)$/m
+            ],
+            [ qr/^$/ ],
+            'two clusters, one difference'
+        );
+    }
 
     # Failure with a single service
     note "Normal check with one standby";
