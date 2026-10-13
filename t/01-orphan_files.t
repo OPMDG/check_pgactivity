@@ -23,8 +23,11 @@ $node->start;
 ### Beginning of tests ###
 
 # Find the OID of the postgres database
-my ($cmdret, $dboid, $stderr) =
+my ($cmdret1, $dboid, $stderr1) =
       $node->psql('postgres', "SELECT oid FROM pg_database WHERE datname='postgres'");
+# Find the OID of the pg_class relation
+my ($cmdret2, $relfilepath, $stderr2) =
+      $node->psql('postgres', "SELECT pg_relation_filepath('pg_class')");
 
 # This service can run without thresholds
 
@@ -106,7 +109,7 @@ $node->command_checks_all( [
 
 # First orphan, ~120 kB
 #
-copy($node->data_dir . '/base/' . $dboid . '/1247', $node->data_dir . '/base/' . $dboid . '/124712471');
+copy($node->data_dir . '/' . $relfilepath, $node->data_dir . '/base/' . $dboid . '/111111');
 
 # basic check with an orphan without warning/critical - OK
 #
@@ -184,8 +187,8 @@ $node->command_checks_all( [
 
 # 3 orphans, WARNING
 
-copy($node->data_dir . '/base/' . $dboid . '/1247', $node->data_dir . '/base/' . $dboid . '/124712472');
-copy($node->data_dir . '/base/' . $dboid . '/1247', $node->data_dir . '/base/' . $dboid . '/124712473');
+copy($node->data_dir . '/' . $relfilepath, $node->data_dir . '/base/' . $dboid . '/222222');
+copy($node->data_dir . '/' . $relfilepath, $node->data_dir . '/base/' . $dboid . '/333333');
 
 $node->command_checks_all( [
     './check_pgactivity', '--service'  => 'orphan_files',
@@ -204,7 +207,7 @@ $node->command_checks_all( [
     'check ending in warning for number of files'
 );
 
-copy($node->data_dir . '/base/' . $dboid . '/1247', $node->data_dir . '/base/' . $dboid . '/124712474');
+copy($node->data_dir . '/' . $relfilepath, $node->data_dir . '/base/' . $dboid . '/444444');
 
 # 4 orphans, CRITICAL (number of files)
 
