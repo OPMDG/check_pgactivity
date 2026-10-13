@@ -56,23 +56,28 @@ $node->command_checks_all( [
 
 $node->append_conf('postgresql.conf', "work_mem=ahah");
 
-# Third check. Returns CRITICAL
-$node->command_checks_all( [
-    './check_pgactivity', '--service'     => 'settings',
-                          '--username'    => $ENV{'USER'} || 'postgres',
-                          '--format'      => 'human',
-                          '--status-file' => $pga_data,
-    ],
-    2,
-    [
-      qr/^Service  *: POSTGRES_SETTINGS$/m,
-      qr/^Returns  *: 2 \(CRITICAL\)$/m,
-      qr/^Message  *: Setting in error!$/m,
-      qr/^Long message  *: setting could not be applied in .*, line \d+$/m,
-    ],
-    [ qr/^$/ ],
-    'third basic check with an error'
-);
+SKIP: {
+    skip "testing incompatibility with PostgreSQL 9.4 and before", 6
+        unless $node->version >= 9.5;
+
+    # Third check. Returns CRITICAL
+    $node->command_checks_all( [
+        './check_pgactivity', '--service'     => 'settings',
+                              '--username'    => $ENV{'USER'} || 'postgres',
+                              '--format'      => 'human',
+                              '--status-file' => $pga_data,
+        ],
+        2,
+        [
+          qr/^Service  *: POSTGRES_SETTINGS$/m,
+          qr/^Returns  *: 2 \(CRITICAL\)$/m,
+          qr/^Message  *: Setting in error!$/m,
+          qr/^Long message  *: setting could not be applied in .*, line \d+$/m,
+        ],
+        [ qr/^$/ ],
+        'third basic check with an error'
+    );
+}
 
 ### End of tests ###
 
