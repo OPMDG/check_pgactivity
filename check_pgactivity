@@ -7380,7 +7380,7 @@ sub check_oldest_xmin {
     return status_ok( $me, \@msg, \@perfdata );
 }
 
-=item B<orphan_files> (9.4+)
+=item B<orphan_files> (9.5+)
 
 Check the number and size of orphan files in database folders.
 
@@ -7401,7 +7401,7 @@ The --detailed option lists all orphan files.
 
 Required privileges:
 user with pg_monitor or pg_read_all_setting
-and GRANT EXECUTE ON FUNCTION pg_ls_dir(text).
+and GRANT EXECUTE ON FUNCTION pg_ls_dir(text, bool, bool).
 and GRANT EXECUTE ON FUNCTION pg_stat_file(text, bool).
 
 =cut
@@ -7449,7 +7449,7 @@ tbl_paths AS (
             SELECT
                 dir
             FROM
-                pg_ls_dir('pg_tblspc/' || tbs.oid || '/') dir
+                pg_ls_dir('pg_tblspc/' || tbs.oid || '/', TRUE, FALSE) dir
             WHERE
                 dir LIKE E'PG\\_' || ver.version || E'\\_%') AS tbl_path
     FROM
@@ -7467,7 +7467,7 @@ files AS (
         SUBSTRING(file_name FROM E'[0-9]+') AS base_name
     FROM
         pg_database d,
-        pg_ls_dir('base/' || d.oid) AS file_name
+        pg_ls_dir('base/' || d.oid, TRUE, FALSE) AS file_name
     WHERE
         d.datname = current_database()
     UNION ALL
@@ -7480,7 +7480,7 @@ files AS (
     FROM
         pg_database d,
         tbl_paths tbp,
-        pg_ls_dir(tbp.tbl_path || '/' || d.oid) AS file_name
+        pg_ls_dir(tbp.tbl_path || '/' || d.oid, TRUE, FALSE) AS file_name
     WHERE
         d.datname = current_database()
 ),
