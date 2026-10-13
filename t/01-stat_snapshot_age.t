@@ -33,9 +33,9 @@ $node->start;
 ### Beginning of tests ###
 subtest pg15 => sub {
 
-    # Tests for PostreSQL 11 and before
+  # Tests for PostgreSQL 15 and after
   SKIP: {
-        skip "testing incompatibility with PostgreSQL 15 and later", 3
+        skip "testing incompatibility with PostgreSQL 15 and after", 3
           if $node->version < 15;
         plan tests => 3;
 
@@ -56,8 +56,8 @@ subtest pg15 => sub {
 
 subtest pg14 => sub {
   SKIP: {
-        skip "incompatible tests with PostgreSQL between 9.4 and 14", 34
-          if $node->version > 14;
+        skip "incompatible tests with PostgreSQL before 9.5 and after 14", 34
+          if $node->version < '9.5' or $node->version > 14;
 
         plan tests => 4;
 
