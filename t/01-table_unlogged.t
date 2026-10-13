@@ -11,12 +11,15 @@ use lib 't/lib';
 use pgNode;
 use pgSession;
 use Time::HiRes qw(usleep gettimeofday tv_interval);
-use Test::More tests => 15;
+use Test::More;
 
 my $node = pgNode->get_new_node('prod');
 
 $node->init;
 $node->start;
+
+plan tests => 15 if $node->version >= '9.5';
+plan tests => 18 if $node->version < '9.5';
 
 ### Beginning of tests ###
 
@@ -25,7 +28,7 @@ $node->start;
 # Tests for PostreSQL 9.4 and before
 SKIP: {
     skip "testing incompatibility with PostgreSQL 9.4 and before", 3
-        if $node->version >= 9.5;
+        if $node->version >= '9.5';
 
     $node->command_checks_all( [
         './check_pgactivity', '--service'  => 'table_unlogged',
@@ -40,7 +43,8 @@ SKIP: {
 }
 
 SKIP: {
-    skip "incompatible tests with PostgreSQL < 9.5", 34 if $node->version < 9.5;
+    skip "incompatible tests with PostgreSQL < 9.5", 15
+        if $node->version < '9.5';
 
     # basic check => Returns OK
     $node->command_checks_all( [
