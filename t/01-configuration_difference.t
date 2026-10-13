@@ -116,7 +116,7 @@ EOSF
 
     # For PostgreSQL < 9.4+, cluster_name doesn't exist
     SKIP: {
-        skip "checking cluster_name is not supported before v9.5", 4
+        skip "checking cluster_name is not supported before v9.5", 5
             unless $pgversion >= '9.5';
 
         # Must detect that cluster_name is different (2 clusters only)
