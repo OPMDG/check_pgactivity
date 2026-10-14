@@ -10,17 +10,19 @@ use warnings;
 use lib 't/lib';
 use pgNode;
 use pgSession;
-use Time::HiRes qw(usleep gettimeofday tv_interval);
-use Test::More tests => 5;
+use Test::More tests => 11;
 
 my $node = pgNode->get_new_node('prod');
 
-$node->init;
+$node->init (data_checksums => 1);
+$node->append_conf('postgresql.conf', "work_mem='64kB'");
+$node->append_conf('postgresql.conf', "fsync=off");
 $node->start;
 
 ### Beginning of tests ###
 
-# basic check => Returns OK
+# basic check with CRITICAL
+#
 $node->command_checks_all( [
     './check_pgactivity', '--service'  => 'configuration',
                           '--username' => $ENV{'USER'} || 'postgres',
@@ -30,9 +32,30 @@ $node->command_checks_all( [
     [ qr/^Service  *: POSTGRES_CONFIGURATION$/m,
       qr/^Returns  *: 2 \(CRITICAL\)$/m,
       qr/^Message  *: fsync=off$/m,
+      qr/^Message  *: work_mem=64$/m,
     ],
     [ qr/^$/ ],
-    'basic check'
+    'critical'
+);
+
+$node->append_conf('postgresql.conf', 'fsync=on');
+$node->restart();
+
+# WARNING
+#
+$node->command_checks_all( [
+    './check_pgactivity', '--service'  => 'configuration',
+                          '--username' => $ENV{'USER'} || 'postgres',
+                          '--format'   => 'human',
+                          '--exclude'  => 'data_checksums',
+    ],
+    1,
+    [ qr/^Service  *: POSTGRES_CONFIGURATION$/m,
+      qr/^Returns  *: 1 \(WARNING\)$/m,
+      qr/^Message  *: work_mem=64$/m,
+    ],
+    [ qr/^$/ ],
+    'only a warning'
 );
 
 ### End of tests ###
