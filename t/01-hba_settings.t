@@ -9,9 +9,14 @@ use warnings;
 
 use lib 't/lib';
 use pgNode;
-use Test::More tests => 42;
+use Test::More;
+
+my $num_tests = 42;
 
 my $node        = pgNode->new('prod'); # declare instance named "prod"
+
+$num_tests = 27 if $node->version < 10;
+plan tests => $num_tests;
 
 SKIP: {
     skip "PostgreSQL 10 and above only", 27
