@@ -1984,9 +1984,11 @@ Whatever the given threshold, a critical alert is raised if the archiver
 process did not archive the oldest waiting WAL to be archived since last call.
 
 Required privileges:
-<v10: superuser,
-v10: nonsuper user but output will lack perfdata oldest_ready_wal or superuser,
-v10+: grant execute on function pg_stat_file(text, bool).
+- <v10: superuser
+- v10: non-superuser (the output will lack perfdata oldest_ready_wal),
+       or superuser
+- v10+: non superuser with:
+  GRANT EXECUTE ON FUNCTION pg_stat_file(text, bool) TO … ;
 
 =cut
 
@@ -2946,7 +2948,8 @@ md5 authentication are merely WARNING issues.
 Perfdata contains the number of lines per authentication method. Another
 perfdata gives the number of lines with errors.
 
-Required privileges: superuser, or user with access to pg_hba_file_rules
+Required privileges:
+superuser, or user with access to pg_hba_file_rules
 in the monitoring database, with:
 GRANT SELECT ON pg_hba_file_rules TO … ;
 GRANT EXECUTE ON FUNCTION pg_hba_file_rules TO … ;
@@ -3045,8 +3048,10 @@ and will prevent a restart.
 Perfdata returns the age of the backup_label file, -1 if not present.
 
 Required privileges:
-GRANT EXECUTE ON FUNCTION pg_stat_file(text, boolean) (12+);
-unprivileged role (9.3+); superuser (<9.3)
+- <9.3: superuser
+- v9.3-11 : unprivileged role
+- v12+: unprivileged role with:
+  GRANT EXECUTE ON FUNCTION pg_stat_file(text, boolean) TO … ;
 
 =cut
 
@@ -3368,12 +3373,12 @@ A list of the bloated indexes will be returned after the
 perfdata. This list contains the fully qualified bloated index name, the
 estimated bloat size, the index size and the bloat percentage.
 
-Required privileges: superuser (<10) able to log in all databases, or at least
-those in C<--dbinclude>; superuser (<10);
-on PostgreSQL 10+, a user with the role pg_monitor suffices,
-provided that you grant SELECT on the system table pg_statistic
-to the pg_monitor role, in each database of the cluster:
-C<GRANT SELECT ON pg_statistic TO pg_monitor;>
+Required privileges:
+- a user able to log in all databases, or at least
+  those in C<--dbinclude>
+- <v10: superuser able to log in all databases
+- v10+: a user with the role pg_monitor and:
+  GRANT SELECT ON pg_statistic TO pg_monitor ; -- or to your user
 
 =cut
 
@@ -3771,7 +3776,8 @@ Perfdata contains the number of errors per files.
 
 Thresholds, if any, are ignored.
 
-Required privileges: superuser, or user with access to pg_ident_file_mappings
+Required privileges:
+superuser, or user with access to pg_ident_file_mappings
 in the monitoring database, with:
 GRANT SELECT ON pg_ident_file_mappings TO … ;
 GRANT EXECUTE ON FUNCTION pg_ident_file_mappings TO … ;
@@ -6337,8 +6343,10 @@ Above 9.0, it also supports C<--exclude REGEX> to filter out application_name.
 
 You can use multiple C<--exclude REGEX> parameters.
 
-Required privileges: an unprivileged role only checks its own queries;
-a pg_monitor (10+) or superuser (<10) role is required to check all queries.
+Required privileges:
+- an unprivileged role only checks its own queries
+- <v10: superuser is required to check all queries
+- v10+: user with pg_monitor
 
 =cut
 
@@ -6957,8 +6965,10 @@ idle state.
 From 9.2 and up, the service checks for transaction that really had no activity
 since the given thresholds.
 
-Required privileges: an unprivileged role checks only its own queries; a
-pg_monitor (10+) or superuser (<10) role is required to check all queries.
+Required privileges:
+- an unprivileged role checks only its own queries
+- <10: a superuser role is required to check all queries
+- v10+: a role with pg_monitor
 
 =cut
 
@@ -7190,9 +7200,11 @@ transaction.
 
 This service supports both C<--dbexclude>" and C<--dbinclude>" parameters.
 
-Required privileges: a pg_read_all_stats (10+) or superuser (<10) role is
-required to check pg_stat_replication.  2PC, pg_stat_activity, and replication
-slots don't require special privileges.
+Required privileges:
+- <v10: superuser
+- v10+: a role with pg_read_all_stats role is required
+  to check pg_stat_replication.  2PC, pg_stat_activity, and replication
+  slots don't require special privileges.
 
 =cut
 
@@ -7422,9 +7434,9 @@ separated by a comma. Thresholds are applied on current orphan files. Eg:
 The --detailed option lists all orphan files.
 
 Required privileges:
-user with pg_monitor or pg_read_all_setting
-and GRANT EXECUTE ON FUNCTION pg_ls_dir(text, bool, bool).
-and GRANT EXECUTE ON FUNCTION pg_stat_file(text, bool).
+a user with pg_monitor or pg_read_all_setting and:
+GRANT EXECUTE ON FUNCTION pg_ls_dir(text, bool, bool) TO … ;
+GRANT EXECUTE ON FUNCTION pg_stat_file(text, bool) TO … ;
 
 =cut
 
@@ -8152,9 +8164,9 @@ it will check the mode with the data_directory_mode GUC. It won't be able to
 check the owner though.
 
 Required privileges:
- <11:superuser
- v11: user with pg_monitor or pg_read_all_setting
-The system user must also be able to read the folder containing
+- <11: superuser
+- v11: a user with pg_monitor or pg_read_all_settings
+- The system user must also be able to read the folder containing
 PGDATA: B<the service has to be executed locally on the monitored server.>
 
 =cut
@@ -8306,10 +8318,11 @@ Moreover, with v13 and after, the service raises a warning alert if a slot
 becomes C<unreserved>. It raises a critical alert if the slot becomes C<lost>.
 
 Required privileges:
- v9.4: unprivileged role, or superuser to monitor spilled files for logical replication
- v11+: unprivileged user with GRANT EXECUTE on function pg_ls_dir(text)
+- v9.4: unprivileged role, or superuser to monitor spilled files for logical replication
+- v11+: unprivileged user with:
+  GRANT EXECUTE ON FUNCTION pg_ls_dir(text) TO… ;
 
-Here is somes examples:
+Examples:
 
     -w 'wal=50,spilled=20' -c 'wal=100,spilled=40'
     -w 'spilled=20,remaining=160MB' -c 'spilled=40,remaining=48MB'
@@ -9657,12 +9670,12 @@ A list of the bloated tables will be returned after the
 perfdata. This list contains the fully qualified bloated table name, the
 estimated bloat size, the table size and the bloat percentage.
 
-Required privileges: superuser (<10) able to log in all databases, or at least
-those in C<--dbinclude>; superuser (<10);
-on PostgreSQL 10+, a user with the role pg_monitor suffices,
-provided that you grant SELECT on the system table pg_statistic
-to the pg_monitor role, in each database of the cluster:
-C<GRANT SELECT ON pg_statistic TO pg_monitor;>
+Required privileges:
+- <v10 superuser & able to log in all databases, or at least
+  those in C<--dbinclude>
+- v10+: a user with the role pg_monitor and:
+  C<GRANT SELECT ON pg_statistic TO pg_monitor;>
+  in each database in the cluster
 
 =cut
 
@@ -9685,7 +9698,7 @@ sub check_table_bloat {
     if ($pgstattuple ne 'on') {
     %queries   = (
         # The base for the following queries come from:
-        #   https://github.com/ioguix/pgsql-bloat-estimation
+        # https://github.com/ioguix/pgsql-bloat-estimation
         #
         # Changes:
         # * use pg_statistic instead of pg_stats for performance
@@ -10046,13 +10059,15 @@ Thresholds are applied on current temp files being created AND the number/size
 of temp files created since last execution.
 
 Required privileges:
- <10: superuser
- v10: an unprivileged role is possible but it will not monitor databases
-that it cannot access, nor live temp files
- v11: an unprivileged role is possible but must be granted EXECUTE
-on functions pg_ls_dir(text), pg_read_file(text), pg_stat_file(text, boolean);
-the same restrictions than on v10 will still apply
- v12+: a role with pg_monitor privilege.
+- <10: superuser
+- v10: an unprivileged role is possible but it will not monitor databases
+       that it cannot access, nor live temp files
+- v11: an unprivileged role with:
+  GRANT EXECUTE ON FUNCTION pg_ls_dir(text) TO …
+  GRANT EXECUTE ON FUNCTION pg_read_file(text) TO …
+  GRANT EXECUTE ON FUNCTION pg_stat_file(text, boolean) TO …
+  but the same restrictions than on v10 will still apply
+- v12+: a role with pg_monitor privilege
 
 =cut
 
@@ -10420,6 +10435,8 @@ specified the service expects them to be in use.
 
 The perfdata returns the status where 0 is off, 1 is on and 2 is unknown.
 
+Required privileges: unprivileged user
+
 =cut
 
 sub check_hugepages {
@@ -10482,7 +10499,9 @@ once enough time has passed.
 
 Perfdata contain the three values (when available).
 
-Required privileges: pg_monitor on PG10+; otherwise unprivileged role.
+Required privileges:
+- <v10: unprivileged role
+- v10+: pg_monitor
 
 =cut
 
@@ -10641,10 +10660,11 @@ For 13 and above:
   100% =  max_wal_size + wal_keep_size (as numbers of WAL)
 
 Required privileges:
- <10:superuser (<10)
- v10:unprivileged user with pg_monitor
- v11+ :unprivileged user with pg_monitor, or with grant EXECUTE on function
-pg_ls_waldir
+- <10: superuser
+- v10: unprivileged user with pg_monitor
+- v11+: unprivileged user with pg_monitor,
+  or only with:
+  GRANT EXECUTE ON FUNCTION pg_ls_waldir TO … ;
 
 =cut
 
