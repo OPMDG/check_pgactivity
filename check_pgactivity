@@ -4217,7 +4217,7 @@ LOOP: foreach my $setting (@rc) {
         push @msg_warn => ( $setting->[0] . "=" . $setting->[1] ) if $setting->[2] == 1 ;
     }
 
-    return status_critical( $me, \@msg_crit )
+    return status_critical( $me, [ @msg_crit, @msg_warn] )
         if ( @msg_crit > 0 );
     return status_warning ( $me, \@msg_warn )
         if ( @msg_warn > 0 );
