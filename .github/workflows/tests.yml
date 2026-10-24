@@ -44,7 +44,7 @@ jobs:
         run: |
           dnf install -y dnf-plugins-core
           # PostgreSQL
-          dnf install -y https://download.postgresql.org/pub/repos/yum/reporpms/EL-9-x86_64/pgdg-redhat-repo-latest.noarch.rpm
+          dnf install -y --setopt=retries=10 --setopt=timeout=60 https://download.postgresql.org/pub/repos/yum/reporpms/EL-9-x86_64/pgdg-redhat-repo-latest.noarch.rpm
           dnf -qy module disable postgresql
           dnf install -y postgresql${{ env.pg }}-server postgresql${{ env.pg }}-contrib
       - name: Install perl test tools
