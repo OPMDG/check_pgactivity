@@ -8715,7 +8715,13 @@ warning threshold. Obviously these alerts will disappear from themselves
 once enough time has passed. This doesn't apply for configuration changes with
 pending restart warnings.
 
-Required privileges: unprivileged role.
+Required privileges:
+- <9.5: unprivileged role
+- v9.5+: unprivileged role with:
+  GRANT SELECT ON pg_file_settings TO … ;
+  GRANT EXECUTE ON FUNCTION pg_show_all_file_settings() TO … ;
+- v10+: the role pg_monitor (or pg_read_all_settings) is also required to see
+  the settings restricted to superusers
 
 =cut
 
@@ -8732,6 +8738,7 @@ sub check_settings {
     my $settings_lastemsg;
     my $settings_lastedate;
     my %new_settings;
+    my %pending_settings;
     my $pending_count = 0;
     my $errors_count = 0;
     my %args  = %{ $_[0] };
@@ -8761,7 +8768,9 @@ sub check_settings {
         SELECT '*', '*', name||'='||current_setting(name), pending_restart, NULL
         FROM pg_settings
         UNION ALL
-        SELECT '*', '*', name||'='||setting, NULL, error||' in '||sourcefile||', line '||sourceline
+        SELECT '*', '*', coalesce(name, '')||'='||coalesce(setting, ''), NULL,
+          CASE WHEN name IS NOT NULL THEN name||': ' ELSE '' END
+          ||error||' in '||sourcefile||', line '||sourceline
         FROM pg_file_settings
         WHERE error IS NOT NULL
        }
@@ -8780,6 +8789,13 @@ sub check_settings {
     # Save settings on the very first call
     $args{'save'} = 1 unless %settings;
 
+    # A parameter pending restart is also reported as "setting could not be
+    # applied" in pg_file_settings. This is not an error.
+    foreach my $row (@rs) {
+        my ( $name ) = split /=/ => $row->[2], 2;
+        $pending_settings{ lc $name } = 1 if ( $row->[3] // "" ) eq "t";
+    }
+
 PARAM_LOOP: foreach my $row (@rs) {
         my ( $rolname, $datname, $setting, $pending, $error ) = @$row;
         my ( $name, $val ) = split /=/ => $setting, 2;
@@ -8787,6 +8803,10 @@ PARAM_LOOP: foreach my $row (@rs) {
         my $msg = "$setting";
 
         if ( length($error) > 0 ) {
+            next PARAM_LOOP
+                if exists $pending_settings{ lc $name }
+                and $error =~ /^\Q$name\E: setting could not be applied in /;
+
             $errors_count++;
             push @long_msg => "$error";
             next PARAM_LOOP;
