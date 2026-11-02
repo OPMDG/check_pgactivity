@@ -9,7 +9,7 @@ use warnings;
 
 use lib 't/lib';
 use pgNode;
-use Test::More tests => 8;
+use Test::More tests => 11;
 
 my $node = pgNode->new('prod'); # declare instance named "prod"
 
@@ -23,7 +23,7 @@ $node->start;
 $node->command_checks_all( [
     # command to run
     './check_pgactivity', '--service'  => 'connection',
-                          '--username' => $ENV{'USER'} || 'postgres'
+                          '--username' => $ENV{'USER'} || 'postgres',
     ],
     # expected return code
     0,
@@ -35,7 +35,7 @@ $node->command_checks_all( [
     'connection successful'
 );
 
-# Failing to connect
+# Bad connection string
 # TODO: should stdout only report the user message and stderr the psql error?
 $node->command_checks_all( [
     './check_pgactivity', '--service'  => 'connection',
@@ -50,7 +50,22 @@ $node->command_checks_all( [
         qr/^\s*Is the server running locally and accepting/m
     ],
     [ qr/^$/ ],
-    'connection failing'
+    'bad connection string'
+);
+
+# Bad psql binary
+#
+$node->command_checks_all( [
+    './check_pgactivity', '--service'  => 'connection',
+                          '--username' => $ENV{'USER'} || 'postgres',
+                          '--psql' => '/usr/bin/psqlisnotthere'
+    ],
+    2,
+    [
+        qr/^CHECK_PGACTIVITY CRITICAL: Call.*failed!$/m,
+    ],
+    [ qr/^$/ ],
+    'bad psql binary'
 );
 
 

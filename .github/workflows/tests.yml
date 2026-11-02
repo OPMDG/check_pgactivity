@@ -9,7 +9,7 @@ jobs:
     strategy:
       matrix:
         pg: [18, 17, 16, 15, 14, 13, 12, 11, 10, 9.6, 9.5, 9.4]
-    name: PostgreSQL ${{ matrix.pg }}
+    name: PostgreSQL ${{ matrix.pg }} on Ubuntu
     runs-on: ubuntu-latest
     continue-on-error: true
     steps:
@@ -25,6 +25,43 @@ jobs:
         run: sudo apt install -y libipc-run-perl postgresql-${{ matrix.pg }}
       - name: Execute all tests
         run: PATH="/usr/lib/postgresql/${{ matrix.pg }}/bin/:$PATH" prove
+      - name: print logs if test failed
+        run: grep "" tmp_check/log/* | head -n 100000
+        if: ${{ failure() }}
+
+
+  test_rockylinux9:
+    name: PostgreSQL on Rocky Linux 9
+    runs-on: ubuntu-latest
+    container: rockylinux/rockylinux:9
+    continue-on-error: false
+    env:
+      # one version is enough
+      pg: 18
+    steps:
+      - name: Check out repository code
+        uses: actions/checkout@v5
+      - name: Install PostgreSQL packages
+        run: |
+          dnf install -y dnf-plugins-core
+          cat /etc/redhat-release
+          # PostgreSQL
+          dnf install -y --setopt=retries=10 --setopt=timeout=60  https://download.postgresql.org/pub/repos/yum/reporpms/EL-9-x86_64/pgdg-redhat-repo-latest.noarch.rpm
+          # dnf -qy module disable postgresql
+          dnf install -y --setopt=retries=10 --setopt=timeout=60 postgresql${{ env.pg }}-server postgresql${{ env.pg }}-contrib
+      - name: Install perl test tools
+        run: |
+          dnf config-manager --set-enabled crb  # for perl-IPC-Run
+          # first line: official dependencies of check_pgactivity
+          # others: for tests only
+          dnf install -y perl-FindBin perl-Time-HiRes \
+          perl-Test-Harness perl-Test-Simple perl-IPC-Run \
+          perl-lib perl-local-lib perl-version perl-File-Copy
+      - name: postgres ownership
+        # we're in docker, so root by default, and initdb would fail
+        run: chown -R postgres .
+      - name: Execute all tests
+        run: su postgres -c 'PATH="/usr/pgsql-${{ env.pg }}/bin/:$PATH" prove'
       - name: print logs if test failed
         run: grep "" tmp_check/log/* | head -n 100000
         if: ${{ failure() }}
