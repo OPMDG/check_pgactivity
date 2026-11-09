@@ -69,7 +69,7 @@ delete $ENV{'LANGUAGE'};
 
 $| = 1;
 
-$VERSION = '2.13dev';
+$VERSION = '2.13';
 $PROGRAM = 'check_pgactivity';
 
 my $PG_VERSION_MIN =  70400;
@@ -1988,7 +1988,7 @@ Required privileges:
 - v10: non-superuser (the output will lack perfdata oldest_ready_wal),
        or superuser
 - v10+: non superuser with:
-  GRANT EXECUTE ON FUNCTION pg_stat_file(text, bool) TO … ;
+  GRANT EXECUTE ON FUNCTION pg_stat_file(text, bool) TO ...;
 
 =cut
 
@@ -2951,8 +2951,8 @@ perfdata gives the number of lines with errors.
 Required privileges:
 superuser, or user with access to pg_hba_file_rules
 in the monitoring database, with:
-GRANT SELECT ON pg_hba_file_rules TO … ;
-GRANT EXECUTE ON FUNCTION pg_hba_file_rules TO … ;
+GRANT SELECT ON pg_hba_file_rules TO ...;
+GRANT EXECUTE ON FUNCTION pg_hba_file_rules TO ...;
 
 =cut
 
@@ -3051,7 +3051,7 @@ Required privileges:
 - <9.3: superuser
 - v9.3-11 : unprivileged role
 - v12+: unprivileged role with:
-  GRANT EXECUTE ON FUNCTION pg_stat_file(text, boolean) TO … ;
+  GRANT EXECUTE ON FUNCTION pg_stat_file(text, boolean) TO ...;
 
 =cut
 
@@ -3779,8 +3779,8 @@ Thresholds, if any, are ignored.
 Required privileges:
 superuser, or user with access to pg_ident_file_mappings
 in the monitoring database, with:
-GRANT SELECT ON pg_ident_file_mappings TO … ;
-GRANT EXECUTE ON FUNCTION pg_ident_file_mappings TO … ;
+GRANT SELECT ON pg_ident_file_mappings TO ...;
+GRANT EXECUTE ON FUNCTION pg_ident_file_mappings TO ...;
 
 =cut
 
@@ -7435,8 +7435,8 @@ The --detailed option lists all orphan files.
 
 Required privileges:
 a user with pg_monitor or pg_read_all_setting and:
-GRANT EXECUTE ON FUNCTION pg_ls_dir(text, bool, bool) TO … ;
-GRANT EXECUTE ON FUNCTION pg_stat_file(text, bool) TO … ;
+GRANT EXECUTE ON FUNCTION pg_ls_dir(text, bool, bool) TO ...;
+GRANT EXECUTE ON FUNCTION pg_stat_file(text, bool) TO ...;
 
 =cut
 
@@ -8320,7 +8320,7 @@ becomes C<unreserved>. It raises a critical alert if the slot becomes C<lost>.
 Required privileges:
 - v9.4: unprivileged role, or superuser to monitor spilled files for logical replication
 - v11+: unprivileged user with:
-  GRANT EXECUTE ON FUNCTION pg_ls_dir(text) TO… ;
+  GRANT EXECUTE ON FUNCTION pg_ls_dir(text) TO...;
 
 Examples:
 
@@ -10063,9 +10063,9 @@ Required privileges:
 - v10: an unprivileged role is possible but it will not monitor databases
        that it cannot access, nor live temp files
 - v11: an unprivileged role with:
-  GRANT EXECUTE ON FUNCTION pg_ls_dir(text) TO …
-  GRANT EXECUTE ON FUNCTION pg_read_file(text) TO …
-  GRANT EXECUTE ON FUNCTION pg_stat_file(text, boolean) TO …
+  GRANT EXECUTE ON FUNCTION pg_ls_dir(text) TO ...;
+  GRANT EXECUTE ON FUNCTION pg_read_file(text) TO ...;
+  GRANT EXECUTE ON FUNCTION pg_stat_file(text, boolean) TO ...;
   but the same restrictions than on v10 will still apply
 - v12+: a role with pg_monitor privilege
 
@@ -10664,7 +10664,7 @@ Required privileges:
 - v10: unprivileged user with pg_monitor
 - v11+: unprivileged user with pg_monitor,
   or only with:
-  GRANT EXECUTE ON FUNCTION pg_ls_waldir TO … ;
+  GRANT EXECUTE ON FUNCTION pg_ls_waldir TO ...;
 
 =cut
 
@@ -11172,7 +11172,7 @@ __END__
 
 =head1 VERSION
 
-check_pgactivity version 2.12, released on Wed Oct 07 2026.
+check_pgactivity version 2.13, released on Mon Nov 09 2026.
 
 =head1 LICENSING
 

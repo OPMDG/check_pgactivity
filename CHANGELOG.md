@@ -1,6 +1,20 @@
 Changelog
 =========
 
+2026-11-09 v2.13:
+
+* add: the configuration service checks also all developer options
+* change: on orphan_files service, add options for numbers & size (tablespaces
+  included)
+* change: the configuration service shows also warnings text when critical
+* change: more documentation for hba/ident_settings services
+* change: documentation update on privileges
+* change: add CI tests for releases 9.4, 9.5, and 9.6
+* fix: fix the duration regexp
+* fix: fix the level and the message of the hba_settings service
+* fix: hba_settings service fixes tests for <10
+* fix: orphan_files service is incompatible with <=9.4 releases
+
 2026-10-07 v2.12:
 
 * add: new orphan_files service

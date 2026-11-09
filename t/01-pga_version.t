@@ -13,7 +13,7 @@ use Test::More tests => 18;
 
 ### Beginning of tests ###
 
-my $good_version = '2.13dev';
+my $good_version = '2.13';
 my $bad_version  = '0.0';
 my $not_version  = 'whatever';
 
