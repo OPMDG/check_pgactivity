@@ -22,7 +22,7 @@ offers many options to measure and monitor useful performance metrics.
 =head1 COMPATIBILITY
 
 Each service is available from a different PostgreSQL version, from 9.0, as
-documented below.
+documented below. (Previous versions are not supported anymore.)
 
 Ideally, the psql client should be 8.4 at least, but it can be used with an
 older server. If your client is older, see C<--psql> and C<--old-psql> for more
@@ -2006,7 +2006,7 @@ sub check_archiver {
         -exitval => 127
     ) if @hosts != 1;
 
-    is_compat $hosts[0], 'archiver', $PG_VERSION_90 or exit 1;
+    is_compat $hosts[0], 'archiver', $PG_VERSION_MIN or exit 1;
 
     if (check_compat $hosts[0], $PG_VERSION_90, $PG_VERSION_96) {
         # cf. pgarch_readyXlog in src/backend/postmaster/pgarch.c about how the
@@ -2245,7 +2245,7 @@ sub check_archiver {
 }
 
 
-=item B<autovacuum> (9.0+)
+=item B<autovacuum>
 
 Check the autovacuum activity on the cluster.
 
@@ -2527,7 +2527,7 @@ are raw numbers or time units and empty lists are forbidden. Here is an example:
     -w 'waiting=5,idle_xact=10' -c 'waiting=20,idle_xact=30,active=1d'
 
 Perfdata contains the number of backends for each status and the oldest one for
-each of them, for 9.0+.
+each of them.
 
 Note that the number of backends reported in Nagios message B<includes>
 excluded backends.
@@ -5784,7 +5784,6 @@ Perfdata returns the number of locks, by type.
 
 Critical and Warning thresholds accept either a raw number of locks or a
 percentage. For percentage, it is computed using the following limits
-for 9.0:
 
   max_locks_per_transaction * (max_connections + max_prepared_transactions)
 
@@ -9902,8 +9901,8 @@ sub check_hugepages {
 
 =item B<uptime> (9.0+)
 
-Returns time since postmaster start ("uptime", from 9.0),
-since configuration reload (from 9.0),
+Returns time since postmaster start ("uptime"),
+since configuration reload,
 and since shared memory initialization (from 10).
 
 Please note that the uptime is unaffected when the postmaster resets
