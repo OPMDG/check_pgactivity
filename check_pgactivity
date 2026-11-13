@@ -2008,7 +2008,7 @@ sub check_archiver {
 
     is_compat $hosts[0], 'archiver', $PG_VERSION_MIN or exit 1;
 
-    if (check_compat $hosts[0], $PG_VERSION_90, $PG_VERSION_96) {
+    if (check_compat $hosts[0], $PG_VERSION_MIN, $PG_VERSION_96) {
         # cf. pgarch_readyXlog in src/backend/postmaster/pgarch.c about how the
         # archiver process pick the next WAL to archive.
         # We try to reproduce the same algo here
@@ -2280,7 +2280,7 @@ sub check_autovacuum {
 
     my %queries      = (
         # field current_query, autovacuum_max_workers
-        $PG_VERSION_90 => q{
+        $PG_VERSION_MIN => q{
             SELECT a.current_query,
                 extract(EPOCH FROM now()-a.query_start)::bigint,
                 s.setting
@@ -2314,9 +2314,9 @@ sub check_autovacuum {
         -exitval => 127
     ) if @hosts != 1;
 
-    is_compat $hosts[0], 'autovacuum', $PG_VERSION_90 or exit 1;
+    is_compat $hosts[0], 'autovacuum', $PG_VERSION_MIN or exit 1;
 
-    if (check_compat $hosts[0], $PG_VERSION_90, $PG_VERSION_96) {
+    if (check_compat $hosts[0], $PG_VERSION_MIN, $PG_VERSION_96) {
         delete $activity{BRIN_SUMMARIZE};
     }
 
@@ -2505,7 +2505,7 @@ sub check_backends {
 }
 
 
-=item B<backends_status> (9.0+)
+=item B<backends_status>
 
 Check the status of all backends. Depending on your PostgreSQL version,
 statuses are: C<idle>, C<idle in transaction>, C<idle in transaction (aborted)>
@@ -2568,7 +2568,7 @@ sub check_backends_status {
         'active'       => 'active'
     );
     my %queries      = (
-        $PG_VERSION_90 => q{
+        $PG_VERSION_MIN => q{
             SELECT CASE
                     WHEN s.current_query = '<IDLE>'
                         THEN 'idle'
@@ -2654,7 +2654,7 @@ sub check_backends_status {
         -exitval => 127
     ) if @hosts != 1;
 
-    is_compat $hosts[0], 'backends_status', $PG_VERSION_90 or exit 1;
+    is_compat $hosts[0], 'backends_status', $PG_VERSION_MIN or exit 1;
 
 
     if ( defined $args{'warning'} ) {
@@ -2708,7 +2708,7 @@ sub check_backends_status {
                and $warn{$s} =~ /\d+$/ and $crit{$s} =~ /\d+$/ );
         push @perfdata => [ @perf ];
 
-        if ( $hosts[0]->{'version_num'} >= $PG_VERSION_90
+        if ( $hosts[0]->{'version_num'} >= $PG_VERSION_MIN
              and $s !~ '^(?:disabled|undefined|insufficient)' ) {
           my @perf = ("oldest $s", $status{$s}[1], 's' );
           push @perf, ( $warn{$s}, $crit{$s}, 0, $max_connections )
@@ -2947,7 +2947,7 @@ sub check_hba_settings {
     return status_ok( $me, [ "No issue on hba files" ], \@perfdata );
 }
 
-=item B<backup_label_age> (9.0+)
+=item B<backup_label_age>
 
 Check the presence of backup label file (PG15 or later),
 or raise an alarm if it's too old (PG14 or former).
@@ -2981,7 +2981,7 @@ sub check_backup_label_age {
     my %args    = %{ $_[0] };
     my $me      = 'POSTGRES_BACKUP_LABEL_AGE';
     my %queries         = (
-        $PG_VERSION_90 => q{SELECT max(s.r) AS value FROM (
+        $PG_VERSION_MIN => q{SELECT max(s.r) AS value FROM (
             SELECT CAST(extract(epoch FROM current_timestamp - (pg_stat_file(file)).modification) AS integer) AS r
             FROM pg_ls_dir('.') AS ls(file)
             WHERE file='backup_label' UNION SELECT 0
@@ -3004,7 +3004,7 @@ sub check_backup_label_age {
         -exitval => 127
     ) if @hosts != 1;
 
-    is_compat $hosts[0], 'backup_label_age', $PG_VERSION_90 or exit 1;
+    is_compat $hosts[0], 'backup_label_age', $PG_VERSION_MIN or exit 1;
 
     if ( $hosts[0]->{'version_num'} < $PG_VERSION_150 ) {
     # warning and critical are mandatory on ≤ PG14
@@ -3044,7 +3044,7 @@ sub check_backup_label_age {
 
 
 
-=item B<bgwriter> (9.0+)
+=item B<bgwriter>
 
 Check the percentage of pages written by backends since last check.
 
@@ -3084,7 +3084,7 @@ sub check_bgwriter {
     my %args    = %{ $_[0] };
     my $me      = 'POSTGRES_BGWRITER';
     my %queries = (
-        $PG_VERSION_90 => q{SELECT checkpoints_timed, checkpoints_req,
+        $PG_VERSION_MIN => q{SELECT checkpoints_timed, checkpoints_req,
               buffers_checkpoint * current_setting('block_size')::numeric,
               buffers_clean * current_setting('block_size')::numeric,
               maxwritten_clean,
@@ -3169,7 +3169,7 @@ sub check_bgwriter {
         -exitval => 127
     ) if @hosts != 1;
 
-    is_compat $hosts[0], 'bgwriter', $PG_VERSION_90 or exit 1;
+    is_compat $hosts[0], 'bgwriter', $PG_VERSION_MIN or exit 1;
 
     %bgw = %{ load( $hosts[0], 'bgwriter', $args{'status-file'} ) || {} };
 
@@ -3313,7 +3313,7 @@ sub check_btree_bloat {
     my $me      = 'POSTGRES_BTREE_BLOAT';
     my %queries = (
       # New column pg_index.indisvalid
-      $PG_VERSION_90 =>  q{
+      $PG_VERSION_MIN =>  q{
       SELECT current_database(), nspname AS schemaname, tblname, idxname, bs*(relpages)::bigint AS real_size,
         bs*(relpages-est_pages_ff) AS bloat_size,
         100 * (relpages-est_pages_ff)::float / relpages AS bloat_ratio
@@ -3797,7 +3797,7 @@ sub check_commit_ratio {
 }
 
 
-=item B<configuration> (9.0+)
+=item B<configuration>
 
 Check the most important settings (according to pg_settings).
 
@@ -3913,7 +3913,7 @@ sub check_configuration {
         -exitval => 127
     ) if @hosts != 1;
 
-    is_compat $hosts[0], 'configuration', $PG_VERSION_90 or exit 1;
+    is_compat $hosts[0], 'configuration', $PG_VERSION_MIN or exit 1;
 
     my @rc = @{ query( $hosts[0], $sql ) };
 
@@ -3934,7 +3934,7 @@ LOOP: foreach my $setting (@rc) {
 }
 
 
-=item B<configuration_difference> (9.0+)
+=item B<configuration_difference>
 
 Check that the configuration is the same between two servers (according to pg_settings)
 By default, assumes that the 1st server is a primary
@@ -3996,7 +3996,7 @@ sub check_configuration_difference {
     my @ignored_all = ('effective_wal_level');
     my $me          = 'POSTGRES_CONFIGURATION_DIFFERENCE';
     my %queries = (
-        $PG_VERSION_90 => q{
+        $PG_VERSION_MIN => q{
         SELECT name,
                (CASE WHEN name LIKE 'tcp%' AND inet_client_addr() IS NULL THEN 'N/A'
                 ELSE setting END
@@ -4021,7 +4021,7 @@ sub check_configuration_difference {
 
     # Fetch configuration for each host ; compare each parameter to the one on the 1st host a reference
     foreach my $host (@hosts) {
-        is_compat $hosts[$num_clusters], 'configuration', $PG_VERSION_90 or exit 1;
+        is_compat $hosts[$num_clusters], 'configuration', $PG_VERSION_MIN or exit 1;
         $num_clusters ++;
         dprint ("Cluster $num_clusters : $host->{'dbservice'} \n" );
         # Fetch PG configuration from each host
@@ -4249,7 +4249,7 @@ sub check_custom_query {
     return status_ok( $me, [ "Custom query ok" ], \@perfdata );
 }
 
-=item B<database_size> (9.0+)
+=item B<database_size>
 
 B<Check the variation> of database sizes, and B<return the size> of every
 databases.
@@ -4318,7 +4318,7 @@ sub check_database_size {
         -exitval => 127
     ) if @hosts != 1;
 
-    is_compat $hosts[0], 'database_size', $PG_VERSION_90 or exit 1;
+    is_compat $hosts[0], 'database_size', $PG_VERSION_MIN or exit 1;
 
     if ( defined $args{'warning'} ) {
         my $thresholds_re = qr/(size|delta)\s*=\s*([^,]+)/i;
@@ -4844,7 +4844,7 @@ sub check_hot_standby_delta {
     # we need to coalesce on pg_last_xlog_receive_location because it returns
     # NULL during WAL Shipping
     my %queries = (
-        $PG_VERSION_90 => q{
+        $PG_VERSION_MIN => q{
         SELECT (NOT pg_is_in_recovery())::int,
             CASE pg_is_in_recovery()
                 WHEN 't' THEN coalesce(
@@ -4881,7 +4881,7 @@ sub check_hot_standby_delta {
     ) if @hosts < 2;
 
     foreach my $host ( @hosts ) {
-        is_compat $host, 'hot_standby_delta', $PG_VERSION_90 or exit 1;
+        is_compat $host, 'hot_standby_delta', $PG_VERSION_MIN or exit 1;
     }
 
     # Fetch LSNs
@@ -4990,7 +4990,7 @@ sub check_hot_standby_delta {
 }
 
 
-=item B<is_hot_standby> (9.0+)
+=item B<is_hot_standby>
 
 Checks if the cluster is in recovery and accepts read only queries.
 
@@ -5008,7 +5008,7 @@ sub check_is_hot_standby {
     my %args          = %{ $_[0] };
     my $me            = 'POSTGRES_IS_HOT_STANDBY';
     my %queries       = (
-        $PG_VERSION_90 => q{SELECT pg_is_in_recovery()}
+        $PG_VERSION_MIN => q{SELECT pg_is_in_recovery()}
     );
 
     @hosts = @{ parse_hosts %args };
@@ -5018,7 +5018,7 @@ sub check_is_hot_standby {
         -exitval => 127
     ) if @hosts != 1;
 
-    is_compat $hosts[0], 'is_hot_standby', $PG_VERSION_90 or exit 1;
+    is_compat $hosts[0], 'is_hot_standby', $PG_VERSION_MIN or exit 1;
     @rs = @{ query_ver( $hosts[0], %queries )->[0] };
 
     return status_critical( $me, [ "Cluster is not hot standby" ] ) if $rs[0] eq "f";
@@ -5047,7 +5047,7 @@ sub check_is_master {
     # For PostgreSQL 9.0+, the "pg_is_in_recovery()" function is used, for
     # previous versions the ability to connect is enough.
     my %queries       = (
-        $PG_VERSION_90 => q{ SELECT pg_is_in_recovery() }
+        $PG_VERSION_MIN => q{ SELECT pg_is_in_recovery() }
     );
 
     @hosts = @{ parse_hosts %args };
@@ -5063,7 +5063,7 @@ sub check_is_master {
     return status_ok( $me, [ "Cluster is master" ] );
 }
 
-=item B<invalid_indexes> (9.0+)
+=item B<invalid_indexes>
 
 Check if there are invalid indexes in a database.
 
@@ -5167,7 +5167,7 @@ sub check_invalid_indexes {
 }
 
 
-=item B<unused_indexes> (9.0+)
+=item B<unused_indexes>
 
 Check if there are unused indexes in a database.
 
@@ -5216,7 +5216,7 @@ sub check_unused_indexes {
     my @dbexclude   = @{ $args{'dbexclude'} };
     my $me          = 'POSTGRES_UNUSED_INDEXES';
     my %queries = (
-        $PG_VERSION_90 => q{
+        $PG_VERSION_MIN => q{
         SELECT current_database(), nsp.nspname AS schemaname, cls.relname, pg_stat_get_numscans(cls.oid)=0,
             extract('epoch' FROM now())::int
         FROM pg_class cls
@@ -5506,7 +5506,7 @@ sub check_last_maintenance {
         #
         # Starting with 9.0, we can check database status
         # (primary or secondary)
-        $PG_VERSION_90 => qq{
+        $PG_VERSION_MIN => qq{
             SELECT
                 pg_is_in_recovery()::int AS is_in_recovery,
                 current_database(),
@@ -5590,7 +5590,7 @@ sub check_last_maintenance {
         -exitval => 127
     ) if @hosts != 1;
 
-    is_compat $hosts[0], "last_$type", $PG_VERSION_90 or exit 1;
+    is_compat $hosts[0], "last_$type", $PG_VERSION_MIN or exit 1;
 
     # check required GUC
     is_guc $hosts[0], 'track_counts', 'on' or exit 1;
@@ -5686,7 +5686,7 @@ LOOP_DB: foreach my $db (@all_db) {
 }
 
 
-=item B<last_analyze> (9.0+)
+=item B<last_analyze>
 
 Check on each databases that the oldest C<analyze> (from autovacuum or not) is
 not older than the given threshold.
@@ -5731,7 +5731,7 @@ sub check_last_analyze {
 }
 
 
-=item B<last_vacuum> (9.0+)
+=item B<last_vacuum>
 
 Check that the oldest vacuum (from autovacuum or otherwise) in each database
 in the cluster is not older than the given threshold.
@@ -5807,7 +5807,7 @@ sub check_locks {
     my $waiting_locks = 0;
     my $me            = 'POSTGRES_LOCKS';
     my %queries       = (
-        $PG_VERSION_90 => q{
+        $PG_VERSION_MIN => q{
             SELECT count(l.granted), ref.mode,
                 current_setting('max_locks_per_transaction')::integer * (
                     current_setting('max_prepared_transactions')::integer
@@ -5973,7 +5973,7 @@ sub check_longest_query {
     my $nb_query      = 0;
     my %stats         = ();
     my %queries       = (
-        $PG_VERSION_90 => q{SELECT d.datname,
+        $PG_VERSION_MIN => q{SELECT d.datname,
                 COALESCE(elapsed, -1),
                 COALESCE(query, ''),
                 application_name
@@ -6154,7 +6154,7 @@ sub check_max_freeze_age {
     my @dbexclude     = @{ $args{'dbexclude'} };
     my $me            = 'POSTGRES_MAX_FREEZE_AGE';
     my %queries       = (
-        $PG_VERSION_90 => q{SELECT datname, age(datfrozenxid),
+        $PG_VERSION_MIN => q{SELECT datname, age(datfrozenxid),
                 current_setting('autovacuum_freeze_max_age')
             FROM pg_database
             WHERE datname <> 'template0'
@@ -6398,7 +6398,7 @@ sub check_minor_version {
 }
 
 
-=item B<oldest_2pc> (9.0+)
+=item B<oldest_2pc>
 
 Check the oldest I<two-phase commit transaction> (aka. prepared transaction) in
 the cluster.
@@ -6458,7 +6458,7 @@ sub check_oldest_2pc {
         -exitval => 127
     ) if @hosts != 1;
 
-    is_compat $hosts[0], 'postgres_oldest_2pc', $PG_VERSION_90 or exit 1;
+    is_compat $hosts[0], 'postgres_oldest_2pc', $PG_VERSION_MIN or exit 1;
 
 
     @rs = @{ query( $hosts[0], $query ) };
@@ -6517,7 +6517,7 @@ sub check_oldest_2pc {
 }
 
 
-=item B<oldest_xact> (9.0+)
+=item B<oldest_xact>
 
 Check I<idle> and long transactions.
 Idle transactions do not execute any queries, but did not commit. Alive
@@ -6577,7 +6577,7 @@ sub check_oldest_xact {
     my %stats          = ( );
     my $exclude_filter = "";
     my %queries        = (
-        $PG_VERSION_90 => q{SELECT d.datname,
+        $PG_VERSION_MIN => q{SELECT d.datname,
             CASE WHEN current_query = '<IDLE> in transaction' THEN coalesce(extract('epoch' FROM date_trunc('second', current_timestamp-state_change)), -1)
                                                   ELSE -1 END AS statechange,
             coalesce(extract('epoch' FROM date_trunc('second', current_timestamp-xact_start)), -1) AS xactstart
@@ -6670,7 +6670,7 @@ sub check_oldest_xact {
         -exitval => 127
     ) if @hosts != 1;
 
-    is_compat $hosts[0], 'oldest_xact', $PG_VERSION_90 or exit 1;
+    is_compat $hosts[0], 'oldest_xact', $PG_VERSION_MIN or exit 1;
 
     @rs = @{ query_ver( $hosts[0], %queries ) };
 
@@ -6759,7 +6759,7 @@ sub check_oldest_xact {
 }
 
 
-=item B<oldest_xmin> (9.0+)
+=item B<oldest_xmin>
 
 Check the xmin I<horizon> from distinct sources of xmin retention.
 
@@ -6810,7 +6810,7 @@ sub check_oldest_xmin {
     my %queries   = (
         # 8.4 is the first supported version as we rely on window functions to
         # get the oldest xmin.  Only 2PC has transaction information available
-        $PG_VERSION_90 => q{
+        $PG_VERSION_MIN => q{
         WITH ordered AS (
           SELECT '2pc' AS kind,
           d.datname,
@@ -6935,7 +6935,7 @@ sub check_oldest_xmin {
         -exitval => 127
     ) if @hosts != 1;
 
-    is_compat $hosts[0], 'oldest_xmin', $PG_VERSION_90 or exit 1;
+    is_compat $hosts[0], 'oldest_xmin', $PG_VERSION_MIN or exit 1;
 
     @rs = @{ query_ver( $hosts[0], %queries ) };
 
@@ -7732,7 +7732,7 @@ sub check_pga_version {
     return status_ok( $me, [ sprintf($msg, "", $^V) ] );
 }
 
-=item B<pgdata_permission> (9.0+)
+=item B<pgdata_permission>
 
 Check that the instance data directory rights are 700, and belongs
 to the system user currently running postgresql.
@@ -7778,7 +7778,7 @@ sub check_pgdata_permission {
         -exitval => 127
     ) if scalar @hosts != 1;
 
-    is_compat $hosts[0], 'pgdata_permission', $PG_VERSION_90 or exit 1;
+    is_compat $hosts[0], 'pgdata_permission', $PG_VERSION_MIN or exit 1;
 
     # Get the data directory
     $query = q{
@@ -8281,7 +8281,7 @@ SLOTS_LOOP: foreach my $row (@rs) {
     return status_ok( $me, [ "Replication slots OK" ], \@perfdata, \@longmsg );
 }
 
-=item B<settings> (9.0+)
+=item B<settings>
 
 Check if the current settings have changed since they were stored in the
 service file. Check also if there are errors in the configuration files.
@@ -8321,7 +8321,7 @@ sub check_settings {
     my %args  = %{ $_[0] };
     my $w_limit;
     my %queries = (
-        $PG_VERSION_90 => q{
+        $PG_VERSION_MIN => q{
         SELECT coalesce(r.rolname, '*'), coalesce(d.datname, '*'),
           unnest(s.setconfig) AS setting,
           false AS pending_restart,
@@ -8354,7 +8354,7 @@ sub check_settings {
     @hosts = @{ parse_hosts %args };
     $w_limit = get_time $args{'warning'}  if (defined $args{'warning'});
 
-    is_compat $hosts[0], 'settings', $PG_VERSION_90 or exit 1;
+    is_compat $hosts[0], 'settings', $PG_VERSION_MIN or exit 1;
 
     @rs = @{ query_ver( $hosts[0], %queries ) };
 
@@ -8442,7 +8442,7 @@ PARAM_LOOP: foreach my $row (@rs) {
     return status_ok( $me, [ "Setting OK" ] );
 }
 
-=item B<sequences_exhausted> (9.0+)
+=item B<sequences_exhausted>
 
 Check all sequences and raise an alarm if the column or sequences gets too
 close to the maximum value. The maximum value is calculated from the maxvalue
@@ -8498,7 +8498,7 @@ sub check_sequences_exhausted {
         -exitval => 127
     ) if @hosts != 1;
 
-    is_compat $hosts[0], 'sequences_exhausted', $PG_VERSION_90 or exit 1;
+    is_compat $hosts[0], 'sequences_exhausted', $PG_VERSION_MIN or exit 1;
 
     @all_db = @{ get_all_dbname( $hosts[0] ) };
 
@@ -8511,7 +8511,7 @@ sub check_sequences_exhausted {
         my %sequences;
 
         # We have two code paths: one for < 10.0 and one for >=10.S
-        if (check_compat $hosts[0], $PG_VERSION_90, $PG_VERSION_96)
+        if (check_compat $hosts[0], $PG_VERSION_MIN, $PG_VERSION_96)
         {
             # Search path is emptied so that ::regclass gives us full paths
             my $query  = q{
@@ -9081,7 +9081,7 @@ sub check_table_unlogged {
     return status_ok( $me, [ "No unlogged table" ], \@perfdata, \@longmsg );
 }
 
-=item B<relation_size> (9.0+)
+=item B<relation_size>
 
 Check relations' size.
 
@@ -9143,7 +9143,7 @@ sub check_relation_size {
         -exitval => 127
     ) if @hosts != 1;
 
-    is_compat $hosts[0], 'relation_size', $PG_VERSION_90 or exit 1;
+    is_compat $hosts[0], 'relation_size', $PG_VERSION_MIN or exit 1;
 
     pod2usage(
         -message => "FATAL: Warning and critical args only accept a raw number or a size.\n"
@@ -9288,7 +9288,7 @@ sub check_table_bloat {
 
         # Text types header is 4, page header is 24 and GUC block_size appears for 8.0
         # Exclude inherited stats
-        $PG_VERSION_90 =>  q{
+        $PG_VERSION_MIN =>  q{
           SELECT current_database(), nspname AS schemaname, tblname, bs*tblpages AS real_size,
             (tblpages-est_tblpages)*bs AS extra_size,
             CASE WHEN tblpages > 0 AND tblpages - est_tblpages > 0
@@ -9514,7 +9514,7 @@ sub check_table_bloat {
 }
 
 
-=item B<temp_files> (9.0+)
+=item B<temp_files>
 
 Check the number and size of temp files.
 
@@ -9569,7 +9569,7 @@ sub check_temp_files {
     my %queries   = (
         # WARNING: these queries might have a race condition between pg_ls_dir
         # and pg_stat_file!  temp folders are per database
-        $PG_VERSION_90 => q{
+        $PG_VERSION_MIN => q{
           SELECT 'live', agg.spcname, sum(CASE WHEN agg.tmpfile <> '' THEN 1 ELSE 0 END),
             sum(CASE
                 WHEN agg.tmpfile <> '' THEN (pg_stat_file(agg.dir||'/'||agg.tmpfile)).size
@@ -9702,9 +9702,9 @@ sub check_temp_files {
 
     @hosts = @{ parse_hosts %args };
 
-    is_compat $hosts[0], 'temp_files', $PG_VERSION_90 or exit 1;
+    is_compat $hosts[0], 'temp_files', $PG_VERSION_MIN or exit 1;
 
-    $obj = 'tablespace(s)' if $hosts[0]{'version_num'} >= $PG_VERSION_90;
+    $obj = 'tablespace(s)' if $hosts[0]{'version_num'} >= $PG_VERSION_MIN;
     $obj = 'tablespace(s)/database(s)' if $hosts[0]{'version_num'} >= $PG_VERSION_92;
 
     pod2usage(
@@ -9899,7 +9899,7 @@ sub check_hugepages {
     return status_ok( $me, [ "The huge pages are in the expected state: $hp_setting." ], \@perfdata );
 }
 
-=item B<uptime> (9.0+)
+=item B<uptime>
 
 Returns time since postmaster start ("uptime"),
 since configuration reload,
@@ -9947,7 +9947,7 @@ sub check_uptime {
     my $w_limit;
     my $me           = 'POSTGRES_UPTIME';
     my %queries      = (
-        $PG_VERSION_90 => q{
+        $PG_VERSION_MIN => q{
             SELECT extract('epoch' from (current_timestamp - pg_postmaster_start_time())) AS time_since_postmaster_start,
                    extract('epoch' from (current_timestamp - pg_conf_load_time())) AS time_since_conf_reload,
                    pg_postmaster_start_time(),
@@ -9972,7 +9972,7 @@ sub check_uptime {
         -exitval => 127
     ) if @hosts != 1;
 
-    is_compat $hosts[0], 'uptime', $PG_VERSION_90 or exit 1;
+    is_compat $hosts[0], 'uptime', $PG_VERSION_MIN or exit 1;
 
     $c_limit = get_time $args{'critical'} if (defined $args{'critical'}) ;
     $w_limit = get_time $args{'warning'}  if (defined $args{'warning'});
@@ -10041,7 +10041,7 @@ sub check_uptime {
     return status_ok( $me, \@msg, \@perfdata );
 }
 
-=item B<wal_files> (9.0+)
+=item B<wal_files>
 
 Check the number of WAL files.
 
@@ -10186,7 +10186,7 @@ sub check_wal_files {
         ORDER BY
           (pg_stat_file('pg_xlog/'||s,true)).modification DESC,
           f DESC},
-      $PG_VERSION_90 => q{
+      $PG_VERSION_MIN => q{
         SELECT s.f,
           greatest(
             1 + current_setting('checkpoint_segments')::float4 *
@@ -10229,7 +10229,7 @@ sub check_wal_files {
         -exitval => 127
     ) if @hosts != 1;
 
-    is_compat $hosts[0], 'wal_files', $PG_VERSION_90 or exit 1;
+    is_compat $hosts[0], 'wal_files', $PG_VERSION_MIN or exit 1;
 
     $wal_size = 4294967296 if $hosts[0]{'version_num'} >= $PG_VERSION_93;
 
@@ -10271,7 +10271,7 @@ sub check_wal_files {
 
     push @msg => "$num_seg WAL files";
 
-    if ( $hosts[0]{'version_num'} >= $PG_VERSION_90 and $rs[0][2] ne '') {
+    if ( $hosts[0]{'version_num'} >= $PG_VERSION_MIN and $rs[0][2] ne '') {
         my $now = time();
         my $curr_lsn = $rs[0][2];
         my @prev_lsn = @{ load( $hosts[0], 'last wal files LSN', $args{'status-file'} ) || [] };
