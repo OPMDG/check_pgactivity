@@ -10,7 +10,7 @@ use warnings;
 use lib 't/lib';
 use pgNode;
 use TestLib ();
-use Test::More tests => 6;
+use Test::More tests => 22;
 
 my $node = pgNode->get_new_node('prod');
 
@@ -33,6 +33,50 @@ $node->command_checks_all( [
     ],
     [ qr/^$/ ],
     'first basic check'
+);
+
+# unit test with a tablespace => Returns OK
+mkdir $node->basedir . '/tablespace1';
+$node->psql('postgres', 'CREATE TABLESPACE myts1 LOCATION \'' . $node->basedir . '/tablespace1\';');
+
+# second check
+$node->command_checks_all( [
+    './check_pgactivity', '--service'     => 'pgdata_permission',
+                          '--username'    => $ENV{'USER'} || 'postgres',
+                          '--format'      => 'human',
+    ],
+    0,
+    [
+      qr/^Service  *: POSTGRES_CHECK_PGDATA_PERMISSION$/m,
+      qr/^Returns  *: 0 \(OK\)$/m,
+      qr/^Message  *: Permission is ok on .*$/m,
+      qr/^Message  *: Owner of .* is \(.*\)$/m,
+      qr/^Message  *: Permission is ok on .*$/m,
+      qr/^Message  *: Owner of .* is \(.*\)$/m,
+    ],
+    [ qr/^$/ ],
+    'basic check with one "ok" tablespace'
+);
+
+chmod 0777, $node->basedir . '/tablespace1';
+
+# third check
+$node->command_checks_all( [
+    './check_pgactivity', '--service'     => 'pgdata_permission',
+                          '--username'    => $ENV{'USER'} || 'postgres',
+                          '--format'      => 'human',
+    ],
+    2,
+    [
+      qr/^Service  *: POSTGRES_CHECK_PGDATA_PERMISSION$/m,
+      qr/^Returns  *: 2 \(CRITICAL\)$/m,
+      qr/^Message  *: Permission is ok on .*$/m,
+      qr/^Message  *: Owner of .* is \(.*\)$/m,
+      qr/^Message  *: Permission is 0777 on .* \(tablespace myts1\)$/m,
+      qr/^Message  *: Owner of .* is \(.*\)$/m,
+    ],
+    [ qr/^$/ ],
+    'basic check with one "bad" tablespace'
 );
 
 ### End of tests ###
