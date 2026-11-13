@@ -8176,6 +8176,7 @@ sub check_pgdata_permission {
     my $criticity = 0; # 0=ok, 1=warn, 2=critical
     my $pg_uid    = $args{'uid'};
     my @rs;
+    my @rs2;
     my @msg;
     my @longmsg;
     my @stat;
@@ -8185,6 +8186,7 @@ sub check_pgdata_permission {
     my $query;
     my $dir_uid;
     my $stats_age;
+    my $data_tablespace;
     my $data_directory;
 
     @hosts = @{ parse_hosts %args };
@@ -8198,91 +8200,106 @@ sub check_pgdata_permission {
 
     # Get the data directory
     $query = q{
-        SELECT setting FROM pg_settings WHERE name='data_directory'
+        SELECT ''::text, setting FROM pg_settings WHERE name='data_directory'
+        UNION
+        SELECT spcname, pg_tablespace_location(oid) FROM pg_tablespace
     };
 
     @rs = @{ query( $hosts[0], $query ) };
 
-    $data_directory = $rs[0][0];
+    ALLDB: foreach my $row ( @rs ) {
+        $data_tablespace = $row->[0];
+        $data_directory = $row->[1];
 
-    @stat = stat( $data_directory );
+        next if $data_directory eq '';
 
-    $mode    = $stat[2];
-    $dir_uid = $stat[4];
-    $perm = sprintf( "%04o", $mode & 07777 ) unless (not defined ($mode));
+        @stat = stat( $data_directory );
 
-    if ( not defined ($dir_uid) ) {
-        if ( $hosts[0]{'version_num'} >= $PG_VERSION_110 ) {
-            # Get the data mode another way
-            $query = q{
-                SELECT setting FROM pg_settings WHERE name='data_directory_mode'
-            };
+        $mode    = $stat[2];
+        $dir_uid = $stat[4];
+        $perm = sprintf( "%04o", $mode & 07777 ) unless (not defined ($mode));
 
-            @rs = @{ query( $hosts[0], $query ) };
+        if ( not defined ($dir_uid) ) {
+            if ( $hosts[0]{'version_num'} >= $PG_VERSION_110 ) {
+                # Get the data mode another way
+                $query = q{
+                    SELECT setting FROM pg_settings WHERE name='data_directory_mode'
+                };
 
-            $perm = $rs[0][0];
-        } else {
-            return status_unknown( $me,
-                [ "Postgresql returned this PGDATA: $data_directory, but I cannot access it: $!" ]
-            );
+                @rs2 = @{ query( $hosts[0], $query ) };
+
+                $perm = $rs2[0][0];
+            } else {
+                return status_unknown( $me,
+                    [ "Postgresql returned this PGDATA: $data_directory, but I cannot access it: $!" ]
+                );
+            }
         }
-    }
 
-    # starting with v11, PGDATA can be 0750.
-    if ($perm eq '0700'
-        or (check_compat($hosts[0], $PG_VERSION_110) and $perm eq '0750')
-    ) {
-        push @msg, ( "Permission is ok on $data_directory" );
-    }
-    else {
-        $criticity = 2;
-        push @msg, ( "Permission is $perm on $data_directory" );
-    }
+        # starting with v11, PGDATA can be 0750.
+        if ($perm eq '0700'
+            or (check_compat($hosts[0], $PG_VERSION_110) and $perm eq '0750')
+        ) {
+            if ($data_tablespace eq '') {
+                push @msg, ( "Permission is ok on $data_directory" );
+            } else {
+                push @msg, ( "Permission is ok on $data_directory (tablespace $data_tablespace)" );
+            }
+        }
+        else {
+            $criticity = 2;
+            if ($data_tablespace eq '') {
+                push @msg, ( "Permission is $perm on $data_directory" );
+            } else {
+                push @msg, ( "Permission is $perm on $data_directory (tablespace $data_tablespace)" );
+            }
+        }
 
-    # Now look at who this directory belongs to, and if it matches the user running
-    # the instance.
-    if ( defined $args{'uid'} ) {
-         $pg_uid = getpwnam( $args{'uid'} );
-    }
-    # Simplest way is to get the current backend pid and see who it belongs to
-    elsif ( $^O =~ /linux/i and $hosts[0]{'version_num'} >= $PG_VERSION_93 ) {
-        my $pg_line_uid;
-        my @rs_tmp;
+        # Now look at who this directory belongs to, and if it matches the user running
+        # the instance.
+        if ( defined $args{'uid'} ) {
+             $pg_uid = getpwnam( $args{'uid'} );
+        }
+        # Simplest way is to get the current backend pid and see who it belongs to
+        elsif ( $^O =~ /linux/i and $hosts[0]{'version_num'} >= $PG_VERSION_93 ) {
+            my $pg_line_uid;
+            my @rs_tmp;
 
-        # first query is a ugly hack to bypass query() control about number of
-        # columns expected.
-        $query = qq{ select ' ';
-            select pg_backend_pid() as pid
-            \\gset
-            \\setenv PID :pid
-            \\! cat /proc/\$PID/status
-        };
-        @rs = @{ query ( $hosts[0], $query ) };
+            # first query is a ugly hack to bypass query() control about number of
+            # columns expected.
+            $query = qq{ select ' ';
+                select pg_backend_pid() as pid
+                \\gset
+                \\setenv PID :pid
+                \\! cat /proc/\$PID/status
+            };
+            @rs2 = @{ query ( $hosts[0], $query ) };
 
-        # takes part of the ugly hack to bypass query() control.
-        shift @rs;
+            # takes part of the ugly hack to bypass query() control.
+            shift @rs2;
 
-        # As the usual separators are not there, we only get a big record
-        # separated with \n
-        # Find the record beginning with Uid and get the third column
-        # (containing EUID)
-        @rs_tmp      = split( /\n/, $rs[0][0] );
-        $pg_line_uid = ( grep (/^Uid/, @rs_tmp) )[0];
-        $pg_uid      = ( split("\t", $pg_line_uid) )[2];
-    }
+            # As the usual separators are not there, we only get a big record
+            # separated with \n
+            # Find the record beginning with Uid and get the third column
+            # (containing EUID)
+            @rs_tmp      = split( /\n/, $rs2[0][0] );
+            $pg_line_uid = ( grep (/^Uid/, @rs_tmp) )[0];
+            $pg_uid      = ( split("\t", $pg_line_uid) )[2];
+        }
 
-    if ( not defined $pg_uid ) {
-        push @longmsg, ( "Cannot determine UID of user running postgres. Try to use '--uid'?" );
-    }
-    elsif ( not defined $dir_uid ) {
-        push @longmsg, ( "Cannot determine UID of data directory owner." );
-    }
-    elsif ( $pg_uid ne $dir_uid ) {
-        $criticity = 2;
-        push @msg, ( "User running Postgres ($pg_uid) doesn't own $data_directory ($dir_uid)" );
-    }
-    else {
-        push @msg, ( "Owner of $data_directory is ($pg_uid)" );
+        if ( not defined $pg_uid ) {
+            push @longmsg, ( "Cannot determine UID of user running postgres. Try to use '--uid'?" );
+        }
+        elsif ( not defined $dir_uid ) {
+            push @longmsg, ( "Cannot determine UID of data directory owner." );
+        }
+        elsif ( $pg_uid ne $dir_uid ) {
+            $criticity = 2;
+            push @msg, ( "User running Postgres ($pg_uid) doesn't own $data_directory ($dir_uid)" );
+        }
+        else {
+            push @msg, ( "Owner of $data_directory is ($pg_uid)" );
+        }
     }
 
     return status_warning( $me, \@msg, undef, \@longmsg )  if $criticity == 1;
