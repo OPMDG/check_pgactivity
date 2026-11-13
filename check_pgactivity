@@ -3995,16 +3995,14 @@ sub check_configuration_difference {
     # always ignored
     my @ignored_all = ('effective_wal_level');
     my $me          = 'POSTGRES_CONFIGURATION_DIFFERENCE';
-    my %queries = (
-        $PG_VERSION_MIN => q{
+    my $query = q{
         SELECT name,
                (CASE WHEN name LIKE 'tcp%' AND inet_client_addr() IS NULL THEN 'N/A'
                 ELSE setting END
                ) AS setting
         FROM pg_settings
         ORDER BY 1
-        }
-        );
+        };
 
     @hosts = @{ parse_hosts %args };
 
@@ -4025,7 +4023,7 @@ sub check_configuration_difference {
         $num_clusters ++;
         dprint ("Cluster $num_clusters : $host->{'dbservice'} \n" );
         # Fetch PG configuration from each host
-        $host->{'rs'} = \@{ query_ver( $host, %queries ) };
+        $host->{'rs'} = \@{ query( $host, $query ) };
         if ( $num_clusters == 1 ) {
             # a hash table is more useful as the number of lines may in pg_settings may be different
             %refserver = map { $_->[0] => $_->[1] } @{ $host->{'rs'} };
@@ -5007,9 +5005,7 @@ sub check_is_hot_standby {
     my @hosts;
     my %args          = %{ $_[0] };
     my $me            = 'POSTGRES_IS_HOT_STANDBY';
-    my %queries       = (
-        $PG_VERSION_MIN => q{SELECT pg_is_in_recovery()}
-    );
+    my $query         = q{SELECT pg_is_in_recovery()};
 
     @hosts = @{ parse_hosts %args };
 
@@ -5019,7 +5015,7 @@ sub check_is_hot_standby {
     ) if @hosts != 1;
 
     is_compat $hosts[0], 'is_hot_standby', $PG_VERSION_MIN or exit 1;
-    @rs = @{ query_ver( $hosts[0], %queries )->[0] };
+    @rs = @{ query( $hosts[0], $query )->[0] };
 
     return status_critical( $me, [ "Cluster is not hot standby" ] ) if $rs[0] eq "f";
     return status_ok( $me, [ "Cluster is hot standby" ] );
@@ -5046,9 +5042,7 @@ sub check_is_master {
     my $me            = 'POSTGRES_IS_MASTER';
     # For PostgreSQL 9.0+, the "pg_is_in_recovery()" function is used, for
     # previous versions the ability to connect is enough.
-    my %queries       = (
-        $PG_VERSION_MIN => q{ SELECT pg_is_in_recovery() }
-    );
+    my $query       = q{ SELECT pg_is_in_recovery() };
 
     @hosts = @{ parse_hosts %args };
 
@@ -5057,7 +5051,7 @@ sub check_is_master {
         -exitval => 127
     ) if @hosts != 1;
 
-    @rs = @{ query_ver( $hosts[0], %queries )->[0] };
+    @rs = @{ query( $hosts[0], $query )->[0] };
 
     return status_critical( $me, [ "Cluster is not master" ] ) if $rs[0] eq "t";
     return status_ok( $me, [ "Cluster is master" ] );
@@ -6153,13 +6147,11 @@ sub check_max_freeze_age {
     my @dbinclude     = @{ $args{'dbinclude'} };
     my @dbexclude     = @{ $args{'dbexclude'} };
     my $me            = 'POSTGRES_MAX_FREEZE_AGE';
-    my %queries       = (
-        $PG_VERSION_MIN => q{SELECT datname, age(datfrozenxid),
+    my $query         = q{SELECT datname, age(datfrozenxid),
                 current_setting('autovacuum_freeze_max_age')
             FROM pg_database
             WHERE datname <> 'template0'
-        }
-    );
+        };
 
     @hosts = @{ parse_hosts %args };
 
@@ -6183,7 +6175,7 @@ sub check_max_freeze_age {
         set_pgversion($hosts[0]);
     }
 
-    @rs = @{ query_ver( $hosts[0], %queries ) };
+    @rs = @{ query( $hosts[0], $query ) };
 
     if ( scalar @rs and defined $args{'critical'} ) {
         $c_limit = int($1 * $rs[0][2]/100) if $args{'critical'} =~ /^([0-9.]+)%$/;
