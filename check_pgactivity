@@ -21,7 +21,7 @@ offers many options to measure and monitor useful performance metrics.
 
 =head1 COMPATIBILITY
 
-Each service is available from a different PostgreSQL version, from 7.4, as
+Each service is available from a different PostgreSQL version, from 9.0, as
 documented below.
 
 Ideally, the psql client should be 8.4 at least, but it can be used with an
@@ -72,13 +72,7 @@ $| = 1;
 $VERSION = '2.14dev';
 $PROGRAM = 'check_pgactivity';
 
-my $PG_VERSION_MIN =  70400;
-my $PG_VERSION_74  =  70400;
-my $PG_VERSION_80  =  80000;
-my $PG_VERSION_81  =  80100;
-my $PG_VERSION_82  =  80200;
-my $PG_VERSION_83  =  80300;
-my $PG_VERSION_84  =  80400;
+my $PG_VERSION_MIN =  90000;
 my $PG_VERSION_90  =  90000;
 my $PG_VERSION_91  =  90100;
 my $PG_VERSION_92  =  90200;
@@ -1762,11 +1756,6 @@ sub check_archive_folder {
         '.7z'  => "7z x -so"
     );
     my %wal_versions   = (
-        '80' => 53340,
-        '81' => 53341,
-        '82' => 53342,
-        '83' => 53346,
-        '84' => 53347,
         '90' => 53348,
         '91' => 53350,
         '92' => 53361,
@@ -2017,9 +2006,9 @@ sub check_archiver {
         -exitval => 127
     ) if @hosts != 1;
 
-    is_compat $hosts[0], 'archiver', $PG_VERSION_81 or exit 1;
+    is_compat $hosts[0], 'archiver', $PG_VERSION_90 or exit 1;
 
-    if (check_compat $hosts[0], $PG_VERSION_81, $PG_VERSION_96) {
+    if (check_compat $hosts[0], $PG_VERSION_90, $PG_VERSION_96) {
         # cf. pgarch_readyXlog in src/backend/postmaster/pgarch.c about how the
         # archiver process pick the next WAL to archive.
         # We try to reproduce the same algo here
@@ -2256,7 +2245,7 @@ sub check_archiver {
 }
 
 
-=item B<autovacuum> (8.1+)
+=item B<autovacuum> (9.0+)
 
 Check the autovacuum activity on the cluster.
 
@@ -2290,17 +2279,8 @@ sub check_autovacuum {
     );
 
     my %queries      = (
-        # field current_query, not autovacuum_max_workers
-        $PG_VERSION_81 => q{
-            SELECT current_query,
-                extract(EPOCH FROM now()-query_start)::bigint,
-                'NaN'
-            FROM pg_stat_activity
-            WHERE current_query LIKE 'autovacuum: %'
-            ORDER BY query_start ASC
-        },
         # field current_query, autovacuum_max_workers
-        $PG_VERSION_83 => q{
+        $PG_VERSION_90 => q{
             SELECT a.current_query,
                 extract(EPOCH FROM now()-a.query_start)::bigint,
                 s.setting
@@ -2334,9 +2314,9 @@ sub check_autovacuum {
         -exitval => 127
     ) if @hosts != 1;
 
-    is_compat $hosts[0], 'autovacuum', $PG_VERSION_81 or exit 1;
+    is_compat $hosts[0], 'autovacuum', $PG_VERSION_90 or exit 1;
 
-    if (check_compat $hosts[0], $PG_VERSION_81, $PG_VERSION_96) {
+    if (check_compat $hosts[0], $PG_VERSION_90, $PG_VERSION_96) {
         delete $activity{BRIN_SUMMARIZE};
     }
 
@@ -2370,8 +2350,7 @@ sub check_autovacuum {
 
     @perfdata = map { [ $_, $activity{$_}  ] } keys %activity;
     push @perfdata, [ 'oldest_autovacuum', $oldest, 's' ];
-    push @perfdata, [ 'max_workers', $max_workers ]
-        if $hosts[0]->{'version_num'} >= $PG_VERSION_83;
+    push @perfdata, [ 'max_workers', $max_workers ];
 
     push @msg, "Number of autovacuum: $numautovac";
     push @msg, "Oldest autovacuum: " . to_interval($oldest) if $oldest ne "NaN";
@@ -2410,16 +2389,9 @@ sub check_backends {
     my $me           = 'POSTGRES_BACKENDS';
     my $num_backends = 0;
     my %queries      = (
-        $PG_VERSION_MIN => q{
-            SELECT s.datname, s.numbackends,
-                current_setting('max_connections')::int
-                    - current_setting('superuser_reserved_connections')::int
-            FROM pg_catalog.pg_stat_database AS s
-                JOIN pg_catalog.pg_database d ON d.oid = s.datid
-            WHERE d.datallowconn },
         # Remove autovacuum connections (autovac introduced in 8.1, but exposed
         # in pg_stat_activity since 8.2)
-        $PG_VERSION_82 => q{
+        $PG_VERSION_MIN => q{
             SELECT d.datname, count(*),
                 current_setting('max_connections')::int
                     - current_setting('superuser_reserved_connections')::int
@@ -2533,7 +2505,7 @@ sub check_backends {
 }
 
 
-=item B<backends_status> (8.2+)
+=item B<backends_status> (9.0+)
 
 Check the status of all backends. Depending on your PostgreSQL version,
 statuses are: C<idle>, C<idle in transaction>, C<idle in transaction (aborted)>
@@ -2555,7 +2527,7 @@ are raw numbers or time units and empty lists are forbidden. Here is an example:
     -w 'waiting=5,idle_xact=10' -c 'waiting=20,idle_xact=30,active=1d'
 
 Perfdata contains the number of backends for each status and the oldest one for
-each of them, for 8.2+.
+each of them, for 9.0+.
 
 Note that the number of backends reported in Nagios message B<includes>
 excluded backends.
@@ -2596,58 +2568,6 @@ sub check_backends_status {
         'active'       => 'active'
     );
     my %queries      = (
-        # Doesn't support "idle in transaction (aborted)" and xact age
-        $PG_VERSION_82 => q{
-            SELECT CASE
-                    WHEN s.current_query = '<IDLE>'
-                        THEN 'idle'
-                    WHEN s.current_query = '<IDLE> in transaction'
-                        THEN 'idle in transaction'
-                    WHEN s.current_query = '<FASTPATH> function call'
-                        THEN 'fastpath function call'
-                    WHEN s.current_query = '<command string not enabled>'
-                        THEN 'disabled'
-                    WHEN s.current_query = '<backend information not available>'
-                        THEN 'undefined'
-                    WHEN s.current_query = '<insufficient privilege>'
-                        THEN 'insufficient privilege'
-                    WHEN s.waiting = 't'
-                        THEN 'waiting for lock'
-                    ELSE 'active'
-                END AS status,
-                NULL, current_setting('max_connections'), s.current_query
-            FROM pg_stat_activity AS s
-                JOIN pg_database d ON d.oid=s.datid
-            WHERE d.datallowconn
-        },
-        # Doesn't support "idle in transaction (aborted)"
-        $PG_VERSION_83 => q{
-            SELECT CASE
-                    WHEN s.current_query = '<IDLE>'
-                        THEN 'idle'
-                    WHEN s.current_query = '<IDLE> in transaction'
-                        THEN 'idle in transaction'
-                    WHEN s.current_query = '<FASTPATH> function call'
-                        THEN 'fastpath function call'
-                    WHEN s.current_query = '<command string not enabled>'
-                        THEN 'disabled'
-                    WHEN s.current_query = '<backend information not available>'
-                        THEN 'undefined'
-                    WHEN s.current_query = '<insufficient privilege>'
-                        THEN 'insufficient privilege'
-                    WHEN s.waiting = 't'
-                        THEN 'waiting for lock'
-                    ELSE 'active'
-                END AS status,
-                extract('epoch' FROM
-                    date_trunc('milliseconds', current_timestamp-s.xact_start)
-                ),
-                current_setting('max_connections'), s.current_query
-            FROM pg_stat_activity AS s
-                JOIN pg_database d ON d.oid=s.datid
-            WHERE d.datallowconn
-        },
-        # Supports everything
         $PG_VERSION_90 => q{
             SELECT CASE
                     WHEN s.current_query = '<IDLE>'
@@ -2734,7 +2654,7 @@ sub check_backends_status {
         -exitval => 127
     ) if @hosts != 1;
 
-    is_compat $hosts[0], 'backends_status', $PG_VERSION_82 or exit 1;
+    is_compat $hosts[0], 'backends_status', $PG_VERSION_90 or exit 1;
 
 
     if ( defined $args{'warning'} ) {
@@ -2762,9 +2682,6 @@ sub check_backends_status {
 
     @rs = @{ query_ver( $hosts[0], %queries ) };
 
-    delete $status{'idle in transaction (aborted)'}
-        if $hosts[0]->{'version_num'} < $PG_VERSION_90;
-
     $max_connections = $rs[0][2] if scalar @rs;
 
     REC_LOOP: foreach my $r (@rs) {
@@ -2791,7 +2708,7 @@ sub check_backends_status {
                and $warn{$s} =~ /\d+$/ and $crit{$s} =~ /\d+$/ );
         push @perfdata => [ @perf ];
 
-        if ( $hosts[0]->{'version_num'} >= $PG_VERSION_83
+        if ( $hosts[0]->{'version_num'} >= $PG_VERSION_90
              and $s !~ '^(?:disabled|undefined|insufficient)' ) {
           my @perf = ("oldest $s", $status{$s}[1], 's' );
           push @perf, ( $warn{$s}, $crit{$s}, 0, $max_connections )
@@ -3030,7 +2947,7 @@ sub check_hba_settings {
     return status_ok( $me, [ "No issue on hba files" ], \@perfdata );
 }
 
-=item B<backup_label_age> (8.1+)
+=item B<backup_label_age> (9.0+)
 
 Check the presence of backup label file (PG15 or later),
 or raise an alarm if it's too old (PG14 or former).
@@ -3064,7 +2981,7 @@ sub check_backup_label_age {
     my %args    = %{ $_[0] };
     my $me      = 'POSTGRES_BACKUP_LABEL_AGE';
     my %queries         = (
-        $PG_VERSION_81 => q{SELECT max(s.r) AS value FROM (
+        $PG_VERSION_90 => q{SELECT max(s.r) AS value FROM (
             SELECT CAST(extract(epoch FROM current_timestamp - (pg_stat_file(file)).modification) AS integer) AS r
             FROM pg_ls_dir('.') AS ls(file)
             WHERE file='backup_label' UNION SELECT 0
@@ -3087,7 +3004,7 @@ sub check_backup_label_age {
         -exitval => 127
     ) if @hosts != 1;
 
-    is_compat $hosts[0], 'backup_label_age', $PG_VERSION_81 or exit 1;
+    is_compat $hosts[0], 'backup_label_age', $PG_VERSION_90 or exit 1;
 
     if ( $hosts[0]->{'version_num'} < $PG_VERSION_150 ) {
     # warning and critical are mandatory on ≤ PG14
@@ -3127,7 +3044,7 @@ sub check_backup_label_age {
 
 
 
-=item B<bgwriter> (8.3+)
+=item B<bgwriter> (9.0+)
 
 Check the percentage of pages written by backends since last check.
 
@@ -3167,7 +3084,7 @@ sub check_bgwriter {
     my %args    = %{ $_[0] };
     my $me      = 'POSTGRES_BGWRITER';
     my %queries = (
-        $PG_VERSION_83 => q{SELECT checkpoints_timed, checkpoints_req,
+        $PG_VERSION_90 => q{SELECT checkpoints_timed, checkpoints_req,
               buffers_checkpoint * current_setting('block_size')::numeric,
               buffers_clean * current_setting('block_size')::numeric,
               maxwritten_clean,
@@ -3252,8 +3169,7 @@ sub check_bgwriter {
         -exitval => 127
     ) if @hosts != 1;
 
-    is_compat $hosts[0], 'bgwriter', $PG_VERSION_83 or exit 1;
-
+    is_compat $hosts[0], 'bgwriter', $PG_VERSION_90 or exit 1;
 
     %bgw = %{ load( $hosts[0], 'bgwriter', $args{'status-file'} ) || {} };
 
@@ -3396,216 +3312,8 @@ sub check_btree_bloat {
     my @dbexclude  = @{ $args{'dbexclude'} };
     my $me      = 'POSTGRES_BTREE_BLOAT';
     my %queries = (
-      $PG_VERSION_74 =>  q{
-      SELECT current_database(), nspname AS schemaname, tblname, idxname, bs*(relpages)::bigint AS real_size,
-        bs*(relpages-est_pages)::bigint AS bloat_size,
-        100 * (relpages-est_pages)::float / relpages AS bloat_ratio
-      FROM (
-        SELECT coalesce(
-            1+ceil(reltuples/floor((bs-pageopqdata-pagehdr)/(4+nulldatahdrwidth)::float)), 0
-          ) AS est_pages,
-          bs, nspname, tblname, idxname, relpages, is_na
-        FROM (
-          SELECT maxalign, bs, nspname, tblname, idxname, reltuples, relpages, relam,
-            ( index_tuple_hdr_bm +
-                maxalign - CASE
-                WHEN index_tuple_hdr_bm%maxalign = 0 THEN maxalign
-                ELSE index_tuple_hdr_bm%maxalign
-                END
-            + nulldatawidth + maxalign - CASE
-                WHEN nulldatawidth = 0 THEN 0
-                WHEN nulldatawidth::numeric%maxalign = 0 THEN maxalign
-                ELSE nulldatawidth::numeric%maxalign
-                END
-            )::numeric AS nulldatahdrwidth, pagehdr, pageopqdata, is_na
-          FROM (
-            SELECT n.nspname, sub.tblname, sub.idxname, sub.reltuples, sub.relpages, sub.relam,
-              8192::numeric AS bs,
-              CASE
-                WHEN version() ~ 'mingw32' OR version() ~ '64-bit|x86_64|ppc64|ia64|amd64' THEN 8
-                ELSE 4
-              END AS maxalign,
-              20 AS pagehdr,
-              16 AS pageopqdata,
-              CASE WHEN max(coalesce(sub.stanullfrac,0)) = 0
-                THEN 8
-                ELSE 8 + (( 32 + 8 - 1 ) / 8)
-              END AS index_tuple_hdr_bm,
-              sum( (1-coalesce(sub.stanullfrac, 0)) * coalesce(sub.stawidth, 1024)) AS nulldatawidth,
-              max( CASE WHEN a.atttypid = 'pg_catalog.name'::regtype THEN 1 ELSE 0 END ) > 0
-                OR count(1) <> sub.indnatts AS is_na
-            FROM (
-              SELECT ct.relnamespace, ct.relname AS tblname,
-                ci.relname AS idxname, ci.reltuples, ci.relpages, ci.relam,
-                s.stawidth, s.stanullfrac, s.starelid, s.staattnum, i.indnatts
-              FROM pg_catalog.pg_index AS i
-                JOIN pg_catalog.pg_class AS ci ON ci.oid = i.indexrelid
-                JOIN pg_catalog.pg_class AS ct ON ct.oid = i.indrelid
-                JOIN pg_catalog.pg_statistic AS s ON s.starelid = i.indrelid
-                  AND s.staattnum = ANY (
-                    string_to_array(pg_catalog.textin(pg_catalog.int2vectorout(i.indkey)), ' ')::smallint[]
-                  )
-              WHERE ci.relpages > 0
-            ) AS sub
-              JOIN pg_catalog.pg_attribute AS a ON sub.starelid = a.attrelid
-                  AND sub.staattnum = a.attnum
-              JOIN pg_catalog.pg_type AS t ON a.atttypid = t.oid
-              JOIN pg_catalog.pg_namespace AS n ON sub.relnamespace = n.oid
-            WHERE a.attnum > 0
-            GROUP BY 1, 2, 3, 4, 5, 6, 7, 8, 9, sub.indnatts
-          ) AS sub2
-        ) AS sub3
-          JOIN pg_am am ON sub3.relam = am.oid
-        WHERE am.amname = 'btree'
-      ) AS sub4
-      WHERE NOT is_na
-      ORDER BY 2,3,4 },
-      # Page header is 24 and block_size GUC, support index on expression
-      $PG_VERSION_80 =>  q{
-      SELECT current_database(), nspname AS schemaname, tblname, idxname, bs*(relpages)::bigint AS real_size,
-        bs*(relpages-est_pages)::bigint AS bloat_size,
-        100 * (relpages-est_pages)::float / relpages AS bloat_ratio
-      FROM (
-        SELECT coalesce(1 +
-               ceil(reltuples/floor((bs-pageopqdata-pagehdr)/(4+nulldatahdrwidth)::float)), 0
-            ) AS est_pages,
-            bs, nspname, tblname, idxname, relpages, is_na
-        FROM (
-          SELECT maxalign, bs, nspname, tblname, idxname, reltuples, relpages, relam,
-            ( index_tuple_hdr_bm +
-                maxalign - CASE
-                WHEN index_tuple_hdr_bm%maxalign = 0 THEN maxalign
-                ELSE index_tuple_hdr_bm%maxalign
-                END
-            + nulldatawidth + maxalign - CASE
-                WHEN nulldatawidth = 0 THEN 0
-                WHEN nulldatawidth::numeric%maxalign = 0 THEN maxalign
-                ELSE nulldatawidth::numeric%maxalign
-                END
-            )::numeric AS nulldatahdrwidth, pagehdr, pageopqdata, is_na
-          FROM (
-            SELECT n.nspname, sub.tblname, sub.idxname, sub.reltuples, sub.relpages, sub.relam,
-              current_setting('block_size')::numeric AS bs,
-              CASE
-                WHEN version() ~ 'mingw32' OR version() ~ '64-bit|x86_64|ppc64|ia64|amd64' THEN 8
-                ELSE 4
-              END AS maxalign,
-              24 AS pagehdr,
-              16 AS pageopqdata,
-              CASE WHEN max(coalesce(sub.stanullfrac,0)) = 0
-                THEN 8
-                ELSE 8 + (( 32 + 8 - 1 ) / 8)
-              END AS index_tuple_hdr_bm,
-              sum( (1-coalesce(sub.stanullfrac, 0)) * coalesce(sub.stawidth, 1024)) AS nulldatawidth,
-              max( CASE WHEN a.atttypid = 'pg_catalog.name'::regtype THEN 1 ELSE 0 END ) > 0 AS is_na
-            FROM (
-              SELECT ct.relnamespace, ct.relname AS tblname,
-                ci.relname AS idxname, ci.reltuples, ci.relpages, ci.relam,
-                s.stawidth, s.stanullfrac, s.starelid, s.staattnum
-              FROM pg_catalog.pg_index AS i
-                JOIN pg_catalog.pg_class AS ci ON ci.oid = i.indexrelid
-                JOIN pg_catalog.pg_class AS ct ON i.indrelid = ct.oid
-                JOIN pg_catalog.pg_statistic AS s ON i.indexrelid = s.starelid
-              WHERE ci.relpages > 0
-              UNION
-              SELECT ct.relnamespace, ct.relname AS tblname,
-                ci.relname AS idxname, ci.reltuples, ci.relpages, ci.relam,
-                s.stawidth, s.stanullfrac, s.starelid, s.staattnum
-              FROM pg_catalog.pg_index AS i
-                JOIN pg_catalog.pg_class AS ci ON ci.oid = i.indexrelid
-                JOIN pg_catalog.pg_class AS ct ON ct.oid = i.indrelid
-                JOIN pg_catalog.pg_statistic AS s ON s.starelid = i.indrelid
-                  AND s.staattnum = ANY (
-                    string_to_array(pg_catalog.textin(pg_catalog.int2vectorout(i.indkey)), ' ')::smallint[]
-                  )
-              WHERE ci.relpages > 0
-            ) AS sub
-              JOIN pg_catalog.pg_attribute AS a ON sub.starelid = a.attrelid
-                  AND sub.staattnum = a.attnum
-              JOIN pg_catalog.pg_type AS t ON a.atttypid = t.oid
-              JOIN pg_catalog.pg_namespace AS n ON sub.relnamespace = n.oid
-            WHERE a.attnum > 0
-            GROUP BY 1, 2, 3, 4, 5, 6, 7, 8, 9
-          ) AS sub2
-        ) AS sub3
-          JOIN pg_am am ON sub3.relam = am.oid
-        WHERE am.amname = 'btree'
-      ) AS sub4
-      WHERE NOT is_na
-      ORDER BY 2,3,4 },
-      # Use ANY (i.indkey) w/o function call to cast from vector to array
-      $PG_VERSION_81 =>  q{
-      SELECT current_database(), nspname AS schemaname, tblname, idxname, bs*(relpages)::bigint AS real_size,
-        bs*(relpages-est_pages)::bigint AS bloat_size,
-        100 * (relpages-est_pages)::float / relpages AS bloat_ratio
-      FROM (
-        SELECT coalesce(1 +
-               ceil(reltuples/floor((bs-pageopqdata-pagehdr)/(4+nulldatahdrwidth)::float)), 0
-            ) AS est_pages,
-            bs, nspname, tblname, idxname, relpages, is_na
-        FROM (
-          SELECT maxalign, bs, nspname, tblname, idxname, reltuples, relpages, relam,
-            ( index_tuple_hdr_bm +
-                maxalign - CASE
-                WHEN index_tuple_hdr_bm%maxalign = 0 THEN maxalign
-                ELSE index_tuple_hdr_bm%maxalign
-                END
-            + nulldatawidth + maxalign - CASE
-                WHEN nulldatawidth = 0 THEN 0
-                WHEN nulldatawidth::numeric%maxalign = 0 THEN maxalign
-                ELSE nulldatawidth::numeric%maxalign
-                END
-            )::numeric AS nulldatahdrwidth, pagehdr, pageopqdata, is_na
-          FROM (
-            SELECT n.nspname, sub.tblname, sub.idxname, sub.reltuples, sub.relpages, sub.relam,
-              current_setting('block_size')::numeric AS bs,
-              CASE
-                WHEN version() ~ 'mingw32' OR version() ~ '64-bit|x86_64|ppc64|ia64|amd64' THEN 8
-                ELSE 4
-              END AS maxalign,
-              24 AS pagehdr,
-              16 AS pageopqdata,
-              CASE WHEN max(coalesce(sub.stanullfrac,0)) = 0
-                THEN 8
-                ELSE 8 + (( 32 + 8 - 1 ) / 8)
-              END AS index_tuple_hdr_bm,
-              sum( (1-coalesce(sub.stanullfrac, 0)) * coalesce(sub.stawidth, 1024)) AS nulldatawidth,
-              max( CASE WHEN a.atttypid = 'pg_catalog.name'::regtype THEN 1 ELSE 0 END ) > 0 AS is_na
-            FROM (
-              SELECT ct.relnamespace, ct.relname AS tblname,
-                ci.relname AS idxname, ci.reltuples, ci.relpages, ci.relam,
-                s.stawidth, s.stanullfrac, s.starelid, s.staattnum
-              FROM pg_catalog.pg_index AS i
-                JOIN pg_catalog.pg_class AS ci ON ci.oid = i.indexrelid
-                JOIN pg_catalog.pg_class AS ct ON i.indrelid = ct.oid
-                JOIN pg_catalog.pg_statistic AS s ON i.indexrelid = s.starelid
-              WHERE ci.relpages > 0
-              UNION
-              SELECT ct.relnamespace, ct.relname AS tblname,
-                ci.relname AS idxname, ci.reltuples, ci.relpages, ci.relam,
-                s.stawidth, s.stanullfrac, s.starelid, s.staattnum
-              FROM pg_catalog.pg_index AS i
-                JOIN pg_catalog.pg_class AS ci ON ci.oid = i.indexrelid
-                JOIN pg_catalog.pg_class AS ct ON ct.oid = i.indrelid
-                JOIN pg_catalog.pg_statistic AS s ON s.starelid = i.indrelid
-                  AND s.staattnum = ANY ( i.indkey )
-              WHERE ci.relpages > 0
-            ) AS sub
-              JOIN pg_catalog.pg_attribute AS a ON sub.starelid = a.attrelid
-                  AND sub.staattnum = a.attnum
-              JOIN pg_catalog.pg_type AS t ON a.atttypid = t.oid
-              JOIN pg_catalog.pg_namespace AS n ON sub.relnamespace = n.oid
-            WHERE a.attnum > 0
-            GROUP BY 1, 2, 3, 4, 5, 6, 7, 8, 9
-          ) AS sub2
-        ) AS sub3
-          JOIN pg_am am ON sub3.relam = am.oid
-        WHERE am.amname = 'btree'
-      ) AS sub4
-      WHERE NOT is_na
-      ORDER BY 2,3,4 },
       # New column pg_index.indisvalid
-      $PG_VERSION_82 =>  q{
+      $PG_VERSION_90 =>  q{
       SELECT current_database(), nspname AS schemaname, tblname, idxname, bs*(relpages)::bigint AS real_size,
         bs*(relpages-est_pages_ff) AS bloat_size,
         100 * (relpages-est_pages_ff)::float / relpages AS bloat_ratio
@@ -4089,7 +3797,7 @@ sub check_commit_ratio {
 }
 
 
-=item B<configuration> (8.0+)
+=item B<configuration> (9.0+)
 
 Check the most important settings (according to pg_settings).
 
@@ -4205,7 +3913,7 @@ sub check_configuration {
         -exitval => 127
     ) if @hosts != 1;
 
-    is_compat $hosts[0], 'configuration', $PG_VERSION_80 or exit 1;
+    is_compat $hosts[0], 'configuration', $PG_VERSION_90 or exit 1;
 
     my @rc = @{ query( $hosts[0], $sql ) };
 
@@ -4226,7 +3934,7 @@ LOOP: foreach my $setting (@rc) {
 }
 
 
-=item B<configuration_difference> (8.0+)
+=item B<configuration_difference> (9.0+)
 
 Check that the configuration is the same between two servers (according to pg_settings)
 By default, assumes that the 1st server is a primary
@@ -4288,7 +3996,7 @@ sub check_configuration_difference {
     my @ignored_all = ('effective_wal_level');
     my $me          = 'POSTGRES_CONFIGURATION_DIFFERENCE';
     my %queries = (
-        $PG_VERSION_80 => q{
+        $PG_VERSION_90 => q{
         SELECT name,
                (CASE WHEN name LIKE 'tcp%' AND inet_client_addr() IS NULL THEN 'N/A'
                 ELSE setting END
@@ -4313,7 +4021,7 @@ sub check_configuration_difference {
 
     # Fetch configuration for each host ; compare each parameter to the one on the 1st host a reference
     foreach my $host (@hosts) {
-        is_compat $hosts[$num_clusters], 'configuration', $PG_VERSION_80 or exit 1;
+        is_compat $hosts[$num_clusters], 'configuration', $PG_VERSION_90 or exit 1;
         $num_clusters ++;
         dprint ("Cluster $num_clusters : $host->{'dbservice'} \n" );
         # Fetch PG configuration from each host
@@ -4541,7 +4249,7 @@ sub check_custom_query {
     return status_ok( $me, [ "Custom query ok" ], \@perfdata );
 }
 
-=item B<database_size> (8.1+)
+=item B<database_size> (9.0+)
 
 B<Check the variation> of database sizes, and B<return the size> of every
 databases.
@@ -4610,7 +4318,7 @@ sub check_database_size {
         -exitval => 127
     ) if @hosts != 1;
 
-    is_compat $hosts[0], 'database_size', $PG_VERSION_81 or exit 1;
+    is_compat $hosts[0], 'database_size', $PG_VERSION_90 or exit 1;
 
     if ( defined $args{'warning'} ) {
         my $thresholds_re = qr/(size|delta)\s*=\s*([^,]+)/i;
@@ -5339,7 +5047,6 @@ sub check_is_master {
     # For PostgreSQL 9.0+, the "pg_is_in_recovery()" function is used, for
     # previous versions the ability to connect is enough.
     my %queries       = (
-        $PG_VERSION_74  => q{ SELECT false },
         $PG_VERSION_90 => q{ SELECT pg_is_in_recovery() }
     );
 
@@ -5356,7 +5063,7 @@ sub check_is_master {
     return status_ok( $me, [ "Cluster is master" ] );
 }
 
-=item B<invalid_indexes> (8.2+)
+=item B<invalid_indexes> (9.0+)
 
 Check if there are invalid indexes in a database.
 
@@ -5460,7 +5167,7 @@ sub check_invalid_indexes {
 }
 
 
-=item B<unused_indexes> (8.2+)
+=item B<unused_indexes> (9.0+)
 
 Check if there are unused indexes in a database.
 
@@ -5509,7 +5216,7 @@ sub check_unused_indexes {
     my @dbexclude   = @{ $args{'dbexclude'} };
     my $me          = 'POSTGRES_UNUSED_INDEXES';
     my %queries = (
-        $PG_VERSION_82 => q{
+        $PG_VERSION_90 => q{
         SELECT current_database(), nsp.nspname AS schemaname, cls.relname, pg_stat_get_numscans(cls.oid)=0,
             extract('epoch' FROM now())::int
         FROM pg_class cls
@@ -5797,66 +5504,6 @@ sub check_last_maintenance {
         #            useless alerts when there is no write activity (if
         #            thresholds do not change)
         #
-        # 8.2 does not have per-database activity stats. We must aggregate
-        # from pg_stat_all_tables
-        $PG_VERSION_82 => qq{
-            SELECT
-                false AS is_in_recovery,
-                current_database(),
-                schemaname,
-                relname,
-                coalesce(max(
-                       coalesce(extract(epoch FROM
-                         current_timestamp -
-                                 greatest(last_${type}, last_auto${type})),
-                         'infinity'::float)),
-                    'NaN'::float),
-                NULL, NULL,
-                sum(hashtext(n_tup_ins::text
-                    ||n_tup_upd::text
-                    ||n_tup_del::text
-                    ||'$c_limit $w_limit'))
-            FROM pg_stat_all_tables a
-            WHERE schemaname NOT LIKE 'pg_temp_%'
-              AND pg_relation_size(relid) >= $table_min_size
-              AND schemaname NOT LIKE 'information_schema'
-              AND (('${type}' = 'analyze' AND schemaname NOT LIKE 'pg_toast') -- TOAST tables aren't ANALYZEd
-                OR  ('${type}' = 'vacuum'))
-              AND (('${type}' = 'analyze' AND a.relname NOT LIKE 'pg_statistic') -- pg_statistic never gets ANALYZEd
-                OR  ('${type}' = 'vacuum'))
-            GROUP BY schemaname,relname
-        },
-        # Starting with 8.3, we can check database activity from
-        # pg_stat_database
-        $PG_VERSION_83 => qq{
-            SELECT
-                false AS is_in_recovery,
-                current_database(),
-                schemaname,
-                relname,
-                coalesce(max(
-                       coalesce(extract(epoch FROM
-                         current_timestamp -
-                                 greatest(last_${type}, last_auto${type})),
-                         'infinity'::float)),
-                    'NaN'::float),
-                NULL, NULL,
-                (
-                  SELECT md5(tup_inserted::text||tup_updated::text||tup_deleted::text||'$c_limit $w_limit'))
-                  FROM pg_catalog.pg_stat_database
-                  WHERE datname = current_database()
-                )
-            FROM pg_stat_all_tables a
-            WHERE schemaname NOT LIKE 'pg_temp_%'
-              AND schemaname NOT LIKE 'pg_toast_temp_%'
-              AND pg_relation_size(relid) >= $table_min_size
-              AND schemaname NOT LIKE 'information_schema'
-              AND (('${type}' = 'analyze' AND schemaname NOT LIKE 'pg_toast') -- TOAST tables aren't ANALYZEd
-                OR  ('${type}' = 'vacuum'))
-              AND (('${type}' = 'analyze' AND a.relname NOT LIKE 'pg_statistic') -- pg_statistic never gets ANALYZEd
-                OR  ('${type}' = 'vacuum'))
-            GROUP BY schemaname,relname
-        },
         # Starting with 9.0, we can check database status
         # (primary or secondary)
         $PG_VERSION_90 => qq{
@@ -5943,16 +5590,10 @@ sub check_last_maintenance {
         -exitval => 127
     ) if @hosts != 1;
 
-    is_compat $hosts[0], "last_$type", $PG_VERSION_82 or exit 1;
+    is_compat $hosts[0], "last_$type", $PG_VERSION_90 or exit 1;
 
-    # check required GUCs
-    if ($hosts[0]->{'version_num'} < $PG_VERSION_83) {
-        is_guc $hosts[0], 'stats_start_collector', 'on' or exit 1;
-        is_guc $hosts[0], 'stats_row_level', 'on' or exit 1;
-    }
-    else {
-        is_guc $hosts[0], 'track_counts', 'on' or exit 1;
-    }
+    # check required GUC
+    is_guc $hosts[0], 'track_counts', 'on' or exit 1;
 
     @all_db = @{ get_all_dbname( $hosts[0] ) };
 
@@ -6045,7 +5686,7 @@ LOOP_DB: foreach my $db (@all_db) {
 }
 
 
-=item B<last_analyze> (8.2+)
+=item B<last_analyze> (9.0+)
 
 Check on each databases that the oldest C<analyze> (from autovacuum or not) is
 not older than the given threshold.
@@ -6090,7 +5731,7 @@ sub check_last_analyze {
 }
 
 
-=item B<last_vacuum> (8.2+)
+=item B<last_vacuum> (9.0+)
 
 Check that the oldest vacuum (from autovacuum or otherwise) in each database
 in the cluster is not older than the given threshold.
@@ -6143,11 +5784,7 @@ Perfdata returns the number of locks, by type.
 
 Critical and Warning thresholds accept either a raw number of locks or a
 percentage. For percentage, it is computed using the following limits
-for 7.4 to 8.1:
-
-  max_locks_per_transaction * max_connections
-
-for 8.2+:
+for 9.0:
 
   max_locks_per_transaction * (max_connections + max_prepared_transactions)
 
@@ -6171,34 +5808,7 @@ sub check_locks {
     my $waiting_locks = 0;
     my $me            = 'POSTGRES_LOCKS';
     my %queries       = (
-        $PG_VERSION_74 => q{
-            SELECT count(l.granted), ref.mode,
-                current_setting('max_locks_per_transaction')::integer
-                * current_setting('max_connections')::integer, 0, ref.granted
-            FROM (
-                SELECT 'AccessShareLock',                't'::boolean
-                UNION SELECT 'RowShareLock',             't'
-                UNION SELECT 'RowExclusiveLock',         't'
-                UNION SELECT 'ShareUpdateExclusiveLock', 't'
-                UNION SELECT 'ShareLock',                't'
-                UNION SELECT 'ShareRowExclusiveLock',    't'
-                UNION SELECT 'ExclusiveLock',            't'
-                UNION SELECT 'AccessExclusiveLock',      't'
-                UNION SELECT 'AccessShareLock',          'f'
-                UNION SELECT 'RowShareLock',             'f'
-                UNION SELECT 'RowExclusiveLock',         'f'
-                UNION SELECT 'ShareUpdateExclusiveLock', 'f'
-                UNION SELECT 'ShareLock',                'f'
-                UNION SELECT 'ShareRowExclusiveLock',    'f'
-                UNION SELECT 'ExclusiveLock',            'f'
-                UNION SELECT 'AccessExclusiveLock',      'f'
-            ) ref (mode, granted)
-            LEFT JOIN pg_locks l
-                ON (ref.mode, ref.granted) = (l.mode, l.granted)
-            GROUP BY 2,3,4,5
-            ORDER BY ref.granted, ref.mode
-        },
-        $PG_VERSION_82 => q{
+        $PG_VERSION_90 => q{
             SELECT count(l.granted), ref.mode,
                 current_setting('max_locks_per_transaction')::integer * (
                     current_setting('max_prepared_transactions')::integer
@@ -6337,9 +5947,8 @@ Critical and Warning thresholds only accept an interval.
 This service supports both C<--dbexclude> and C<--dbinclude> parameters.
 
 It also supports argument C<--exclude REGEX> to exclude queries matching the
-given regular expression from the check.
-
-Above 9.0, it also supports C<--exclude REGEX> to filter out application_name.
+given regular expression from the check. It also supports C<--exclude REGEX> to
+filter out application_name.
 
 You can use multiple C<--exclude REGEX> parameters.
 
@@ -6365,20 +5974,6 @@ sub check_longest_query {
     my $nb_query      = 0;
     my %stats         = ();
     my %queries       = (
-       $PG_VERSION_74 => q{SELECT d.datname,
-                COALESCE(elapsed, -1),
-                COALESCE(query, '')
-            FROM pg_database AS d
-            LEFT JOIN (
-                SELECT datname, current_query AS query,
-                    extract('epoch' FROM
-                        date_trunc('second', current_timestamp-query_start)
-                    ) AS elapsed
-                FROM pg_stat_activity
-                WHERE current_query NOT LIKE '<IDLE>%'
-            ) AS s ON (d.datname=s.datname)
-            WHERE d.datallowconn
-        },
         $PG_VERSION_90 => q{SELECT d.datname,
                 COALESCE(elapsed, -1),
                 COALESCE(query, ''),
@@ -6528,10 +6123,10 @@ sub check_longest_query {
 Checks oldest database by transaction age.
 
 Critical and Warning thresholds are optional. They accept either a raw number
-or percentage for PostgreSQL 8.2 and more. If percentage is given, the
-thresholds are computed based on the "autovacuum_freeze_max_age" parameter.
-100% means that some table(s) reached the maximum age and will trigger an
-autovacuum freeze. Percentage thresholds should therefore be greater than 100%.
+or percentage. If percentage is given, the thresholds are computed based on the
+"autovacuum_freeze_max_age" parameter. 100% means that some table(s) reached
+the maximum age and will trigger an autovacuum freeze. Percentage thresholds
+should therefore be greater than 100%.
 
 Even with no threshold, this service will raise a critical alert if a database
 has a negative age.
@@ -6560,11 +6155,7 @@ sub check_max_freeze_age {
     my @dbexclude     = @{ $args{'dbexclude'} };
     my $me            = 'POSTGRES_MAX_FREEZE_AGE';
     my %queries       = (
-       $PG_VERSION_74 => q{SELECT datname, age(datfrozenxid)
-            FROM pg_database
-            WHERE datname <> 'template0'
-       },
-        $PG_VERSION_82 => q{SELECT datname, age(datfrozenxid),
+        $PG_VERSION_90 => q{SELECT datname, age(datfrozenxid),
                 current_setting('autovacuum_freeze_max_age')
             FROM pg_database
             WHERE datname <> 'template0'
@@ -6591,12 +6182,6 @@ sub check_max_freeze_age {
         $c_limit = $args{'critical'};
 
         set_pgversion($hosts[0]);
-
-        pod2usage(
-            -message => "FATAL: only raw thresholds are compatible with PostgreSQL 8.1 and below.",
-            -exitval => 127
-        ) if $hosts[0]->{'version_num'} < $PG_VERSION_82
-            and ($args{'warning'} =~ m/%\s*$/ or $args{'critical'} =~ m/%\s*$/);
     }
 
     @rs = @{ query_ver( $hosts[0], %queries ) };
@@ -6814,7 +6399,7 @@ sub check_minor_version {
 }
 
 
-=item B<oldest_2pc> (8.1+)
+=item B<oldest_2pc> (9.0+)
 
 Check the oldest I<two-phase commit transaction> (aka. prepared transaction) in
 the cluster.
@@ -6874,7 +6459,7 @@ sub check_oldest_2pc {
         -exitval => 127
     ) if @hosts != 1;
 
-    is_compat $hosts[0], 'postgres_oldest_2pc', $PG_VERSION_81 or exit 1;
+    is_compat $hosts[0], 'postgres_oldest_2pc', $PG_VERSION_90 or exit 1;
 
 
     @rs = @{ query( $hosts[0], $query ) };
@@ -6933,7 +6518,7 @@ sub check_oldest_2pc {
 }
 
 
-=item B<oldest_xact> (8.3+)
+=item B<oldest_xact> (9.0+)
 
 Check I<idle> and long transactions.
 Idle transactions do not execute any queries, but did not commit. Alive
@@ -6993,7 +6578,7 @@ sub check_oldest_xact {
     my %stats          = ( );
     my $exclude_filter = "";
     my %queries        = (
-        $PG_VERSION_83 => q{SELECT d.datname,
+        $PG_VERSION_90 => q{SELECT d.datname,
             CASE WHEN current_query = '<IDLE> in transaction' THEN coalesce(extract('epoch' FROM date_trunc('second', current_timestamp-state_change)), -1)
                                                   ELSE -1 END AS statechange,
             coalesce(extract('epoch' FROM date_trunc('second', current_timestamp-xact_start)), -1) AS xactstart
@@ -7086,7 +6671,7 @@ sub check_oldest_xact {
         -exitval => 127
     ) if @hosts != 1;
 
-    is_compat $hosts[0], 'oldest_xact', $PG_VERSION_83 or exit 1;
+    is_compat $hosts[0], 'oldest_xact', $PG_VERSION_90 or exit 1;
 
     @rs = @{ query_ver( $hosts[0], %queries ) };
 
@@ -7175,7 +6760,7 @@ sub check_oldest_xact {
 }
 
 
-=item B<oldest_xmin> (8.4+)
+=item B<oldest_xmin> (9.0+)
 
 Check the xmin I<horizon> from distinct sources of xmin retention.
 
@@ -7226,7 +6811,7 @@ sub check_oldest_xmin {
     my %queries   = (
         # 8.4 is the first supported version as we rely on window functions to
         # get the oldest xmin.  Only 2PC has transaction information available
-        $PG_VERSION_84 => q{
+        $PG_VERSION_90 => q{
         WITH ordered AS (
           SELECT '2pc' AS kind,
           d.datname,
@@ -7351,7 +6936,7 @@ sub check_oldest_xmin {
         -exitval => 127
     ) if @hosts != 1;
 
-    is_compat $hosts[0], 'oldest_xmin', $PG_VERSION_84 or exit 1;
+    is_compat $hosts[0], 'oldest_xmin', $PG_VERSION_90 or exit 1;
 
     @rs = @{ query_ver( $hosts[0], %queries ) };
 
@@ -8148,7 +7733,7 @@ sub check_pga_version {
     return status_ok( $me, [ sprintf($msg, "", $^V) ] );
 }
 
-=item B<pgdata_permission> (8.2+)
+=item B<pgdata_permission> (9.0+)
 
 Check that the instance data directory rights are 700, and belongs
 to the system user currently running postgresql.
@@ -8194,7 +7779,7 @@ sub check_pgdata_permission {
         -exitval => 127
     ) if scalar @hosts != 1;
 
-    is_compat $hosts[0], 'pgdata_permission', $PG_VERSION_82 or exit 1;
+    is_compat $hosts[0], 'pgdata_permission', $PG_VERSION_90 or exit 1;
 
     # Get the data directory
     $query = q{
@@ -8858,7 +8443,7 @@ PARAM_LOOP: foreach my $row (@rs) {
     return status_ok( $me, [ "Setting OK" ] );
 }
 
-=item B<sequences_exhausted> (7.4+)
+=item B<sequences_exhausted> (9.0+)
 
 Check all sequences and raise an alarm if the column or sequences gets too
 close to the maximum value. The maximum value is calculated from the maxvalue
@@ -8890,8 +8475,6 @@ sub check_sequences_exhausted {
     my @dbexclude = @{ $args{'dbexclude'} };
     my $criticity=0; # 0=ok, 1=warn, 2=critical
 
-
-
     if ( not defined $args{'warning'} or not defined $args{'critical'} ) {
         # warning and critical are mandatory.
         pod2usage(
@@ -8916,7 +8499,7 @@ sub check_sequences_exhausted {
         -exitval => 127
     ) if @hosts != 1;
 
-    is_compat $hosts[0], 'sequences_exhausted', $PG_VERSION_82 or exit 1;
+    is_compat $hosts[0], 'sequences_exhausted', $PG_VERSION_90 or exit 1;
 
     @all_db = @{ get_all_dbname( $hosts[0] ) };
 
@@ -8929,7 +8512,7 @@ sub check_sequences_exhausted {
         my %sequences;
 
         # We have two code paths: one for < 10.0 and one for >=10.S
-        if (check_compat $hosts[0], $PG_VERSION_82, $PG_VERSION_96)
+        if (check_compat $hosts[0], $PG_VERSION_90, $PG_VERSION_96)
         {
             # Search path is emptied so that ::regclass gives us full paths
             my $query  = q{
@@ -9704,112 +9287,7 @@ sub check_table_bloat {
         # * use pg_statistic instead of pg_stats for performance
         # * as pg_namespace is not useful in subquery "s", move it as the very last join
 
-        # Text types header is 4, page header is 20 and block size 8192 for 7.4.
-        # page header is 24 and GUC block_size appears for 8.0
-        $PG_VERSION_74 =>  q{
-          SELECT current_database(), ns.nspname AS schemaname, tblname, bs*tblpages AS real_size,
-            NULL, NULL, NULL, (tblpages-est_num_pages)*bs AS bloat_size,
-            CASE WHEN tblpages > 0 AND tblpages - est_num_pages > 0
-              THEN 100 * (tblpages - est_num_pages)/tblpages::float
-              ELSE 0
-            END AS bloat_ratio, is_na
-          FROM (
-            SELECT
-              ceil( reltuples / ( (bs-page_hdr)/tpl_size ) ) + ceil( toasttuples / 4 ) AS est_num_pages, tblpages,
-              bs, tblid, relnamespace, tblname, heappages, toastpages, is_na
-            FROM (
-              SELECT
-                ( 4 + tpl_hdr_size + tpl_data_size + (2*ma)
-                  - CASE WHEN tpl_hdr_size%ma = 0 THEN ma ELSE tpl_hdr_size%ma END
-                  - CASE WHEN tpl_data_size::numeric%ma = 0 THEN ma ELSE tpl_data_size::numeric%ma END
-                ) AS tpl_size, bs - page_hdr AS size_per_block, (heappages + coalesce(toast.relpages, 0)) AS tblpages, heappages,
-                coalesce(toast.relpages, 0) AS toastpages, s.reltuples,
-                coalesce(toast.reltuples, 0) AS toasttuples, bs, page_hdr, tblid, s.relnamespace, tblname, is_na
-              FROM (
-                SELECT
-                  tbl.oid AS tblid, tbl.relnamespace, tbl.relname AS tblname, tbl.reltuples,
-                  tbl.relpages AS heappages, tbl.reltoastrelid,
-                  CASE WHEN cluster_version.v > 7
-                    THEN current_setting('block_size')::numeric
-                    ELSE 8192::numeric
-                  END AS bs,
-                  CASE WHEN version()~'mingw32' OR version()~'64-bit|x86_64|ppc64|ia64|amd64' THEN 8 ELSE 4 END AS ma,
-                  CASE WHEN cluster_version.v > 7
-                    THEN 24
-                    ELSE 20
-                  END AS page_hdr,
-                  CASE WHEN cluster_version.v > 7 THEN 27 ELSE 23 END
-                      + CASE WHEN MAX(coalesce(stanullfrac,0)) > 0 THEN ( 7 + count(*) ) / 8 ELSE 0::int END
-                      + CASE WHEN tbl.relhasoids THEN 4 ELSE 0 END AS tpl_hdr_size,
-                  sum( (1-coalesce(s.stanullfrac, 0)) * coalesce(s.stawidth, 1024) ) AS tpl_data_size,
-                  max( CASE WHEN att.atttypid = 'pg_catalog.name'::regtype THEN 1 ELSE 0 END ) > 0 AS is_na
-                FROM pg_attribute att
-                  JOIN pg_class tbl ON att.attrelid = tbl.oid
-                  JOIN pg_statistic s ON s.starelid=tbl.oid
-                    AND s.staattnum=att.attnum
-                  CROSS JOIN ( SELECT substring(current_setting('server_version') FROM '#"[0-9]+#"%' FOR '#')::integer ) AS cluster_version(v)
-                WHERE att.attnum > 0 AND NOT att.attisdropped
-                  AND tbl.relkind = 'r'
-                GROUP BY 1,2,3,4,5,6,7,8,9, cluster_version.v, tbl.relhasoids
-              ) as s LEFT JOIN pg_class toast ON s.reltoastrelid = toast.oid
-            ) as s2
-          ) AS s3 JOIN pg_namespace AS ns ON ns.oid = s3.relnamespace
-          WHERE NOT is_na
-          ORDER BY ns.nspname,s3.tblname},
-        # Variable block size, page header is 24 and text types header is 1 or 4 for 8.3+
-        $PG_VERSION_82 =>  q{
-          SELECT current_database(), ns.nspname AS schemaname, tblname, bs*tblpages AS real_size,
-            (tblpages-est_tblpages)*bs AS extra_size,
-            CASE WHEN tblpages > 0 AND tblpages - est_tblpages > 0
-              THEN 100 * (tblpages - est_tblpages)/tblpages::float
-              ELSE 0
-            END AS extra_ratio, fillfactor, (tblpages-est_tblpages_ff)*bs AS bloat_size,
-            CASE WHEN tblpages > 0 AND tblpages - est_tblpages_ff > 0
-              THEN 100 * (tblpages - est_tblpages_ff)/tblpages::float
-              ELSE 0
-            END AS bloat_ratio, is_na
-          FROM (
-            SELECT ceil( reltuples / ( (bs-page_hdr)/tpl_size ) ) + ceil( toasttuples / 4 ) AS est_tblpages,
-              ceil( reltuples / ( (bs-page_hdr)*fillfactor/(tpl_size*100) ) ) + ceil( toasttuples / 4 ) AS est_tblpages_ff,
-              tblpages, fillfactor, bs, tblid, relnamespace, tblname, heappages, toastpages, is_na
-            FROM (
-              SELECT
-                ( 4 + tpl_hdr_size + tpl_data_size + (2*ma)
-                  - CASE WHEN tpl_hdr_size%ma = 0 THEN ma ELSE tpl_hdr_size%ma END
-                  - CASE WHEN tpl_data_size::numeric%ma = 0 THEN ma ELSE tpl_data_size::numeric%ma END
-                ) AS tpl_size, bs - page_hdr AS size_per_block, (heappages + coalesce(toast.relpages, 0)) AS tblpages,
-                heappages, coalesce(toast.relpages, 0) AS toastpages,
-                s.reltuples, coalesce(toast.reltuples, 0) AS toasttuples,
-                bs, page_hdr, tblid, s.relnamespace, tblname, fillfactor, is_na
-              FROM (
-                SELECT
-                  tbl.oid AS tblid, tbl.relnamespace, tbl.relname AS tblname, tbl.reltuples, tbl.reltoastrelid,
-                  tbl.relpages AS heappages,
-                  coalesce(substring(
-                    array_to_string(tbl.reloptions, ' ')
-                    FROM '%fillfactor=#"__#"%' FOR '#')::smallint, 100) AS fillfactor,
-                  current_setting('block_size')::numeric AS bs,
-                  CASE WHEN version()~'mingw32' OR version()~'64-bit|x86_64|ppc64|ia64|amd64' THEN 8 ELSE 4 END AS ma,
-                  24 AS page_hdr,
-                  CASE WHEN current_setting('server_version_num')::integer < 80300 THEN 27 ELSE 23 END
-                    + CASE WHEN MAX(coalesce(s.stanullfrac,0)) > 0 THEN ( 7 + count(*) ) / 8 ELSE 0::int END
-                    + CASE WHEN tbl.relhasoids THEN 4 ELSE 0 END AS tpl_hdr_size,
-                  sum( (1-coalesce(s.stanullfrac, 0)) * coalesce(s.stawidth, 1024) ) AS tpl_data_size,
-                  bool_or(att.atttypid = 'pg_catalog.name'::regtype) AS is_na
-                FROM pg_attribute AS att
-                  JOIN pg_class AS tbl ON att.attrelid = tbl.oid
-                  JOIN pg_statistic s
-                    ON s.starelid = tbl.oid AND s.staattnum=att.attnum
-                  LEFT JOIN pg_class AS toast ON tbl.reltoastrelid = toast.oid
-                WHERE att.attnum > 0 AND NOT att.attisdropped
-                  AND tbl.relkind = 'r'
-                GROUP BY 1,2,3,4,5,6,7,8,9,10, tbl.relhasoids
-                ORDER BY 2,3
-              ) as s LEFT JOIN pg_class toast ON s.reltoastrelid = toast.oid
-            ) as s2
-          ) AS s3 JOIN pg_namespace AS ns ON ns.oid = s3.relnamespace
-          WHERE NOT is_na
-          ORDER BY ns.nspname,s3.tblname},
+        # Text types header is 4, page header is 24 and GUC block_size appears for 8.0
         # Exclude inherited stats
         $PG_VERSION_90 =>  q{
           SELECT current_database(), nspname AS schemaname, tblname, bs*tblpages AS real_size,
@@ -10037,15 +9515,14 @@ sub check_table_bloat {
 }
 
 
-=item B<temp_files> (8.1+)
+=item B<temp_files> (9.0+)
 
 Check the number and size of temp files.
 
 This service uses the status file (see C<--status-file> parameter) for 9.2+.
 
 Perfdata returns the number and total size of temp files found in
-C<pgsql_tmp> folders. They are aggregated by database until 8.2, then
-by tablespace (see GUC temp_tablespaces).
+C<pgsql_tmp> folders. They are aggregated by tablespace (see GUC temp_tablespaces).
 
 Starting with 9.2, perfdata returns as well the number of temp files per
 database since last run, the total size of temp files per database since last
@@ -10093,57 +9570,6 @@ sub check_temp_files {
     my %queries   = (
         # WARNING: these queries might have a race condition between pg_ls_dir
         # and pg_stat_file!  temp folders are per database
-        $PG_VERSION_81 => q{
-          SELECT 'live', agg.datname, sum(CASE WHEN agg.tmpfile <> '' THEN 1 ELSE 0 END),
-            sum(CASE
-              WHEN agg.tmpfile <> '' THEN (pg_stat_file(agg.dir||'/'||agg.tmpfile)).size
-              ELSE 0 END)
-          FROM (
-            SELECT t3.datname, t3.spcname, t3.dbroot||'/'||t3.dbcont AS dir,
-              CASE gs.i WHEN 1 THEN pg_ls_dir(t3.dbroot||'/'||t3.dbcont) ELSE '' END AS tmpfile
-            FROM (
-              SELECT d.datname, t2.spcname, t2.tblroot||'/'||t2.tblcont AS dbroot, pg_ls_dir(t2.tblroot||'/'||t2.tblcont) AS dbcont
-              FROM (
-                SELECT t.spcname, t.tblroot, pg_ls_dir(tblroot) AS tblcont
-                FROM (
-                  SELECT spc.spcname, 'pg_tblspc/'||spc.oid AS tblroot
-                  FROM pg_tablespace AS spc
-                  WHERE spc.spcname !~ '^pg_'
-                  UNION ALL
-                  SELECT 'pg_default', 'base' AS dir
-                ) AS t
-              ) AS t2
-              JOIN pg_database d ON d.oid=t2.tblcont
-            ) AS t3, (SELECT generate_series(1,2) AS i) AS gs
-            WHERE t3.dbcont='pgsql_tmp'
-          ) AS agg
-          GROUP BY 1,2
-        },
-        # Temp folders are per tablespace
-        $PG_VERSION_83 => q{
-          SELECT 'live', agg.spcname, sum(CASE WHEN agg.tmpfile <> '' THEN 1 ELSE 0 END),
-            sum(CASE
-              WHEN agg.tmpfile <> '' THEN (pg_stat_file(agg.dir||'/'||agg.tmpfile)).size
-              ELSE 0 END)
-          FROM (
-            SELECT gs.i, sr.oid, sr.spcname, sr.dir,
-              CASE WHEN gs.i = 1 THEN pg_ls_dir(sr.dir) ELSE '' END AS tmpfile
-            FROM (
-              SELECT spc.oid, spc.spcname, 'pg_tblspc/'||spc.oid||'/pgsql_tmp' AS dir, pg_ls_dir('pg_tblspc/'||spc.oid) AS sub
-              FROM (
-                SELECT oid, spcname
-                FROM pg_tablespace WHERE spcname !~ '^pg_'
-              ) AS spc
-              UNION ALL
-              SELECT 0, 'pg_default', 'base/pgsql_tmp' AS dir, 'pgsql_tmp' AS sub
-              FROM pg_ls_dir('base') AS l
-              WHERE l='pgsql_tmp'
-            ) sr, (SELECT generate_series(1,2) AS i) AS gs
-            WHERE sr.sub='pgsql_tmp'
-          ) agg
-          GROUP BY 1,2
-        },
-        # Add sub folder PG_9.x_* to pg_tblspc
         $PG_VERSION_90 => q{
           SELECT 'live', agg.spcname, sum(CASE WHEN agg.tmpfile <> '' THEN 1 ELSE 0 END),
             sum(CASE
@@ -10277,9 +9703,9 @@ sub check_temp_files {
 
     @hosts = @{ parse_hosts %args };
 
-    is_compat $hosts[0], 'temp_files', $PG_VERSION_81 or exit 1;
+    is_compat $hosts[0], 'temp_files', $PG_VERSION_90 or exit 1;
 
-    $obj = 'tablespace(s)' if $hosts[0]{'version_num'} >= $PG_VERSION_83;
+    $obj = 'tablespace(s)' if $hosts[0]{'version_num'} >= $PG_VERSION_90;
     $obj = 'tablespace(s)/database(s)' if $hosts[0]{'version_num'} >= $PG_VERSION_92;
 
     pod2usage(
@@ -10474,10 +9900,10 @@ sub check_hugepages {
     return status_ok( $me, [ "The huge pages are in the expected state: $hp_setting." ], \@perfdata );
 }
 
-=item B<uptime> (8.1+)
+=item B<uptime> (9.0+)
 
-Returns time since postmaster start ("uptime", from 8.1),
-since configuration reload (from 8.4),
+Returns time since postmaster start ("uptime", from 9.0),
+since configuration reload (from 9.0),
 and since shared memory initialization (from 10).
 
 Please note that the uptime is unaffected when the postmaster resets
@@ -10515,7 +9941,6 @@ sub check_uptime {
     my $uptime;
     my $shmem_init_time;
     my $reload_conf_time;
-    my $reload_conf_flag;
     my $msg_uptime;
     my $msg_shmem_init_time;
     my $msg_reload_conf;
@@ -10523,12 +9948,7 @@ sub check_uptime {
     my $w_limit;
     my $me           = 'POSTGRES_UPTIME';
     my %queries      = (
-        $PG_VERSION_81 => q{
-            SELECT extract('epoch' from (current_timestamp - pg_postmaster_start_time())) AS time_since_postmaster_start,
-                   null,
-                   pg_postmaster_start_time() as postmaster_start_time
-        },
-        $PG_VERSION_84 => q{
+        $PG_VERSION_90 => q{
             SELECT extract('epoch' from (current_timestamp - pg_postmaster_start_time())) AS time_since_postmaster_start,
                    extract('epoch' from (current_timestamp - pg_conf_load_time())) AS time_since_conf_reload,
                    pg_postmaster_start_time(),
@@ -10553,7 +9973,7 @@ sub check_uptime {
         -exitval => 127
     ) if @hosts != 1;
 
-    is_compat $hosts[0], 'uptime', $PG_VERSION_81 or exit 1;
+    is_compat $hosts[0], 'uptime', $PG_VERSION_90 or exit 1;
 
     $c_limit = get_time $args{'critical'} if (defined $args{'critical'}) ;
     $w_limit = get_time $args{'warning'}  if (defined $args{'warning'});
@@ -10564,15 +9984,10 @@ sub check_uptime {
     push @perfdata => [ 'postmaster uptime', $uptime , 's', undef, undef, 0 ];
 
     # time since configuration reload
-    $reload_conf_flag = !(check_compat $hosts[0], $PG_VERSION_81, $PG_VERSION_84);
-    if ($reload_conf_flag) {
-        $reload_conf_time = int( $rs[0][1] );
-        $msg_reload_conf = "configuration reloaded for ".to_interval($reload_conf_time)." (since $rs[0][3])";
-        push @perfdata => [ 'configuration uptime', $reload_conf_time , 's',
-            undef, undef, 0 ];
-    } else {
-        $msg_reload_conf = "";
-    };
+    $reload_conf_time = int( $rs[0][1] );
+    $msg_reload_conf = "configuration reloaded for ".to_interval($reload_conf_time)." (since $rs[0][3])";
+    push @perfdata => [ 'configuration uptime', $reload_conf_time , 's',
+        undef, undef, 0 ];
 
     # time since last share memory reinit
     if ( check_compat $hosts[0], $PG_VERSION_100 ) {
@@ -10606,15 +10021,15 @@ sub check_uptime {
     }
 
     # reload check
-    if ( $reload_conf_flag and defined $c_limit and not defined $w_limit
+    if ( defined $c_limit and not defined $w_limit
          and $reload_conf_time < $c_limit
     ) {
         push @msg_crit => $msg_reload_conf;
     }
-    elsif ($reload_conf_flag and defined $w_limit and $reload_conf_time < $w_limit) {
+    elsif (defined $w_limit and $reload_conf_time < $w_limit) {
         push @msg_warn => $msg_reload_conf;
     }
-    elsif ( $reload_conf_flag ) {
+    else {
         push @msg => $msg_reload_conf;
     }
 
@@ -10627,7 +10042,7 @@ sub check_uptime {
     return status_ok( $me, \@msg, \@perfdata );
 }
 
-=item B<wal_files> (8.1+)
+=item B<wal_files> (9.0+)
 
 Check the number of WAL files.
 
@@ -10639,10 +10054,6 @@ Critical and Warning thresholds accept either a raw number of files or a
 percentage. In case of percentage, the limit is computed based on:
 
   100% = 1 + checkpoint_segments * (2 + checkpoint_completion_target)
-
-For PostgreSQL 8.1 and 8.2:
-
-  100% = 1 + checkpoint_segments * 2
 
 If C<wal_keep_segments> is set for 9.0 to 9.4, the limit is the greatest
 of the following formulas:
@@ -10795,36 +10206,6 @@ sub check_wal_files {
         ORDER BY
           (pg_stat_file('pg_xlog/'||s.f)).modification DESC,
           f DESC},
-      $PG_VERSION_83 => q{
-        SELECT s.f,
-          1 + (
-            current_setting('checkpoint_segments')::float4
-            * ( 2 + current_setting('checkpoint_completion_target')::float4 )
-          ), pg_current_xlog_location(),
-          NULL, substring(s.f from 1 for 8) AS tli
-        FROM pg_ls_dir('pg_xlog') AS s(f)
-        WHERE f ~ '^[0-9A-F]{24}$'
-        ORDER BY
-          (pg_stat_file('pg_xlog/'||s.f)).modification DESC,
-          f DESC},
-      $PG_VERSION_82 => q{
-        SELECT s.f,
-          1 + (current_setting('checkpoint_segments')::integer * 2), pg_current_xlog_location(),
-          NULL, substring(s.f from 1 for 8) AS tli
-        FROM pg_ls_dir('pg_xlog') AS s(f)
-        WHERE f ~ '^[0-9A-F]{24}$'
-        ORDER BY
-          (pg_stat_file('pg_xlog/'||s.f)).modification DESC,
-          f DESC},
-      $PG_VERSION_81 => q{
-        SELECT s.f,
-          1 + (current_setting('checkpoint_segments')::integer * 2),
-          NULL, NULL, substring(s.f from 1 for 8) AS tli
-        FROM pg_ls_dir('pg_xlog') AS s(f)
-        WHERE f ~ '^[0-9A-F]{24}$'
-        ORDER BY
-          (pg_stat_file('pg_xlog/'||s.f)).modification DESC,
-          f DESC}
     );
 
     if ( defined $args{'warning'} ) {
@@ -10849,7 +10230,7 @@ sub check_wal_files {
         -exitval => 127
     ) if @hosts != 1;
 
-    is_compat $hosts[0], 'wal_files', $PG_VERSION_81 or exit 1;
+    is_compat $hosts[0], 'wal_files', $PG_VERSION_90 or exit 1;
 
     $wal_size = 4294967296 if $hosts[0]{'version_num'} >= $PG_VERSION_93;
 
@@ -10871,32 +10252,27 @@ sub check_wal_files {
     push @perfdata => [ "tli", $tli ];
 
     # pay attention to the wal_keep_segment in perfdata
-    if ( $hosts[0]{'version_num'} >= $PG_VERSION_90) {
-        $seg_kept = $rs[0][3];
-        if ($seg_kept > 0) {
-            # cheat with numbers if the keep_segment was just set and the
-            # number of wal doesn't match it yet.
-            if ($seg_kept > $seg_written) {
-                push @perfdata => [ "written_wal", 1 ];
-                push @perfdata => [ "kept_wal", $seg_written - 1 ];
-            }
-            else {
-                push @perfdata => [ "written_wal", $seg_written - $seg_kept ];
-                push @perfdata => [ "kept_wal", $seg_kept ];
-            }
+    $seg_kept = $rs[0][3];
+    if ($seg_kept > 0) {
+        # cheat with numbers if the keep_segment was just set and the
+        # number of wal doesn't match it yet.
+        if ($seg_kept > $seg_written) {
+            push @perfdata => [ "written_wal", 1 ];
+            push @perfdata => [ "kept_wal", $seg_written - 1 ];
         }
         else {
-            push @perfdata => [ "written_wal", $seg_written ];
-            push @perfdata => [ "kept_wal", 0 ];
+            push @perfdata => [ "written_wal", $seg_written - $seg_kept ];
+            push @perfdata => [ "kept_wal", $seg_kept ];
         }
     }
     else {
         push @perfdata => [ "written_wal", $seg_written ];
+        push @perfdata => [ "kept_wal", 0 ];
     }
 
     push @msg => "$num_seg WAL files";
 
-    if ( $hosts[0]{'version_num'} >= $PG_VERSION_82 and $rs[0][2] ne '') {
+    if ( $hosts[0]{'version_num'} >= $PG_VERSION_90 and $rs[0][2] ne '') {
         my $now = time();
         my $curr_lsn = $rs[0][2];
         my @prev_lsn = @{ load( $hosts[0], 'last wal files LSN', $args{'status-file'} ) || [] };
