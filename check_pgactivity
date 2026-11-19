@@ -7551,7 +7551,7 @@ ORDER BY current_database};
 
     @hosts = @{ parse_hosts %args };
 
-    is_compat $hosts[0], 'orphan_files', $PG_VERSION_94 or exit 1;
+    is_compat $hosts[0], 'orphan_files', $PG_VERSION_95 or exit 1;
 
     pod2usage(
         -message => 'FATAL: you must give only one host with service "orphan_files".',
