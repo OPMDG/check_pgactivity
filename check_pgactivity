@@ -7426,7 +7426,9 @@ directory and its tablespaces. They are aggregated by database.
 
 Critical and Warning thresholds are optional. They accept either a number of
 file (raw value), a size (unit is B<mandatory> to define a size) or both values
-separated by a comma. Thresholds are applied on current orphan files. Eg:
+separated by a comma. Thresholds are applied on current orphan files. If the
+thresholds are not provided, a default value of `1` file for warning and `1GB`
+for critical will be used. Eg:
 
 --warning 0         --critical '2,1MB'
 --warning '2,1MB'   --critical '3,100MB'
@@ -7605,6 +7607,12 @@ WHERE
         -message => 'FATAL: you must give only one host with service "orphan_files".',
         -exitval => 127
     ) if @hosts != 1;
+
+    # Warning and critical default to 1 file and 1GB
+    if ( not defined $args{'warning'} and not defined $args{'critical'} ) {
+        $args{'warning'}  = '1';
+        $args{'critical'} = '1GB';
+    }
 
     if ( defined $args{'warning'} and defined $args{'critical'} ) {
 

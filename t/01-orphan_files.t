@@ -125,7 +125,7 @@ $node->command_checks_all( [
 #
 copy_orphan($node->data_dir . '/' . $relfilepath, $node->data_dir . '/base/' . $dboid . '/111111');
 
-# basic check with an orphan without warning/critical - OK
+# basic check with an orphan without warning/critical - default WARNING
 #
 $node->command_checks_all( [
     './check_pgactivity', '--service'  => 'orphan_files',
@@ -133,9 +133,9 @@ $node->command_checks_all( [
                           '--format'   => 'human',
                           '--dbname'   => 'template1',
     ],
-    0,
+    1,
     [ qr/^Service  *: POSTGRES_ORPHAN_FILES$/m,
-      qr/^Returns  *: 0 \(OK\)$/m,
+      qr/^Returns  *: 1 \(WARNING\)$/m,
       qr/^Message  *: 1 orphan files found, total size .*$/m,
     ],
     [ qr/^$/ ],
