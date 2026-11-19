@@ -7433,10 +7433,25 @@ separated by a comma. Thresholds are applied on current orphan files. Eg:
 
 The --detailed option lists all orphan files.
 
+A file is an orphan when no relation of the database uses it. Files that
+are expected to be unreferenced for a while are ignored:
+- files of temporary relations of other sessions
+- files modified after the start of the oldest running transaction, as they
+  may belong to an uncommitted CREATE TABLE, TRUNCATE, VACUUM FULL, etc.
+- v9.6+: empty files modified since the last checkpoint, as dropped relations
+  are only removed by the next checkpoint
+
+Because of these rules, a new orphan file is only reported once the oldest
+running transaction has ended. Some false positives remain possible while
+they last: a relation created or rewritten (TRUNCATE, VACUUM FULL...) in a
+prepared transaction, and, on a standby, by a transaction still running on
+the primary.
+
 Required privileges:
-a user with pg_monitor or pg_read_all_setting and:
-GRANT EXECUTE ON FUNCTION pg_ls_dir(text, bool, bool) TO ...;
-GRANT EXECUTE ON FUNCTION pg_stat_file(text, bool) TO ...;
+- <v11: superuser
+- v11+: a user with the role pg_monitor and, in each database:
+  GRANT EXECUTE ON FUNCTION pg_ls_dir(text, bool, bool) TO ...;
+  GRANT EXECUTE ON FUNCTION pg_stat_file(text, bool) TO ...;
 
 =cut
 
@@ -7475,83 +7490,116 @@ sub check_orphan_files {
     FROM
         current_setting('server_version_num') v
 ),
-tbl_paths AS (
+db AS (
+    SELECT
+        oid,
+        dattablespace
+    FROM
+        pg_database
+    WHERE
+        datname = current_database()
+),
+dirs AS (
     SELECT
         tbs.oid AS tbs_oid,
-        spcname,
-        'pg_tblspc/' || tbs.oid || '/' || (
-            SELECT
-                dir
-            FROM
-                pg_ls_dir('pg_tblspc/' || tbs.oid || '/', TRUE, FALSE) dir
-            WHERE
-                dir LIKE E'PG\\_' || ver.version || E'\\_%') AS tbl_path
+        'base/' || db.oid AS path
     FROM
         pg_tablespace tbs,
-        ver
+        db
+    WHERE
+        tbs.spcname = 'pg_default'
+    UNION ALL
+    SELECT
+        tbs.oid,
+        'pg_tblspc/' || tbs.oid || '/' || dir || '/' || db.oid
+    FROM
+        pg_tablespace tbs,
+        db,
+        ver,
+        pg_ls_dir('pg_tblspc/' || tbs.oid, TRUE, FALSE) AS dir
     WHERE
         tbs.spcname NOT IN ('pg_default', 'pg_global')
+        AND split_part(dir, '_', 1) = 'PG'
+        AND split_part(dir, '_', 2) = ver.version
 ),
 files AS (
     SELECT
-        d.oid AS database_oid,
-        0 AS tbs_oid,
-        'base/' || d.oid AS path,
-        file_name AS file_name,
-        SUBSTRING(file_name FROM E'[0-9]+') AS base_name
+        dirs.tbs_oid,
+        dirs.path || '/' || file_name AS path,
+        -- temporary relations: t<backend>_<relfilenode>
+        file_name ~ '^t[0-9]+_' AS is_temp,
+        -- relfilenode, NULL if this is not the name of a relation file
+        substring(file_name FROM
+            '^(?:t[0-9]+_)?([0-9]+)(?:_(?:fsm|vm|init))?(?:[.][0-9]+)?$'
+        ) AS filenode
     FROM
-        pg_database d,
-        pg_ls_dir('base/' || d.oid, TRUE, FALSE) AS file_name
+        dirs,
+        pg_ls_dir(dirs.path, TRUE, FALSE) AS file_name
     WHERE
-        d.datname = current_database()
-    UNION ALL
-    SELECT
-        d.oid,
-        tbp.tbs_oid,
-        tbl_path || '/' || d.oid,
-        file_name,
-        (SUBSTRING(file_name FROM E'[0-9]+')) AS base_name
-    FROM
-        pg_database d,
-        tbl_paths tbp,
-        pg_ls_dir(tbp.tbl_path || '/' || d.oid, TRUE, FALSE) AS file_name
-    WHERE
-        d.datname = current_database()
+        file_name NOT IN ('PG_VERSION', 'pg_filenode.map', 'pg_internal.init')
+        AND left(file_name, 17) <> 'pg_internal.init.'
 ),
 orphans AS (
     SELECT
-        tbs_oid,
-        base_name,
-        file_name,
-        current_setting('data_directory') || '/' || path || '/' || file_name AS orphaned_file,
-        pg_filenode_relation(tbs_oid, base_name::oid) AS rel_without_pgclass
+        files.*,
+        pg_stat_file(files.path, TRUE) AS stat
     FROM
-        ver,
-        files
-        LEFT JOIN pg_class c ON (c.relfilenode::text = files.base_name
-                OR (c.oid::text = files.base_name
-                    AND c.relfilenode = 0
-                    AND c.relname LIKE 'pg_%'))
+        files,
+        db
     WHERE
-        c.oid IS NULL
-        AND LOWER(file_name)
-        NOT LIKE 'pg_%'
+        CASE
+            -- not a relation file
+            WHEN filenode IS NULL THEN TRUE
+            -- pg_filenode_relation() ignores temporary relations
+            WHEN is_temp THEN NOT EXISTS (
+                SELECT
+                    1
+                FROM
+                    pg_class c
+                WHERE
+                    c.relpersistence = 't'
+                    AND c.relfilenode = filenode::oid
+                    AND coalesce(nullif(c.reltablespace, 0), db.dattablespace)
+                        = files.tbs_oid)
+            -- 0 is the default tablespace of the database
+            ELSE pg_filenode_relation(
+                CASE WHEN files.tbs_oid = db.dattablespace THEN
+                    0
+                ELSE
+                    files.tbs_oid
+                END,
+                filenode::oid) IS NULL
+        END
 )
 SELECT
     current_database(),
-    orphaned_file,
-    (pg_stat_file(orphaned_file)).size
+    current_setting('data_directory') || '/' || path,
+    (stat).size
 FROM
     orphans
 WHERE
-    rel_without_pgclass IS NULL
-ORDER BY current_database};
+    (stat).size IS NOT NULL
+    -- may belong to a running transaction (mtime has a 1s precision)
+    AND (stat).modification < (
+        SELECT
+            date_trunc('second', min(xact_start))
+        FROM
+            pg_stat_activity)};
 
     $detailed = $args{'detailed'};
 
     @hosts = @{ parse_hosts %args };
 
-    is_compat $hosts[0], 'orphan_files', $PG_VERSION_94 or exit 1;
+    is_compat $hosts[0], 'orphan_files', $PG_VERSION_95 or exit 1;
+
+    if (check_compat $hosts[0], $PG_VERSION_96) {
+        # dropped relations are truncated, then removed by the next checkpoint
+        $query .= q{
+    AND NOT ((stat).size = 0
+        AND (stat).modification >= (pg_control_checkpoint()).checkpoint_time)};
+    }
+
+    $query .= ' ORDER BY 2';
 
     pod2usage(
         -message => 'FATAL: you must give only one host with service "orphan_files".',

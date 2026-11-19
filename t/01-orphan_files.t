@@ -17,6 +17,16 @@ use Test::More tests => 75;
 my $node = pgNode->get_new_node('prod');
 my $proc;
 
+# A real orphan file is old: backdate the copies, or the service ignores them
+# as files possibly belonging to a running transaction.
+sub copy_orphan {
+    my ($src, $dst) = @_;
+    my $time = time - 3600;
+
+    copy($src, $dst) or die "could not copy $src to $dst: $!";
+    utime $time, $time, $dst or die "could not set mtime of $dst: $!";
+}
+
 $node->init;
 $node->start;
 
@@ -113,7 +123,7 @@ $node->command_checks_all( [
 
 # First orphan, ~120 kB
 #
-copy($node->data_dir . '/' . $relfilepath, $node->data_dir . '/base/' . $dboid . '/111111');
+copy_orphan($node->data_dir . '/' . $relfilepath, $node->data_dir . '/base/' . $dboid . '/111111');
 
 # basic check with an orphan without warning/critical - OK
 #
@@ -191,8 +201,8 @@ $node->command_checks_all( [
 
 # 3 orphans, WARNING
 
-copy($node->data_dir . '/' . $relfilepath, $node->data_dir . '/base/' . $dboid . '/222222');
-copy($node->data_dir . '/' . $relfilepath, $node->data_dir . '/base/' . $dboid . '/333333');
+copy_orphan($node->data_dir . '/' . $relfilepath, $node->data_dir . '/base/' . $dboid . '/222222');
+copy_orphan($node->data_dir . '/' . $relfilepath, $node->data_dir . '/base/' . $dboid . '/333333');
 
 $node->command_checks_all( [
     './check_pgactivity', '--service'  => 'orphan_files',
@@ -211,7 +221,7 @@ $node->command_checks_all( [
     'check ending in warning for number of files'
 );
 
-copy($node->data_dir . '/' . $relfilepath, $node->data_dir . '/base/' . $dboid . '/444444');
+copy_orphan($node->data_dir . '/' . $relfilepath, $node->data_dir . '/base/' . $dboid . '/444444');
 
 # 4 orphans, CRITICAL (number of files)
 
@@ -286,7 +296,7 @@ opendir my $dhandle, $tbsp || die "Can't opendir $tbsp: $!";
     my $tbspath = "$tbsp/$tbsp2";  # eg pg_tblspc/16856/PG_9.6_201608131
     print ("DEBUG : tbspath : $tbspath \n");
 close $dhandle;
-copy($node->data_dir . '/' . $relfilepath,  $tbspath . '/' . $dboid . '/666666');
+copy_orphan($node->data_dir . '/' . $relfilepath,  $tbspath . '/' . $dboid . '/666666');
 
 $node->command_checks_all( [
     './check_pgactivity', '--service'  => 'orphan_files',
